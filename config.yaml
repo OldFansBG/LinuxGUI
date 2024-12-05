@@ -1,0 +1,52 @@
+# Paths to search for grubenv
+grubenv_paths:
+  - grubenv
+  - boot/grub/grubenv
+  - boot/grub2/grubenv
+  - EFI/grub/grubenv
+  - EFI/BOOT/grubenv
+
+# Paths to search for release information
+release_paths:
+  - Release
+  - etc/Release
+  - etc/system-release
+  - etc/os-release
+  - etc/lsb-release
+  - etc/debian_version
+  - etc/redhat-release
+  - etc/fedora-release
+  - etc/SuSE-release
+
+# Distribution detection patterns
+distributions:
+  - pattern: ubuntu
+    name: Ubuntu
+  - pattern: debian
+    name: Debian
+  - pattern: fedora
+    name: Fedora
+  - pattern: red hat
+    name: Red Hat
+  - pattern: redhat
+    name: Red Hat
+  - pattern: opensuse
+    name: OpenSUSE
+  - pattern: suse
+    name: SUSE
+  - pattern: arch linux
+    name: Arch Linux
+  - pattern: arch
+    name: Arch Linux
+  - pattern: gentoo
+    name: Gentoo
+  - pattern: slackware
+    name: Slackware
+  - pattern: centos
+    name: CentOS
+  - pattern: mandriva
+    name: Mandriva
+  - pattern: mandrake
+    name: Mandrake
+  - pattern: mint
+    name: Linux Mint
