@@ -2,6 +2,7 @@
     "files.associations": {
         ".fantomasignore": "ignore",
         "xstring": "cpp",
-        "functional": "cpp"
+        "functional": "cpp",
+        "chrono": "cpp"
     }
 }

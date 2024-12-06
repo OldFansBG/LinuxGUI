@@ -82,13 +82,16 @@ void SettingsDialog::OnOK(wxCommandEvent& event)
 {
     bool isDark = (m_themeChoice->GetSelection() == 1);
     
-    // Apply theme to Settings Dialog
-    ApplyTheme(isDark);
-    
-    // Apply theme to Main Window
+    // Apply theme to Main Window first
     if (MainFrame* mainWindow = dynamic_cast<MainFrame*>(GetParent())) {
         mainWindow->ApplyTheme(isDark);
     }
+    
+    // Important: Store the selection
+    m_isDark = isDark;
+    
+    // Close only the dialog with OK result
+    EndModal(wxID_OK);
 }
 
 void SettingsDialog::ApplyTheme(bool isDark)

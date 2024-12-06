@@ -521,27 +521,28 @@ void MainFrame::UpdateExtractionProgress(int progress, const wxString& status) {
 void MainFrame::OnSettings(wxCommandEvent& event)
 {
     try {
-        SettingsDialog dialog(this);
-        if (dialog.ShowModal() == wxID_OK) {
-            OnThemeChanged();
+        SettingsDialog* dialog = new SettingsDialog(this);
+        int result = dialog->ShowModal();
+        
+        if (result == wxID_OK) {
+            // Theme changes already applied in dialog's OnOK
+            Refresh();
+            Update();
         }
+        
+        dialog->Destroy();  // Clean up the dialog
     }
     catch (const std::exception& e) {
         wxMessageBox(wxString::Format("Error in settings: %s", e.what()),
                     "Settings Error", wxOK | wxICON_ERROR);
     }
-    catch (...) {
-        wxMessageBox("An unexpected error occurred in settings",
-                    "Settings Error", wxOK | wxICON_ERROR);
-    }
 }
-
-void MainFrame::SetStatusText(const wxString& text) {
+void MainFrame::SetStatusText(const wxString& text)
+{
     if (m_statusBar) {
         m_statusBar->SetStatusText(text);
     }
 }
-
 bool MainFrame::LoadConfig() {
     try {
         std::filesystem::path exePath = std::filesystem::current_path() / "config.yaml";
