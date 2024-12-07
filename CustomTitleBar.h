@@ -3,7 +3,7 @@
 
 #include <wx/wx.h>
 #include "MyButton.h"
-#include "ThemeColors.h"
+#include "ThemeManager.h"
 
 class CustomTitleBar : public wxPanel {
 private:
@@ -15,8 +15,12 @@ private:
 
 public:
     CustomTitleBar(wxWindow* parent);
+    ~CustomTitleBar() {
+        ThemeManager::Get().RemoveObserver(this);
+    }
 
 private:
+    void CreateControls();
     void OnPaint(wxPaintEvent& event);
     void OnMouseLeftDown(wxMouseEvent& event);
     void OnMouseLeftUp(wxMouseEvent& event);
@@ -26,15 +30,12 @@ private:
     void OnMinimize(wxCommandEvent& event);
     void OnMaximize(wxCommandEvent& event);
     void OnClose(wxCommandEvent& event);
-    
-    void StyleButton(MyButton* button);
 
     MyButton* m_minimizeButton;
     MyButton* m_maximizeButton;
     MyButton* m_closeButton;
     bool m_isDragging;
     wxPoint m_dragStart;
-    wxPoint m_windowPos;
 
     DECLARE_EVENT_TABLE()
 };

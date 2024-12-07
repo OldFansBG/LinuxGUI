@@ -3,6 +3,7 @@
 #include <wx/wx.h>
 #include <wx/graphics.h>
 #include <memory>
+#include "ThemeManager.h" // Add this include
 
 class MyButton : public wxWindow
 {
@@ -12,8 +13,9 @@ public:
              const wxSize &size = wxDefaultSize, 
              long style = 0, 
              const wxString &name = wxPanelNameStr)
-        : wxWindow(), m_alwaysShow(false), m_hoverColor(wxColour(150, 150, 255))
+        : wxWindow(), m_alwaysShow(false)
     {
+        ThemeManager::Get().AddObserver(this);
         SetBackgroundStyle(wxBG_STYLE_TRANSPARENT);
         wxWindow::Create(parent, id, pos, size, style, name);
 
@@ -39,6 +41,10 @@ public:
         this->Bind(wxEVT_LEAVE_WINDOW, &MyButton::OnMouseLeave, this);
     }
 
+    ~MyButton() {
+        ThemeManager::Get().RemoveObserver(this);
+    }
+
     void SetAlwaysShowButton(bool always) { m_alwaysShow = always; }
     void SetHoverColor(const wxColour& color) { m_hoverColor = color; }
 
@@ -61,17 +67,13 @@ public:
             wxColour tintColor;
 
             if (m_isPressed) {
-                // Darker when pressed
-                tintColor = m_hoverColor.ChangeLightness(80);
+                tintColor = ThemeManager::Get().GetColors().buttonHover.ChangeLightness(80);
             } else if (m_isHovered) {
-                // Use hover color
-                tintColor = m_hoverColor;
+                tintColor = ThemeManager::Get().GetColors().buttonHover;
             } else {
-                // Default color (always visible now)
                 tintColor = GetForegroundColour();
             }
 
-            // Apply tinting
             for (int x = 0; x < tempImage.GetWidth(); x++) {
                 for (int y = 0; y < tempImage.GetHeight(); y++) {
                     if (tempImage.HasAlpha() && tempImage.GetAlpha(x, y) > 0) {

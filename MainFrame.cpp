@@ -1,30 +1,18 @@
 #include "MainFrame.h"
 #include "ISOReader.h"
-#include "SettingsDialog.h"  // Add this include
+#include "SettingsDialog.h"
 #include <wx/filedlg.h>
 #include <wx/dirdlg.h>
 #include <wx/msgdlg.h>
 #include <wx/tokenzr.h>
 #include <algorithm>
-#include <cctype>
 #include <filesystem>
 #include <wx/artprov.h>
 #include <wx/bmpbuttn.h>
 #include "MyButton.h"
 #include <wx/settings.h>
 #include <wx/display.h>
-
-namespace {
-   enum {
-       ID_BROWSE_ISO = 1,
-       ID_BROWSE_WORKDIR,
-       ID_DETECT,
-       ID_EXTRACT,
-       ID_CANCEL,
-       ID_SETTINGS
-   };
-}
-
+#include <wx/filename.h> // Add this include
 BEGIN_EVENT_TABLE(MainFrame, wxFrame)
    EVT_BUTTON(ID_BROWSE_ISO, MainFrame::OnBrowseISO)
    EVT_BUTTON(ID_BROWSE_WORKDIR, MainFrame::OnBrowseWorkDir)
@@ -38,31 +26,10 @@ MainFrame::MainFrame(const wxString& title)
    : wxFrame(NULL, wxID_ANY, title, wxDefaultPosition, wxDefaultSize,
             wxDEFAULT_FRAME_STYLE & ~(wxCAPTION))
 {
+    ThemeManager::Get().AddObserver(this);
     SetBackgroundStyle(wxBG_STYLE_PAINT);
 
     #ifdef __WXMSW__
-        bool isDarkMode = false;
-        HKEY hKey;
-        if (RegOpenKeyEx(HKEY_CURRENT_USER, 
-                        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", 
-                        0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-            DWORD value;
-            DWORD size = sizeof(value);
-            if (RegQueryValueEx(hKey, L"AppsUseLightTheme", NULL, NULL, 
-                            (LPBYTE)&value, &size) == ERROR_SUCCESS) {
-                isDarkMode = (value == 0);
-            }
-            RegCloseKey(hKey);
-        }
-
-        if (isDarkMode) {
-            SetBackgroundColour(ThemeColors::DARK_BACKGROUND);
-            SetForegroundColour(ThemeColors::DARK_TEXT);
-        } else {
-            SetBackgroundColour(ThemeColors::LIGHT_BACKGROUND);
-            SetForegroundColour(ThemeColors::LIGHT_TEXT);
-        }
-
         HWND hwnd = GetHandle();
         if (hwnd) {
             LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
@@ -70,7 +37,6 @@ MainFrame::MainFrame(const wxString& title)
             style |= WS_THICKFRAME;
             SetWindowLongPtr(hwnd, GWL_STYLE, style);
 
-            // Remove the extended window styles that might cause the line
             LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
             exStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
             SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle);
@@ -92,7 +58,6 @@ MainFrame::MainFrame(const wxString& title)
 
     CreateFrameControls();
     
-    // Set both minimum and initial window size
     SetMinSize(wxSize(600, 500));
     SetSize(wxSize(600, 500));
     
@@ -104,109 +69,9 @@ MainFrame::MainFrame(const wxString& title)
     Show();
 }
 
-void MainFrame::ApplyTheme(bool isDarkMode)
-{
-    // Apply to frame itself
-    this->SetBackgroundColour(isDarkMode ? ThemeColors::DARK_BACKGROUND : ThemeColors::LIGHT_BACKGROUND);
-    this->SetForegroundColour(isDarkMode ? ThemeColors::DARK_TEXT : ThemeColors::LIGHT_TEXT);
-    
-    // Apply to all children recursively
-    ApplyThemeToWindow(this, isDarkMode);
-    
-    // Refresh everything
-    Refresh(true);
-    Update();
-}
-
-void MainFrame::ApplyThemeToWindow(wxWindow* window, bool isDarkMode)
-{
-    // Apply theme to current window
-    window->SetBackgroundColour(isDarkMode ? ThemeColors::DARK_BACKGROUND : ThemeColors::LIGHT_BACKGROUND);
-    
-    if (auto* panel = wxDynamicCast(window, wxPanel)) {
-        panel->SetBackgroundColour(isDarkMode ? ThemeColors::DARK_BACKGROUND : ThemeColors::LIGHT_BACKGROUND);
-    }
-    else if (auto* button = wxDynamicCast(window, wxButton)) {
-        button->SetBackgroundColour(isDarkMode ? ThemeColors::DARK_BUTTON_BG : ThemeColors::LIGHT_BUTTON_BG);
-        button->SetForegroundColour(isDarkMode ? ThemeColors::DARK_BUTTON_TEXT : ThemeColors::LIGHT_BUTTON_TEXT);
-    }
-    else if (auto* text = wxDynamicCast(window, wxStaticText)) {
-        text->SetForegroundColour(isDarkMode ? ThemeColors::DARK_TEXT : ThemeColors::LIGHT_TEXT);
-    }
-    else if (auto* textCtrl = wxDynamicCast(window, wxTextCtrl)) {
-        textCtrl->SetBackgroundColour(isDarkMode ? ThemeColors::DARK_BUTTON_BG : ThemeColors::LIGHT_BACKGROUND);
-        textCtrl->SetForegroundColour(isDarkMode ? ThemeColors::DARK_TEXT : ThemeColors::LIGHT_TEXT);
-    }
-    else if (auto* gauge = wxDynamicCast(window, wxGauge)) {
-        gauge->SetBackgroundColour(isDarkMode ? ThemeColors::DARK_BUTTON_BG : ThemeColors::LIGHT_BUTTON_BG);
-    }
-    
-    // Recursively apply to all children
-    for (wxWindow* child : window->GetChildren()) {
-        ApplyThemeToWindow(child, isDarkMode);
-    }
-}
-
-void MainFrame::OnThemeChanged() 
-{
-    bool isDarkMode = GetBackgroundColour().GetLuminance() < 0.5;
-    
-    // Update titlebar
-    if (m_titleBar) {
-        m_titleBar->SetBackgroundColour(isDarkMode ? ThemeColors::DARK_TITLEBAR : ThemeColors::LIGHT_TITLEBAR);
-        m_titleBar->SetForegroundColour(isDarkMode ? ThemeColors::DARK_TEXT : ThemeColors::LIGHT_PRIMARY_TEXT);
-        m_titleBar->Refresh();
-    }
-    
-    // Update statusbar
-    if (m_statusBar) {
-        m_statusBar->SetBackgroundColour(isDarkMode ? ThemeColors::DARK_BACKGROUND : ThemeColors::LIGHT_BACKGROUND);
-        m_statusBar->Refresh();
-    }
-
-    // Update all panels and their controls
-    wxWindowList& children = GetChildren();
-    for (wxWindow* child : children) {
-        if (child == m_titleBar || child == m_statusBar) {
-            continue;  // Skip these as we've already handled them
-        }
-        
-        if (wxPanel* panel = wxDynamicCast(child, wxPanel)) {
-            StylePanel(panel);
-            
-            // Update all children of the panel
-            wxWindowList& panelChildren = panel->GetChildren();
-            for (wxWindow* panelChild : panelChildren) {
-                if (wxButton* button = wxDynamicCast(panelChild, wxButton)) {
-                    StyleButton(button);
-                }
-                else if (wxTextCtrl* textCtrl = wxDynamicCast(panelChild, wxTextCtrl)) {
-                    StyleTextCtrl(textCtrl);
-                }
-                else if (wxStaticText* staticText = wxDynamicCast(panelChild, wxStaticText)) {
-                    StyleText(staticText);
-                }
-                else if (wxGauge* gauge = wxDynamicCast(panelChild, wxGauge)) {
-                    StyleGauge(gauge);
-                }
-                else if (MyButton* myButton = wxDynamicCast(panelChild, MyButton)) {
-                    StyleMyButton(myButton);
-                }
-                panelChild->Refresh();
-            }
-            panel->Refresh();
-        }
-    }
-    
-    Layout();
-    Refresh();
-    Update();
-}
-
 void MainFrame::CreateFrameControls() 
 {
     wxPanel* mainPanel = new wxPanel(this);
-    StylePanel(mainPanel);
     
     wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
     mainSizer->Add(CreateLogoPanel(mainPanel), 0, wxEXPAND | wxALL, 5);
@@ -223,13 +88,16 @@ void MainFrame::CreateFrameControls()
     SetSizer(frameSizer);
 }
 
+void MainFrame::SetStatusText(const wxString& text)
+{
+    if (m_statusBar) {
+        m_statusBar->SetStatusText(text);
+    }
+}
 wxPanel* MainFrame::CreateLogoPanel(wxWindow* parent) {
     wxPanel* panel = new wxPanel(parent);
-    StylePanel(panel);
-    
     wxStaticBoxSizer* sizer = new wxStaticBoxSizer(wxVERTICAL, panel, "");
     wxPanel* headerPanel = new wxPanel(panel);
-    StylePanel(headerPanel);
     
     wxBoxSizer* headerSizer = new wxBoxSizer(wxHORIZONTAL);
     
@@ -237,7 +105,6 @@ wxPanel* MainFrame::CreateLogoPanel(wxWindow* parent) {
                                   "I:\\Files\\Desktop\\LinuxGUI\\gear.png", 
                                   wxDefaultPosition, wxSize(32, 32));
     m_settingsButton->SetAlwaysShowButton(true);
-    StyleMyButton(m_settingsButton);
     
     headerSizer->AddStretchSpacer();
     headerSizer->Add(m_settingsButton, 0, wxALIGN_CENTER_VERTICAL | wxALL, 10);
@@ -249,43 +116,33 @@ wxPanel* MainFrame::CreateLogoPanel(wxWindow* parent) {
     return panel;
 }
 
-// Update panel creation methods to use tighter spacing
 wxPanel* MainFrame::CreateDetectionPanel(wxWindow* parent) {
     wxPanel* panel = new wxPanel(parent);
-    StylePanel(panel);
-    
     wxStaticBoxSizer* sizer = new wxStaticBoxSizer(wxVERTICAL, panel, "");
     wxPanel* contentPanel = new wxPanel(panel);
-    StylePanel(contentPanel);
     
     wxBoxSizer* isoSizer = new wxBoxSizer(wxHORIZONTAL);
     auto isoLabel = new wxStaticText(contentPanel, wxID_ANY, "ISO File:");
-    StyleText(isoLabel);
     isoSizer->Add(isoLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 5);
     
     m_isoPathCtrl = new wxTextCtrl(contentPanel, wxID_ANY, "", 
                                   wxDefaultPosition, wxDefaultSize, wxBORDER_SIMPLE);
-    StyleTextCtrl(m_isoPathCtrl);
     isoSizer->Add(m_isoPathCtrl, 1, wxRIGHT, 5);
     
     wxButton* browseButton = new wxButton(contentPanel, ID_BROWSE_ISO, "Browse", 
                                         wxDefaultPosition, wxSize(-1, 25), wxBORDER_NONE);
-    StyleButton(browseButton);
     isoSizer->Add(browseButton, 0);
 
     wxBoxSizer* detectSizer = new wxBoxSizer(wxHORIZONTAL);
     wxButton* detectButton = new wxButton(contentPanel, ID_DETECT, "Detect", 
                                         wxDefaultPosition, wxSize(-1, 25), wxBORDER_NONE);
-    StyleButton(detectButton);
     detectSizer->Add(detectButton, 0, wxRIGHT, 5);
     
     auto distroLabel = new wxStaticText(contentPanel, wxID_ANY, "Detected Distribution:");
-    StyleText(distroLabel);
     detectSizer->Add(distroLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 5);
     
     m_distroCtrl = new wxTextCtrl(contentPanel, wxID_ANY, "", 
                                  wxDefaultPosition, wxDefaultSize, wxTE_READONLY | wxBORDER_SIMPLE);
-    StyleTextCtrl(m_distroCtrl);
     detectSizer->Add(m_distroCtrl, 1);
 
     wxBoxSizer* contentSizer = new wxBoxSizer(wxVERTICAL);
@@ -298,49 +155,38 @@ wxPanel* MainFrame::CreateDetectionPanel(wxWindow* parent) {
     return panel;
 }
 
-
 wxPanel* MainFrame::CreateProjectPanel(wxWindow* parent) {
     wxPanel* panel = new wxPanel(parent);
-    StylePanel(panel);
-    
     wxStaticBoxSizer* sizer = new wxStaticBoxSizer(wxVERTICAL, panel, "");
     wxPanel* contentPanel = new wxPanel(panel);
-    StylePanel(contentPanel);
     
-    wxFlexGridSizer* gridSizer = new wxFlexGridSizer(2, 2, 5, 5);  // Reduced gap between rows and columns
+    wxFlexGridSizer* gridSizer = new wxFlexGridSizer(2, 2, 5, 5);
     gridSizer->AddGrowableCol(1, 1);
 
     auto nameLabel = new wxStaticText(contentPanel, wxID_ANY, "Project Name:");
-    StyleText(nameLabel);
     gridSizer->Add(nameLabel, 0, wxALIGN_CENTER_VERTICAL);
     
     m_projectNameCtrl = new wxTextCtrl(contentPanel, wxID_ANY, "", 
                                      wxDefaultPosition, wxSize(-1, 25), wxBORDER_SIMPLE);
-    StyleTextCtrl(m_projectNameCtrl);
     gridSizer->Add(m_projectNameCtrl, 1, wxEXPAND);
 
     auto versionLabel = new wxStaticText(contentPanel, wxID_ANY, "Version:");
-    StyleText(versionLabel);
     gridSizer->Add(versionLabel, 0, wxALIGN_CENTER_VERTICAL);
     
     m_versionCtrl = new wxTextCtrl(contentPanel, wxID_ANY, "", 
                                   wxDefaultPosition, wxSize(-1, 25), wxBORDER_SIMPLE);
-    StyleTextCtrl(m_versionCtrl);
     gridSizer->Add(m_versionCtrl, 1, wxEXPAND);
 
     wxBoxSizer* dirSizer = new wxBoxSizer(wxHORIZONTAL);
     auto dirLabel = new wxStaticText(contentPanel, wxID_ANY, "Working Directory:");
-    StyleText(dirLabel);
     dirSizer->Add(dirLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 5);
     
     m_workDirCtrl = new wxTextCtrl(contentPanel, wxID_ANY, "", 
                                   wxDefaultPosition, wxSize(-1, 25), wxBORDER_SIMPLE);
-    StyleTextCtrl(m_workDirCtrl);
     dirSizer->Add(m_workDirCtrl, 1, wxRIGHT, 5);
     
     wxButton* workDirButton = new wxButton(contentPanel, ID_BROWSE_WORKDIR, "Browse", 
                                          wxDefaultPosition, wxSize(-1, 25), wxBORDER_NONE);
-    StyleButton(workDirButton);
     dirSizer->Add(workDirButton, 0);
 
     wxBoxSizer* contentSizer = new wxBoxSizer(wxVERTICAL);
@@ -355,41 +201,30 @@ wxPanel* MainFrame::CreateProjectPanel(wxWindow* parent) {
 
 wxPanel* MainFrame::CreateProgressPanel(wxWindow* parent) {
     wxPanel* panel = new wxPanel(parent);
-    StylePanel(panel);
-    
     wxStaticBoxSizer* sizer = new wxStaticBoxSizer(wxVERTICAL, panel, "");
     wxPanel* contentPanel = new wxPanel(panel);
-    StylePanel(contentPanel);
     
     wxBoxSizer* contentSizer = new wxBoxSizer(wxVERTICAL);
     
-    // Progress gauge with reduced height
     m_progressGauge = new wxGauge(contentPanel, wxID_ANY, 100, 
                                  wxDefaultPosition, wxSize(-1, 20));
-    StyleGauge(m_progressGauge);
     contentSizer->Add(m_progressGauge, 0, wxEXPAND | wxALL, 5);
     
-    // Status text with reduced spacing
     m_statusText = new wxStaticText(contentPanel, wxID_ANY, "");
-    StyleText(m_statusText);
     contentSizer->Add(m_statusText, 0, wxEXPAND | wxLEFT | wxRIGHT, 5);
 
-    // Button sizer with reduced spacing
     wxBoxSizer* buttonSizer = new wxBoxSizer(wxHORIZONTAL);
     buttonSizer->AddStretchSpacer();
     
     wxButton* extractButton = new wxButton(contentPanel, ID_EXTRACT, "Extract", 
                                          wxDefaultPosition, wxSize(-1, 25), wxBORDER_NONE);
-    StyleButton(extractButton, true);  // Primary button
     
     wxButton* cancelButton = new wxButton(contentPanel, ID_CANCEL, "Cancel", 
                                         wxDefaultPosition, wxSize(-1, 25), wxBORDER_NONE);
-    StyleButton(cancelButton);
     
     buttonSizer->Add(extractButton, 0, wxRIGHT, 5);
     buttonSizer->Add(cancelButton, 0);
     
-    // Add button sizer with reduced top spacing
     contentSizer->Add(buttonSizer, 0, wxEXPAND | wxALL, 5);
     
     contentPanel->SetSizer(contentSizer);
@@ -397,21 +232,6 @@ wxPanel* MainFrame::CreateProgressPanel(wxWindow* parent) {
     panel->SetSizer(sizer);
     return panel;
 }
-
-void MainFrame::CreateSettingsMenu() {
-    wxMenu* settingsMenu = new wxMenu;
-    settingsMenu->Append(wxID_ANY, "Configure Paths...");
-    settingsMenu->Append(wxID_ANY, "Detection Rules...");
-    settingsMenu->AppendSeparator();
-    settingsMenu->Append(wxID_ANY, "Reset to Defaults");
-    
-    wxPoint pos = m_settingsButton->GetPosition();
-    pos.y += m_settingsButton->GetSize().GetHeight();
-    PopupMenu(settingsMenu, pos);
-    
-    delete settingsMenu;
-}
-
 void MainFrame::OnBrowseISO(wxCommandEvent& event) {
     wxFileDialog openFileDialog(this, "Open ISO file", "", "",
                               "ISO files (*.iso)|*.iso",
@@ -434,23 +254,19 @@ void MainFrame::OnBrowseWorkDir(wxCommandEvent& event) {
 }
 
 void MainFrame::OnExtract(wxCommandEvent& event) {
-    wxString workDir = m_workDirCtrl->GetValue();
-    wxString isoPath = m_isoPathCtrl->GetValue();
-    
-    if (workDir.IsEmpty() || isoPath.IsEmpty()) {
+    if (m_workDirCtrl->IsEmpty() || m_isoPathCtrl->IsEmpty()) {
         wxMessageBox("Please select both ISO file and working directory.", 
                     "Error", wxOK | wxICON_ERROR);
         return;
     }
 
     if (m_projectNameCtrl->IsEmpty()) {
-        wxMessageBox("Please enter a project name.", 
-                    "Error", wxOK | wxICON_ERROR);
+        wxMessageBox("Please enter a project name.", "Error", wxOK | wxICON_ERROR);
         return;
     }
 
-    // Create project directory
-    wxString projectPath = wxFileName(workDir, m_projectNameCtrl->GetValue()).GetFullPath();
+    wxString projectPath = wxFileName(m_workDirCtrl->GetValue(), 
+                                    m_projectNameCtrl->GetValue()).GetFullPath();
     if (!wxFileName::Mkdir(projectPath, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL)) {
         wxMessageBox("Failed to create project directory.", 
                     "Error", wxOK | wxICON_ERROR);
@@ -458,7 +274,7 @@ void MainFrame::OnExtract(wxCommandEvent& event) {
     }
 
     m_currentExtractor = new ISOExtractor(
-        isoPath, 
+        m_isoPathCtrl->GetValue(), 
         projectPath,
         [this](int progress, const wxString& status) {
             CallAfter(&MainFrame::UpdateExtractionProgress, progress, status);
@@ -473,10 +289,7 @@ void MainFrame::OnExtract(wxCommandEvent& event) {
         return;
     }
 
-    // Store ISO path for second window
-    m_currentISOPath = isoPath;
-
-    // Disable extract button during extraction
+    m_currentISOPath = m_isoPathCtrl->GetValue();
     FindWindow(ID_EXTRACT)->Enable(false);
     FindWindow(ID_CANCEL)->Enable(true);
 }
@@ -493,10 +306,13 @@ void MainFrame::OnCancel(wxCommandEvent& event) {
     FindWindow(ID_CANCEL)->Enable(false);
 }
 
-void MainFrame::OpenSecondWindow() {
-    SecondWindow* secondWindow = new SecondWindow(this, "Terminal", m_isoPathCtrl->GetValue());
-    this->Hide();
-    secondWindow->Show(true);
+void MainFrame::OnSettings(wxCommandEvent& event) {
+    SettingsDialog* dialog = new SettingsDialog(this);
+    if (dialog->ShowModal() == wxID_OK) {
+        Refresh();
+        Update();
+    }
+    dialog->Destroy();
 }
 
 void MainFrame::UpdateExtractionProgress(int progress, const wxString& status) {
@@ -508,7 +324,6 @@ void MainFrame::UpdateExtractionProgress(int progress, const wxString& status) {
         FindWindow(ID_CANCEL)->Enable(false);
         SetStatusText("Extraction completed successfully");
         
-        // Pass the stored ISO path to SecondWindow
         SecondWindow* secondWindow = new SecondWindow(this, "Terminal", m_currentISOPath);
         this->Hide();
         secondWindow->Show(true);
@@ -518,31 +333,6 @@ void MainFrame::UpdateExtractionProgress(int progress, const wxString& status) {
     }
 }
 
-void MainFrame::OnSettings(wxCommandEvent& event)
-{
-    try {
-        SettingsDialog* dialog = new SettingsDialog(this);
-        int result = dialog->ShowModal();
-        
-        if (result == wxID_OK) {
-            // Theme changes already applied in dialog's OnOK
-            Refresh();
-            Update();
-        }
-        
-        dialog->Destroy();  // Clean up the dialog
-    }
-    catch (const std::exception& e) {
-        wxMessageBox(wxString::Format("Error in settings: %s", e.what()),
-                    "Settings Error", wxOK | wxICON_ERROR);
-    }
-}
-void MainFrame::SetStatusText(const wxString& text)
-{
-    if (m_statusBar) {
-        m_statusBar->SetStatusText(text);
-    }
-}
 bool MainFrame::LoadConfig() {
     try {
         std::filesystem::path exePath = std::filesystem::current_path() / "config.yaml";
@@ -611,7 +401,6 @@ void MainFrame::OnDetect(wxCommandEvent& event) {
         m_projectNameCtrl->SetValue(distribution);
     }
 }
-
 bool MainFrame::SearchReleaseFile(const wxString& isoPath, wxString& releaseContent) {
     try {
         ISOReader reader(isoPath.ToStdString());
@@ -691,6 +480,33 @@ bool MainFrame::SearchGrubEnv(const wxString& isoPath, wxString& distributionNam
     }
 }
 
+wxString MainFrame::ExtractNameFromGrubEnv(const wxString& content) {
+    wxString name;
+    wxString version;
+    
+    wxStringTokenizer tokenizer(content, "\n");
+    while (tokenizer.HasMoreTokens()) {
+        wxString line = tokenizer.GetNextToken().Trim(true).Trim(false);
+        
+        if (line.StartsWith("NAME=")) {
+            name = line.Mid(5);
+            name.Replace("\"", "");
+        }
+        else if (line.StartsWith("VERSION=")) {
+            version = line.Mid(8);
+            version.Replace("\"", "");
+        }
+    }
+
+    if (!name.IsEmpty() && !version.IsEmpty()) {
+        return name + " " + version;
+    }
+    else if (!name.IsEmpty()) {
+        return name;
+    }
+    return "";
+}
+
 wxString MainFrame::DetectDistribution(const wxString& releaseContent) {
     wxString lowerContent = releaseContent.Lower();
     
@@ -721,29 +537,23 @@ wxString MainFrame::DetectDistribution(const wxString& releaseContent) {
     }
     return "Unknown Distribution";
 }
-wxString MainFrame::ExtractNameFromGrubEnv(const wxString& content) {
-    wxString name;
-    wxString version;
-    
-    wxStringTokenizer tokenizer(content, "\n");
-    while (tokenizer.HasMoreTokens()) {
-        wxString line = tokenizer.GetNextToken().Trim(true).Trim(false);
-        
-        if (line.StartsWith("NAME=")) {
-            name = line.Mid(5);
-            name.Replace("\"", "");
-        }
-        else if (line.StartsWith("VERSION=")) {
-            version = line.Mid(8);
-            version.Replace("\"", "");
-        }
-    }
 
-    if (!name.IsEmpty() && !version.IsEmpty()) {
-        return name + " " + version;
-    }
-    else if (!name.IsEmpty()) {
-        return name;
-    }
-    return "";
+void MainFrame::CreateSettingsMenu() {
+    wxMenu* settingsMenu = new wxMenu;
+    settingsMenu->Append(wxID_ANY, "Configure Paths...");
+    settingsMenu->Append(wxID_ANY, "Detection Rules...");
+    settingsMenu->AppendSeparator();
+    settingsMenu->Append(wxID_ANY, "Reset to Defaults");
+    
+    wxPoint pos = m_settingsButton->GetPosition();
+    pos.y += m_settingsButton->GetSize().GetHeight();
+    PopupMenu(settingsMenu, pos);
+    
+    delete settingsMenu;
+}
+
+void MainFrame::OpenSecondWindow() {
+    SecondWindow* secondWindow = new SecondWindow(this, "Terminal", m_isoPathCtrl->GetValue());
+    this->Hide();
+    secondWindow->Show(true);
 }
