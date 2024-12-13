@@ -12,28 +12,44 @@ bool PlatformTheme::s_isDarkMode = false;
 
 bool PlatformTheme::IsDarkMode() {
 #ifdef __WXMSW__
+    // First try the modern Windows 10/11 way
     HKEY hKey;
     DWORD value;
     DWORD size = sizeof(value);
-    
+    bool isDark = false;
+
+    // Try UWP apps theme setting
     if (RegOpenKeyExW(HKEY_CURRENT_USER,
                      L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-                     0, KEY_QUERY_VALUE, &hKey) == ERROR_SUCCESS) {
-        if (RegQueryValueExW(hKey, L"AppsUseDarkTheme", NULL, NULL,
+                     0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        size = sizeof(value);
+        if (RegQueryValueExW(hKey, L"AppsUseDarkTheme", 0, NULL,
                            reinterpret_cast<LPBYTE>(&value), &size) == ERROR_SUCCESS) {
-            RegCloseKey(hKey);
-            return value == 1;
+            isDark = (value == 1);
         }
         RegCloseKey(hKey);
+        if (isDark) return true;
     }
-    return false;
-#elif defined(__WXGTK__)
-    return GetGtkThemePreference();
-#elif defined(__WXOSX__)
-    return GetMacOSThemePreference();
+
+    // Try system apps theme setting
+    if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                     L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                     0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        size = sizeof(value);
+        if (RegQueryValueExW(hKey, L"SystemUsesLightTheme", 0, NULL,
+                           reinterpret_cast<LPBYTE>(&value), &size) == ERROR_SUCCESS) {
+            isDark = (value == 0);  // Note: this value is inverted
+        }
+        RegCloseKey(hKey);
+        return isDark;
+    }
+
+    // Fallback to checking system colors
+    DWORD backgroundColor = GetSysColor(COLOR_WINDOW);
+    int brightness = (GetRValue(backgroundColor) + GetGValue(backgroundColor) + GetBValue(backgroundColor)) / 3;
+    return brightness < 128;
 #else
-    wxColour bg = wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW);
-    return ThemeUtils::GetPerceivedBrightness(bg) < 128;
+    return false;
 #endif
 }
 

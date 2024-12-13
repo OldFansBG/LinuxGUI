@@ -4,12 +4,13 @@
 
 class ISOAnalyzerApp : public wxApp {
 public:
-    virtual bool OnInit() {
+    bool ISOAnalyzerApp::OnInit() {
         wxInitAllImageHandlers();
-        
-        // Initialize theme system with system preference
+
+        // Initialize and detect system theme before creating main frame
         ThemeSystem::Get().DetectSystemTheme();
-        
+        ThemeSystem::Get().LoadThemePreference();  // Load any saved theme preferences
+
         MainFrame* frame = new MainFrame("ISO Analyzer");
         frame->Show(true);
         return true;

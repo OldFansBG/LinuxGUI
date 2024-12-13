@@ -22,6 +22,8 @@ void ThemeSystem::DetectSystemTheme() {
     bool isDark = PlatformTheme::IsDarkMode();
     bool isHighContrast = PlatformTheme::IsHighContrastMode();
     
+    wxMessageBox(wxString::Format("Detected: isDark=%d, isHighContrast=%d", isDark, isHighContrast));
+    
     if (isHighContrast) {
         m_currentTheme = isDark ? ThemeVariant::HighContrastDark : ThemeVariant::HighContrastLight;
     } else {

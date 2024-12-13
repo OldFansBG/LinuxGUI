@@ -24,26 +24,37 @@ BEGIN_EVENT_TABLE(MainFrame, wxFrame)
 END_EVENT_TABLE()
 
 MainFrame::MainFrame(const wxString& title)
-   : wxFrame(NULL, wxID_ANY, title, wxDefaultPosition, wxDefaultSize,
-            wxDEFAULT_FRAME_STYLE & ~(wxCAPTION))
+   : wxFrame() // Don't create the window in the initialization list
 {
-    ThemeSystem::Get().RegisterControl(this);
+    // Initialize theme system first
+    auto& themeSystem = ThemeSystem::Get();
+    themeSystem.DetectSystemTheme();
+
+    // Create the window
+    Create(NULL, wxID_ANY, title, wxDefaultPosition, wxDefaultSize,
+           wxNO_BORDER | wxCLIP_CHILDREN);
+
+    // Register with theme system after window creation
+    themeSystem.RegisterControl(this);
     SetBackgroundStyle(wxBG_STYLE_PAINT);
 
     #ifdef __WXMSW__
         HWND hwnd = GetHandle();
         if (hwnd) {
-            // Remove window styles
             LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
-            style &= ~(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU);  // Remove caption, thick frame and system menu
+            style &= ~(WS_CAPTION | WS_OVERLAPPED | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
+            style |= WS_THICKFRAME;
             SetWindowLongPtr(hwnd, GWL_STYLE, style);
 
-            // Remove extended window styles
             LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
-            exStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
+            exStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_WINDOWEDGE);
             SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle);
 
-            // Force window to update its appearance
+            // Ensure the window is valid before setting attributes
+            BOOL value = TRUE;
+            DwmSetWindowAttribute(hwnd, 19, &value, sizeof(value));  // Dark mode
+            DwmSetWindowAttribute(hwnd, DWMWA_MICA_EFFECT, &value, sizeof(value));
+            
             SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
                         SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
         }
@@ -66,9 +77,7 @@ MainFrame::MainFrame(const wxString& title)
    
     Centre();
     Layout();
-    Show();
 
-    // Register for theme changes
     ThemeSystem::Get().AddThemeChangeListener(this, 
         [this](ThemeSystem::ThemeVariant) { OnThemeChanged(); });
 }
