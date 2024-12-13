@@ -1,6 +1,3 @@
-
-
-// CustomTitleBar.cpp
 #include "CustomTitleBar.h"
 
 BEGIN_EVENT_TABLE(CustomTitleBar, wxPanel)
@@ -19,7 +16,10 @@ CustomTitleBar::CustomTitleBar(wxWindow* parent)
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxSize(-1, 28)), 
       m_isDragging(false)
 {
-    ThemeManager::Get().AddObserver(this);
+    ThemeSystem::Get().RegisterControl(this);
+    ThemeSystem::Get().AddThemeChangeListener(this, 
+        [this](ThemeSystem::ThemeVariant theme) { OnThemeChanged(theme); });
+    
     CreateControls();
 }
 
@@ -52,13 +52,16 @@ void CustomTitleBar::CreateControls() {
     sizer->Add(m_closeButton, 0, wxEXPAND);
     
     SetSizer(sizer);
+
+    SetBackgroundColour(ThemeSystem::Get().GetColor(ColorRole::TitleBar));
+    titleText->SetForegroundColour(ThemeSystem::Get().GetColor(ColorRole::TitleBarText));
 }
 
 void CustomTitleBar::OnPaint(wxPaintEvent& event) {
     wxPaintDC dc(this);
     wxRect rect = GetClientRect();
     
-    dc.SetBrush(wxBrush(GetBackgroundColour()));
+    dc.SetBrush(wxBrush(ThemeSystem::Get().GetColor(ColorRole::TitleBar)));
     dc.SetPen(*wxTRANSPARENT_PEN);
     dc.DrawRectangle(rect);
 }
@@ -133,4 +136,17 @@ void CustomTitleBar::OnClose(wxCommandEvent& event) {
     if (wxFrame* frame = wxDynamicCast(GetParent(), wxFrame)) {
         frame->Close();
     }
+}
+
+void CustomTitleBar::OnThemeChanged(ThemeSystem::ThemeVariant theme) {
+    SetBackgroundColour(ThemeSystem::Get().GetColor(ColorRole::TitleBar));
+    
+    for(wxWindow* child : GetChildren()) {
+        if (auto* text = wxDynamicCast(child, wxStaticText)) {
+            text->SetForegroundColour(ThemeSystem::Get().GetColor(ColorRole::TitleBarText));
+        }
+    }
+    
+    Refresh();
+    Update();
 }

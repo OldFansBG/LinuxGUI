@@ -3,7 +3,8 @@
 
 #include <wx/wx.h>
 #include "MyButton.h"
-#include "ThemeManager.h"
+#include "ThemeSystem.h"
+#include "ThemeRoles.h"  // Add this include
 
 class CustomTitleBar : public wxPanel {
 private:
@@ -16,7 +17,7 @@ private:
 public:
     CustomTitleBar(wxWindow* parent);
     ~CustomTitleBar() {
-        ThemeManager::Get().RemoveObserver(this);
+        ThemeSystem::Get().UnregisterControl(this);
     }
 
 private:
@@ -30,6 +31,7 @@ private:
     void OnMinimize(wxCommandEvent& event);
     void OnMaximize(wxCommandEvent& event);
     void OnClose(wxCommandEvent& event);
+    void OnThemeChanged(ThemeSystem::ThemeVariant theme);
 
     MyButton* m_minimizeButton;
     MyButton* m_maximizeButton;

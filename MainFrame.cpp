@@ -12,7 +12,8 @@
 #include "MyButton.h"
 #include <wx/settings.h>
 #include <wx/display.h>
-#include <wx/filename.h> // Add this include
+#include <wx/filename.h>
+
 BEGIN_EVENT_TABLE(MainFrame, wxFrame)
    EVT_BUTTON(ID_BROWSE_ISO, MainFrame::OnBrowseISO)
    EVT_BUTTON(ID_BROWSE_WORKDIR, MainFrame::OnBrowseWorkDir)
@@ -26,26 +27,25 @@ MainFrame::MainFrame(const wxString& title)
    : wxFrame(NULL, wxID_ANY, title, wxDefaultPosition, wxDefaultSize,
             wxDEFAULT_FRAME_STYLE & ~(wxCAPTION))
 {
-    ThemeManager::Get().AddObserver(this);
+    ThemeSystem::Get().RegisterControl(this);
     SetBackgroundStyle(wxBG_STYLE_PAINT);
 
     #ifdef __WXMSW__
         HWND hwnd = GetHandle();
         if (hwnd) {
+            // Remove window styles
             LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
-            style &= ~(WS_CAPTION | WS_OVERLAPPED | WS_SYSMENU);
-            style |= WS_THICKFRAME;
+            style &= ~(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU);  // Remove caption, thick frame and system menu
             SetWindowLongPtr(hwnd, GWL_STYLE, style);
 
+            // Remove extended window styles
             LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
-            exStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
+            exStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
             SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle);
 
+            // Force window to update its appearance
             SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
                         SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
-
-            BOOL value = TRUE;
-            DwmSetWindowAttribute(hwnd, DWMWA_MICA_EFFECT, &value, sizeof(value));
         }
     #endif
 
@@ -67,6 +67,19 @@ MainFrame::MainFrame(const wxString& title)
     Centre();
     Layout();
     Show();
+
+    // Register for theme changes
+    ThemeSystem::Get().AddThemeChangeListener(this, 
+        [this](ThemeSystem::ThemeVariant) { OnThemeChanged(); });
+}
+
+void MainFrame::OnThemeChanged() {
+    Refresh();
+    Update();
+    for (wxWindow* child : GetChildren()) {
+        child->Refresh();
+        child->Update();
+    }
 }
 
 void MainFrame::CreateFrameControls() 
@@ -94,6 +107,7 @@ void MainFrame::SetStatusText(const wxString& text)
         m_statusBar->SetStatusText(text);
     }
 }
+
 wxPanel* MainFrame::CreateLogoPanel(wxWindow* parent) {
     wxPanel* panel = new wxPanel(parent);
     wxStaticBoxSizer* sizer = new wxStaticBoxSizer(wxVERTICAL, panel, "");
@@ -218,7 +232,6 @@ wxPanel* MainFrame::CreateProgressPanel(wxWindow* parent) {
     
     wxButton* extractButton = new wxButton(contentPanel, ID_EXTRACT, "Extract", 
                                          wxDefaultPosition, wxSize(-1, 25), wxBORDER_NONE);
-    
     wxButton* cancelButton = new wxButton(contentPanel, ID_CANCEL, "Cancel", 
                                         wxDefaultPosition, wxSize(-1, 25), wxBORDER_NONE);
     
@@ -226,12 +239,12 @@ wxPanel* MainFrame::CreateProgressPanel(wxWindow* parent) {
     buttonSizer->Add(cancelButton, 0);
     
     contentSizer->Add(buttonSizer, 0, wxEXPAND | wxALL, 5);
-    
     contentPanel->SetSizer(contentSizer);
     sizer->Add(contentPanel, 1, wxEXPAND | wxALL, 2);
     panel->SetSizer(sizer);
     return panel;
 }
+
 void MainFrame::OnBrowseISO(wxCommandEvent& event) {
     wxFileDialog openFileDialog(this, "Open ISO file", "", "",
                               "ISO files (*.iso)|*.iso",
@@ -401,6 +414,7 @@ void MainFrame::OnDetect(wxCommandEvent& event) {
         m_projectNameCtrl->SetValue(distribution);
     }
 }
+
 bool MainFrame::SearchReleaseFile(const wxString& isoPath, wxString& releaseContent) {
     try {
         ISOReader reader(isoPath.ToStdString());

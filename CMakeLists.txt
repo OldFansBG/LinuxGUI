@@ -53,7 +53,14 @@ set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "disable yaml tests")
 set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "disable yaml tools")
 FetchContent_MakeAvailable(yaml-cpp)
 
-# Source files
+# Theme system sources
+set(THEME_SOURCES
+    ThemeSystem.cpp
+    ThemeRoles.h
+    PlatformTheme.cpp
+)
+
+# Main source files
 set(SOURCES
     main.cpp
     MainFrame.cpp 
@@ -67,7 +74,8 @@ set(SOURCES
     SettingsDialog.cpp
     ISOExtractor.cpp
     DockerTransfer.cpp
-    ThemeManager.cpp
+    gear_icon.cpp
+    ${THEME_SOURCES}
 )
 
 # Header files
@@ -84,8 +92,10 @@ set(HEADERS
     ISOExtractor.h
     DockerTransfer.h
     MyButton.h
-    ThemeColors.h
-    ThemeManager.h
+    ThemeSystem.h
+    ThemeRoles.h
+    PlatformTheme.h
+    gear_icon.h
 )
 
 # Platform-specific configurations
@@ -110,6 +120,8 @@ add_executable(iso_analyzer WIN32 ${SOURCES} ${HEADERS})
 target_include_directories(iso_analyzer 
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/theme
         ${libarchive_SOURCE_DIR}/libarchive
         ${libarchive_BINARY_DIR}
 )
@@ -138,3 +150,25 @@ if(WIN32)
     set_property(TARGET iso_analyzer PROPERTY
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
+
+# Copy configuration files to build directory
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.yaml
+               ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config.yaml COPYONLY)
+
+# Copy resource files
+file(GLOB RESOURCE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/*.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/*.ico"
+)
+file(COPY ${RESOURCE_FILES} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+
+# Install configuration
+install(TARGETS iso_analyzer
+    RUNTIME DESTINATION bin
+)
+
+install(FILES 
+    ${CMAKE_CURRENT_SOURCE_DIR}/config.yaml
+    ${RESOURCE_FILES}
+    DESTINATION bin
+)

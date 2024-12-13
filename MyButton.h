@@ -3,10 +3,10 @@
 #include <wx/wx.h>
 #include <wx/graphics.h>
 #include <memory>
-#include "ThemeManager.h" // Add this include
+#include "ThemeSystem.h"
+#include "ThemeRoles.h"  // Add this include
 
-class MyButton : public wxWindow
-{
+class MyButton : public wxWindow {
 public:
     MyButton(wxWindow *parent, wxWindowID id, const wxString& imagePath, 
              const wxPoint &pos = wxDefaultPosition, 
@@ -15,7 +15,7 @@ public:
              const wxString &name = wxPanelNameStr)
         : wxWindow(), m_alwaysShow(false)
     {
-        ThemeManager::Get().AddObserver(this);
+        ThemeSystem::Get().RegisterControl(this);
         SetBackgroundStyle(wxBG_STYLE_TRANSPARENT);
         wxWindow::Create(parent, id, pos, size, style, name);
 
@@ -34,22 +34,20 @@ public:
         SetWindowLong(GetHWND(), GWL_EXSTYLE, extendedStyle | WS_EX_TRANSPARENT);
 #endif
 
-        this->Bind(wxEVT_PAINT, &MyButton::OnPaint, this);
-        this->Bind(wxEVT_LEFT_DOWN, &MyButton::OnMouseDown, this);
-        this->Bind(wxEVT_LEFT_UP, &MyButton::OnMouseUp, this);
-        this->Bind(wxEVT_ENTER_WINDOW, &MyButton::OnMouseEnter, this);
-        this->Bind(wxEVT_LEAVE_WINDOW, &MyButton::OnMouseLeave, this);
+        Bind(wxEVT_PAINT, &MyButton::OnPaint, this);
+        Bind(wxEVT_LEFT_DOWN, &MyButton::OnMouseDown, this);
+        Bind(wxEVT_LEFT_UP, &MyButton::OnMouseUp, this);
+        Bind(wxEVT_ENTER_WINDOW, &MyButton::OnMouseEnter, this);
+        Bind(wxEVT_LEAVE_WINDOW, &MyButton::OnMouseLeave, this);
     }
 
     ~MyButton() {
-        ThemeManager::Get().RemoveObserver(this);
+        ThemeSystem::Get().UnregisterControl(this);
     }
 
     void SetAlwaysShowButton(bool always) { m_alwaysShow = always; }
-    void SetHoverColor(const wxColour& color) { m_hoverColor = color; }
 
-    void OnPaint(wxPaintEvent &event)
-    {
+    void OnPaint(wxPaintEvent &event) {
         wxPaintDC dc(this);
         std::unique_ptr<wxGraphicsContext> gc{wxGraphicsContext::Create(dc)};
         if (gc) {
@@ -57,21 +55,19 @@ public:
         }
     }
 
-    void DrawOnContext(wxGraphicsContext &gc)
-    {
-        auto buttonRect = this->GetClientRect();
+    void DrawOnContext(wxGraphicsContext &gc) {
+        auto buttonRect = GetClientRect();
 
-        if (m_image.IsOk())
-        {
+        if (m_image.IsOk()) {
             wxImage tempImage = m_originalImage.Copy();
             wxColour tintColor;
 
             if (m_isPressed) {
-                tintColor = ThemeManager::Get().GetColors().buttonHover.ChangeLightness(80);
+                tintColor = ThemeSystem::Get().GetColor(ColorRole::ButtonPressed);
             } else if (m_isHovered) {
-                tintColor = ThemeManager::Get().GetColors().buttonHover;
+                tintColor = ThemeSystem::Get().GetColor(ColorRole::ButtonHover);
             } else {
-                tintColor = GetForegroundColour();
+                tintColor = ThemeSystem::Get().GetColor(ColorRole::Button);
             }
 
             for (int x = 0; x < tempImage.GetWidth(); x++) {
@@ -105,6 +101,7 @@ public:
         }
     }
 
+private:
     void OnMouseDown(wxMouseEvent& event) {
         m_isPressed = true;
         Refresh();
@@ -131,11 +128,9 @@ public:
         Refresh();
     }
 
-private:
     wxImage m_image;
     wxImage m_originalImage;
     bool m_isHovered = false;
     bool m_isPressed = false;
     bool m_alwaysShow;
-    wxColour m_hoverColor;
 };
