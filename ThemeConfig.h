@@ -4,6 +4,44 @@
 #include <wx/wx.h>
 #include <yaml-cpp/yaml.h>
 #include <string>
+#include <map>
+
+struct ThemeColors {
+    struct ButtonColors {
+        wxColour background;
+        wxColour hover;
+        wxColour pressed;
+        wxColour text;
+    };
+
+    struct InputColors {
+        wxColour background;
+        wxColour border;
+        wxColour text;
+        wxColour placeholder;
+    };
+
+    struct GaugeColors {
+        wxColour background;
+        wxColour fill;
+    };
+
+    struct PanelColors {
+        wxColour background;
+        wxColour border;
+    };
+
+    wxColour titleBar;
+    wxColour statusBar;
+    wxColour background;
+    wxColour text;
+    wxColour secondaryText;
+    wxColour border;
+    ButtonColors button;
+    InputColors input;
+    GaugeColors gauge;
+    PanelColors panel;
+};
 
 class ThemeConfig {
 public:
@@ -11,12 +49,26 @@ public:
     
     void LoadThemes(const wxString& filename = "themes.json");
     void ApplyTheme(wxWindow* window, const wxString& themeName);
-    wxColour GetTitleBarColor(const wxString& themeName) const;
+    void ApplyThemeToControl(wxWindow* control, const ThemeColors& colors);
+    const ThemeColors& GetThemeColors(const wxString& themeName) const;
+    
+    bool HasTheme(const wxString& themeName) const;
+    wxArrayString GetAvailableThemes() const;
+    wxString GetCurrentTheme() const { return m_currentTheme; }
+    void SetCurrentTheme(const wxString& themeName) { m_currentTheme = themeName.Lower(); }
 
 private:
-    ThemeConfig() {}
+    ThemeConfig() = default;
+    ThemeConfig(const ThemeConfig&) = delete;
+    ThemeConfig& operator=(const ThemeConfig&) = delete;
+
+    wxColour ParseColor(const YAML::Node& node) const;
+    void ParseThemeColors(const YAML::Node& themeNode, ThemeColors& colors);
+    void ApplyColorsRecursively(wxWindow* window, const ThemeColors& colors);
+
     YAML::Node m_themes;
-    wxColour HexToColor(const std::string& hex) const;
+    std::map<wxString, ThemeColors> m_themeColors;
+    wxString m_currentTheme = "light";
 };
 
 #endif // THEMECONFIG_H

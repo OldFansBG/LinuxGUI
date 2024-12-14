@@ -23,9 +23,6 @@ CustomTitleBar::CustomTitleBar(wxWindow* parent)
 void CustomTitleBar::CreateControls() {
     wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
     
-    // Set a default background color
-    SetBackgroundColour(*wxBLUE);
-
     wxStaticText* titleText = new wxStaticText(this, wxID_ANY, "ISO Analyzer",
                                               wxDefaultPosition, wxDefaultSize,
                                               wxALIGN_CENTER_HORIZONTAL);
@@ -33,7 +30,6 @@ void CustomTitleBar::CreateControls() {
     titleFont.SetPointSize(9);
     titleFont.SetWeight(wxFONTWEIGHT_BOLD);
     titleText->SetFont(titleFont);
-    titleText->SetForegroundColour(*wxWHITE);
     
     titleText->Bind(wxEVT_LEFT_DOWN, &CustomTitleBar::OnMouseLeftDown, this);
     titleText->Bind(wxEVT_LEFT_UP, &CustomTitleBar::OnMouseLeftUp, this);
@@ -53,6 +49,10 @@ void CustomTitleBar::CreateControls() {
     sizer->Add(m_closeButton, 0, wxEXPAND);
     
     SetSizer(sizer);
+    
+    // Apply initial theme
+    ThemeConfig::Get().LoadThemes();
+    ThemeConfig::Get().ApplyTheme(this, "light");
 }
 
 void CustomTitleBar::OnPaint(wxPaintEvent& event) {

@@ -7,6 +7,7 @@
 class SettingsDialog : public wxDialog {
 public:
     explicit SettingsDialog(wxWindow* parent);
+    wxString GetSelectedTheme() const { return m_themeChoice->GetStringSelection().Lower(); }
 
 private:
     void OnOK(wxCommandEvent& event);
@@ -14,6 +15,7 @@ private:
     void OnThemeSelect(wxCommandEvent& event);
     void OnAnimationToggle(wxCommandEvent& event);
     void CreateControls();
+    void PreviewTheme(const wxString& themeName);
     
     wxPanel* m_mainPanel;
     wxChoice* m_themeChoice;

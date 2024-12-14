@@ -24,13 +24,15 @@ BEGIN_EVENT_TABLE(MainFrame, wxFrame)
 END_EVENT_TABLE()
 
 MainFrame::MainFrame(const wxString& title)
-   : wxFrame() // Don't create the window in the initialization list
+   : wxFrame() 
 {
-    // Create the window
     Create(NULL, wxID_ANY, title, wxDefaultPosition, wxDefaultSize,
            wxNO_BORDER | wxCLIP_CHILDREN);
 
     SetBackgroundStyle(wxBG_STYLE_PAINT);
+
+    ThemeConfig::Get().LoadThemes();
+    ThemeConfig::Get().ApplyTheme(this, "light");
 
     #ifdef __WXMSW__
         HWND hwnd = GetHandle();
@@ -44,7 +46,6 @@ MainFrame::MainFrame(const wxString& title)
             exStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_WINDOWEDGE);
             SetWindowLongPtr(hwnd, GWL_EXSTYLE, exStyle);
 
-            // Ensure the window is valid before setting attributes
             BOOL value = TRUE;
             DwmSetWindowAttribute(hwnd, 19, &value, sizeof(value));  // Dark mode
             DwmSetWindowAttribute(hwnd, DWMWA_MICA_EFFECT, &value, sizeof(value));
@@ -330,6 +331,9 @@ void MainFrame::OnCancel(wxCommandEvent& event) {
 void MainFrame::OnSettings(wxCommandEvent& event) {
     SettingsDialog* dialog = new SettingsDialog(this);
     if (dialog->ShowModal() == wxID_OK) {
+        wxString selectedTheme = dialog->GetSelectedTheme();
+        ThemeConfig::Get().SetCurrentTheme(selectedTheme);
+        ThemeConfig::Get().ApplyTheme(this, selectedTheme);
         Refresh();
         Update();
     }
