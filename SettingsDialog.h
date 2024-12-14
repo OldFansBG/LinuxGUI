@@ -2,6 +2,7 @@
 #define SETTINGSDIALOG_H
 
 #include <wx/wx.h>
+#include "ThemeConfig.h"
 
 class SettingsDialog : public wxDialog {
 public:

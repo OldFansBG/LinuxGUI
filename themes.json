@@ -1,0 +1,14 @@
+{
+    "light": {
+      "titleBar": "#0000ff"
+    },
+    "dark": {
+      "titleBar": "#000000"
+    },
+    "high contrast light": {
+      "titleBar": "#FFFFFF"
+    },
+    "high contrast dark": {
+      "titleBar": "#1A1A1A"
+    }
+  }

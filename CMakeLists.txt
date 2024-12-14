@@ -69,6 +69,7 @@ set(SOURCES
     ISOExtractor.cpp
     DockerTransfer.cpp
     gear_icon.cpp
+    ThemeConfig.cpp
 )
 
 # Header files
@@ -156,7 +157,9 @@ file(COPY ${RESOURCE_FILES} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 install(TARGETS iso_analyzer
     RUNTIME DESTINATION bin
 )
-
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/themes.json
+               ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/themes.json
+               COPYONLY)
 install(FILES 
     ${CMAKE_CURRENT_SOURCE_DIR}/config.yaml
     ${RESOURCE_FILES}

@@ -1,5 +1,5 @@
 #include "SettingsDialog.h"
-
+#include "CustomTitleBar.h"
 BEGIN_EVENT_TABLE(SettingsDialog, wxDialog)
     EVT_BUTTON(wxID_OK, SettingsDialog::OnOK)
     EVT_BUTTON(wxID_CANCEL, SettingsDialog::OnCancel)
@@ -101,7 +101,24 @@ void SettingsDialog::OnAnimationToggle(wxCommandEvent& event) {
 }
 
 void SettingsDialog::OnOK(wxCommandEvent& event) {
-    // Basic handling, remove theme-specific logic
+    wxString selectedTheme = m_themeChoice->GetStringSelection().Lower();
+    wxLogMessage("Selected theme: %s", selectedTheme);  // Debug print
+    
+    ThemeConfig::Get().LoadThemes();
+    
+    // Find the title bar by traversing the window hierarchy
+    wxFrame* mainFrame = wxDynamicCast(GetParent(), wxFrame);
+    if (mainFrame) {
+        wxWindowList& children = mainFrame->GetChildren();
+        for (wxWindow* child : children) {
+            if (CustomTitleBar* titleBar = dynamic_cast<CustomTitleBar*>(child)) {
+                ThemeConfig::Get().ApplyTheme(titleBar, selectedTheme);
+                wxLogMessage("Found and updated titlebar");  // Debug print
+                break;
+            }
+        }
+    }
+    
     EndModal(wxID_OK);
 }
 

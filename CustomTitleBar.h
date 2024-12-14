@@ -3,7 +3,7 @@
 
 #include <wx/wx.h>
 #include "MyButton.h"
-
+#include "ThemeConfig.h"
 class CustomTitleBar : public wxPanel {
 private:
     enum {

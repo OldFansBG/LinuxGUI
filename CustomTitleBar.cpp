@@ -17,8 +17,9 @@ CustomTitleBar::CustomTitleBar(wxWindow* parent)
       m_isDragging(false)
 {
     CreateControls();
+    ThemeConfig::Get().LoadThemes();
+    ThemeConfig::Get().ApplyTheme(this, "light"); // default theme
 }
-
 void CustomTitleBar::CreateControls() {
     wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
     
@@ -58,7 +59,7 @@ void CustomTitleBar::OnPaint(wxPaintEvent& event) {
     wxPaintDC dc(this);
     wxRect rect = GetClientRect();
     
-    dc.SetBrush(wxBrush(*wxBLUE));
+    dc.SetBrush(wxBrush(GetBackgroundColour()));
     dc.SetPen(*wxTRANSPARENT_PEN);
     dc.DrawRectangle(rect);
 }
