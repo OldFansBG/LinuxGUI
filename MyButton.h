@@ -3,8 +3,6 @@
 #include <wx/wx.h>
 #include <wx/graphics.h>
 #include <memory>
-#include "ThemeSystem.h"
-#include "ThemeRoles.h"  // Add this include
 
 class MyButton : public wxWindow {
 public:
@@ -15,7 +13,6 @@ public:
              const wxString &name = wxPanelNameStr)
         : wxWindow(), m_alwaysShow(false)
     {
-        ThemeSystem::Get().RegisterControl(this);
         SetBackgroundStyle(wxBG_STYLE_TRANSPARENT);
         wxWindow::Create(parent, id, pos, size, style, name);
 
@@ -41,10 +38,6 @@ public:
         Bind(wxEVT_LEAVE_WINDOW, &MyButton::OnMouseLeave, this);
     }
 
-    ~MyButton() {
-        ThemeSystem::Get().UnregisterControl(this);
-    }
-
     void SetAlwaysShowButton(bool always) { m_alwaysShow = always; }
 
     void OnPaint(wxPaintEvent &event) {
@@ -60,14 +53,12 @@ public:
 
         if (m_image.IsOk()) {
             wxImage tempImage = m_originalImage.Copy();
-            wxColour tintColor;
+            wxColour tintColor = wxColour(200, 200, 200);  // Light grey
 
             if (m_isPressed) {
-                tintColor = ThemeSystem::Get().GetColor(ColorRole::ButtonPressed);
+                tintColor = wxColour(128, 128, 128);  // Dark grey
             } else if (m_isHovered) {
-                tintColor = ThemeSystem::Get().GetColor(ColorRole::ButtonHover);
-            } else {
-                tintColor = ThemeSystem::Get().GetColor(ColorRole::Button);
+                tintColor = wxColour(169, 169, 169);  // Dim grey
             }
 
             for (int x = 0; x < tempImage.GetWidth(); x++) {

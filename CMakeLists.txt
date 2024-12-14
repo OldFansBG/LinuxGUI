@@ -54,13 +54,7 @@ set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "disable yaml tools")
 FetchContent_MakeAvailable(yaml-cpp)
 
 # Theme system sources
-set(THEME_SOURCES
-    ThemeSystem.cpp
-    ThemeRoles.h
-    PlatformTheme.cpp
-)
-
-# Main source files
+# Remove theme-related sources
 set(SOURCES
     main.cpp
     MainFrame.cpp 
@@ -75,7 +69,6 @@ set(SOURCES
     ISOExtractor.cpp
     DockerTransfer.cpp
     gear_icon.cpp
-    ${THEME_SOURCES}
 )
 
 # Header files
@@ -92,9 +85,6 @@ set(HEADERS
     ISOExtractor.h
     DockerTransfer.h
     MyButton.h
-    ThemeSystem.h
-    ThemeRoles.h
-    PlatformTheme.h
     gear_icon.h
 )
 

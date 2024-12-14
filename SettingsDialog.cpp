@@ -12,13 +12,8 @@ SettingsDialog::SettingsDialog(wxWindow* parent)
               wxDefaultPosition, wxSize(500, 400),
               wxDEFAULT_DIALOG_STYLE)
 {
-    ThemeSystem::Get().RegisterControl(this);
     CreateControls();
     Centre();
-}
-
-SettingsDialog::~SettingsDialog() {
-    ThemeSystem::Get().UnregisterControl(this);
 }
 
 void SettingsDialog::CreateControls() {
@@ -38,8 +33,7 @@ void SettingsDialog::CreateControls() {
     m_themeChoice = new wxChoice(m_mainPanel, wxID_ANY, 
                                 wxDefaultPosition, wxDefaultSize, themes);
     
-    auto currentTheme = ThemeSystem::Get().GetCurrentTheme();
-    m_themeChoice->SetSelection(static_cast<int>(currentTheme));
+    m_themeChoice->SetSelection(0);  // Default to first theme
     
     themeSizer->Add(themeLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
     themeSizer->Add(m_themeChoice, 1, wxEXPAND);
@@ -48,7 +42,7 @@ void SettingsDialog::CreateControls() {
     auto* animSizer = new wxBoxSizer(wxHORIZONTAL);
     m_animationsCheckbox = new wxCheckBox(m_mainPanel, wxID_ANY, 
                                         "Enable theme transition animations");
-    m_animationsCheckbox->SetValue(ThemeSystem::Get().AreAnimationsEnabled());
+    m_animationsCheckbox->SetValue(true);
     
     animSizer->Add(m_animationsCheckbox, 0, wxALIGN_CENTER_VERTICAL);
 
@@ -56,8 +50,7 @@ void SettingsDialog::CreateControls() {
     auto* transSizer = new wxBoxSizer(wxHORIZONTAL);
     auto* transLabel = new wxStaticText(m_mainPanel, wxID_ANY, "Transition Duration:");
     m_transitionSlider = new wxSlider(m_mainPanel, wxID_ANY, 
-                                     ThemeSystem::Get().GetTransitionDuration(),
-                                     100, 500, wxDefaultPosition, wxDefaultSize,
+                                     200, 100, 500, wxDefaultPosition, wxDefaultSize,
                                      wxSL_HORIZONTAL | wxSL_LABELS);
     
     transSizer->Add(transLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
@@ -87,48 +80,28 @@ void SettingsDialog::CreateControls() {
     auto* dialogSizer = new wxBoxSizer(wxVERTICAL);
     dialogSizer->Add(m_mainPanel, 1, wxEXPAND);
     SetSizer(dialogSizer);
-
-    // Initial preview
-    PreviewTheme(currentTheme);
 }
 
 void SettingsDialog::OnThemeSelect(wxCommandEvent& event) {
-    auto theme = static_cast<ThemeSystem::ThemeVariant>(m_themeChoice->GetSelection());
-    PreviewTheme(theme);
+    // Basic theme preview, just change background
+    wxColour colors[] = {
+        *wxWHITE,  // Light
+        wxColour(50, 50, 50),  // Dark
+        *wxWHITE,  // High Contrast Light
+        *wxBLACK   // High Contrast Dark
+    };
+    
+    int selection = m_themeChoice->GetSelection();
+    m_previewPanel->SetBackgroundColour(colors[selection]);
+    m_previewPanel->Refresh();
 }
 
 void SettingsDialog::OnAnimationToggle(wxCommandEvent& event) {
     m_transitionSlider->Enable(m_animationsCheckbox->IsChecked());
 }
 
-void SettingsDialog::PreviewTheme(ThemeSystem::ThemeVariant theme) {
-    ThemeColors previewColors;
-    switch (theme) {
-        case ThemeSystem::ThemeVariant::Dark:
-            previewColors = ThemeSystem::Get().CreateDarkTheme();
-            break;
-        case ThemeSystem::ThemeVariant::Light:
-            previewColors = ThemeSystem::Get().CreateLightTheme();
-            break;
-        case ThemeSystem::ThemeVariant::HighContrastDark:
-            previewColors = ThemeSystem::Get().CreateHighContrastDarkTheme();
-            break;
-        case ThemeSystem::ThemeVariant::HighContrastLight:
-            previewColors = ThemeSystem::Get().CreateHighContrastLightTheme();
-            break;
-        default:
-            return;
-    }
-
-    m_previewPanel->SetBackgroundColour(previewColors.get(ColorRole::Background));
-    m_previewPanel->Refresh();
-}
-
 void SettingsDialog::OnOK(wxCommandEvent& event) {
-    auto theme = static_cast<ThemeSystem::ThemeVariant>(m_themeChoice->GetSelection());
-    ThemeSystem::Get().EnableAnimations(m_animationsCheckbox->IsChecked());
-    ThemeSystem::Get().SetTransitionDuration(m_transitionSlider->GetValue());
-    ThemeSystem::Get().ApplyTheme(theme);
+    // Basic handling, remove theme-specific logic
     EndModal(wxID_OK);
 }
 

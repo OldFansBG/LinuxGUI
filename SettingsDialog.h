@@ -2,13 +2,10 @@
 #define SETTINGSDIALOG_H
 
 #include <wx/wx.h>
-#include "ThemeSystem.h"
-#include "ThemeRoles.h"
 
 class SettingsDialog : public wxDialog {
 public:
     explicit SettingsDialog(wxWindow* parent);
-    ~SettingsDialog();
 
 private:
     void OnOK(wxCommandEvent& event);
@@ -16,9 +13,6 @@ private:
     void OnThemeSelect(wxCommandEvent& event);
     void OnAnimationToggle(wxCommandEvent& event);
     void CreateControls();
-    void PreviewTheme(ThemeSystem::ThemeVariant theme);
-    
-    using ThemeColors = ThemeSystem::ThemeColors;
     
     wxPanel* m_mainPanel;
     wxChoice* m_themeChoice;

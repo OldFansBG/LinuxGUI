@@ -10,7 +10,6 @@
 #include "MyButton.h"
 #include "CustomTitleBar.h"
 #include "CustomStatusBar.h"
-#include "ThemeSystem.h"
 #include "ISOExtractor.h"
 #include "SecondWindow.h"
 
@@ -43,7 +42,6 @@ private:
    void OnCancel(wxCommandEvent& event);
    void OnSettings(wxCommandEvent& event);
    void UpdateExtractionProgress(int progress, const wxString& status);
-   void OnThemeChanged();
 
    // ISO Analysis functions
    bool SearchReleaseFile(const wxString& isoPath, wxString& releaseContent);

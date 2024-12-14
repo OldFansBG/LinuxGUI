@@ -16,18 +16,14 @@ CustomTitleBar::CustomTitleBar(wxWindow* parent)
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxSize(-1, 28)), 
       m_isDragging(false)
 {
-    ThemeSystem::Get().RegisterControl(this);
-    ThemeSystem::Get().AddThemeChangeListener(this, 
-        [this](ThemeSystem::ThemeVariant theme) { OnThemeChanged(theme); });
-    
     CreateControls();
 }
 
 void CustomTitleBar::CreateControls() {
     wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
     
-    // Set the titlebar background color to blue
-    SetBackgroundColour(ThemeSystem::Get().GetColor(ColorRole::TitleBar));  // This should be blue
+    // Set a default background color
+    SetBackgroundColour(*wxBLUE);
 
     wxStaticText* titleText = new wxStaticText(this, wxID_ANY, "ISO Analyzer",
                                               wxDefaultPosition, wxDefaultSize,
@@ -36,7 +32,7 @@ void CustomTitleBar::CreateControls() {
     titleFont.SetPointSize(9);
     titleFont.SetWeight(wxFONTWEIGHT_BOLD);
     titleText->SetFont(titleFont);
-    titleText->SetForegroundColour(wxColor(255, 255, 255));  // White text
+    titleText->SetForegroundColour(*wxWHITE);
     
     titleText->Bind(wxEVT_LEFT_DOWN, &CustomTitleBar::OnMouseLeftDown, this);
     titleText->Bind(wxEVT_LEFT_UP, &CustomTitleBar::OnMouseLeftUp, this);
@@ -62,11 +58,12 @@ void CustomTitleBar::OnPaint(wxPaintEvent& event) {
     wxPaintDC dc(this);
     wxRect rect = GetClientRect();
     
-    dc.SetBrush(wxBrush(ThemeSystem::Get().GetColor(ColorRole::TitleBar)));
+    dc.SetBrush(wxBrush(*wxBLUE));
     dc.SetPen(*wxTRANSPARENT_PEN);
     dc.DrawRectangle(rect);
 }
 
+// Rest of the implementation remains the same
 void CustomTitleBar::OnMouseLeftDown(wxMouseEvent& event) {
     wxWindow* button = wxDynamicCast(event.GetEventObject(), wxWindow);
     if (button && (button == m_minimizeButton || button == m_maximizeButton || button == m_closeButton)) {
@@ -137,17 +134,4 @@ void CustomTitleBar::OnClose(wxCommandEvent& event) {
     if (wxFrame* frame = wxDynamicCast(GetParent(), wxFrame)) {
         frame->Close();
     }
-}
-
-void CustomTitleBar::OnThemeChanged(ThemeSystem::ThemeVariant theme) {
-    SetBackgroundColour(ThemeSystem::Get().GetColor(ColorRole::TitleBar));
-    
-    for(wxWindow* child : GetChildren()) {
-        if (auto* text = wxDynamicCast(child, wxStaticText)) {
-            text->SetForegroundColour(ThemeSystem::Get().GetColor(ColorRole::TitleBarText));
-        }
-    }
-    
-    Refresh();
-    Update();
 }

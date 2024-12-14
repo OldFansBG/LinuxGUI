@@ -26,16 +26,10 @@ END_EVENT_TABLE()
 MainFrame::MainFrame(const wxString& title)
    : wxFrame() // Don't create the window in the initialization list
 {
-    // Initialize theme system first
-    auto& themeSystem = ThemeSystem::Get();
-    themeSystem.DetectSystemTheme();
-
     // Create the window
     Create(NULL, wxID_ANY, title, wxDefaultPosition, wxDefaultSize,
            wxNO_BORDER | wxCLIP_CHILDREN);
 
-    // Register with theme system after window creation
-    themeSystem.RegisterControl(this);
     SetBackgroundStyle(wxBG_STYLE_PAINT);
 
     #ifdef __WXMSW__
@@ -77,18 +71,6 @@ MainFrame::MainFrame(const wxString& title)
    
     Centre();
     Layout();
-
-    ThemeSystem::Get().AddThemeChangeListener(this, 
-        [this](ThemeSystem::ThemeVariant) { OnThemeChanged(); });
-}
-
-void MainFrame::OnThemeChanged() {
-    Refresh();
-    Update();
-    for (wxWindow* child : GetChildren()) {
-        child->Refresh();
-        child->Update();
-    }
 }
 
 void MainFrame::CreateFrameControls() 
@@ -116,7 +98,6 @@ void MainFrame::SetStatusText(const wxString& text)
         m_statusBar->SetStatusText(text);
     }
 }
-
 wxPanel* MainFrame::CreateLogoPanel(wxWindow* parent) {
     wxPanel* panel = new wxPanel(parent);
     wxStaticBoxSizer* sizer = new wxStaticBoxSizer(wxVERTICAL, panel, "");
@@ -177,7 +158,6 @@ wxPanel* MainFrame::CreateDetectionPanel(wxWindow* parent) {
     panel->SetSizer(sizer);
     return panel;
 }
-
 wxPanel* MainFrame::CreateProjectPanel(wxWindow* parent) {
     wxPanel* panel = new wxPanel(parent);
     wxStaticBoxSizer* sizer = new wxStaticBoxSizer(wxVERTICAL, panel, "");
@@ -254,6 +234,25 @@ wxPanel* MainFrame::CreateProgressPanel(wxWindow* parent) {
     return panel;
 }
 
+void MainFrame::CreateSettingsMenu() {
+    wxMenu* settingsMenu = new wxMenu;
+    settingsMenu->Append(wxID_ANY, "Configure Paths...");
+    settingsMenu->Append(wxID_ANY, "Detection Rules...");
+    settingsMenu->AppendSeparator();
+    settingsMenu->Append(wxID_ANY, "Reset to Defaults");
+    
+    wxPoint pos = m_settingsButton->GetPosition();
+    pos.y += m_settingsButton->GetSize().GetHeight();
+    PopupMenu(settingsMenu, pos);
+    
+    delete settingsMenu;
+}
+
+void MainFrame::OpenSecondWindow() {
+    SecondWindow* secondWindow = new SecondWindow(this, "Terminal", m_isoPathCtrl->GetValue());
+    this->Hide();
+    secondWindow->Show(true);
+}
 void MainFrame::OnBrowseISO(wxCommandEvent& event) {
     wxFileDialog openFileDialog(this, "Open ISO file", "", "",
                               "ISO files (*.iso)|*.iso",
@@ -354,7 +353,6 @@ void MainFrame::UpdateExtractionProgress(int progress, const wxString& status) {
         FindWindow(ID_CANCEL)->Enable(false);
     }
 }
-
 bool MainFrame::LoadConfig() {
     try {
         std::filesystem::path exePath = std::filesystem::current_path() / "config.yaml";
@@ -423,7 +421,6 @@ void MainFrame::OnDetect(wxCommandEvent& event) {
         m_projectNameCtrl->SetValue(distribution);
     }
 }
-
 bool MainFrame::SearchReleaseFile(const wxString& isoPath, wxString& releaseContent) {
     try {
         ISOReader reader(isoPath.ToStdString());
@@ -559,24 +556,4 @@ wxString MainFrame::DetectDistribution(const wxString& releaseContent) {
         }
     }
     return "Unknown Distribution";
-}
-
-void MainFrame::CreateSettingsMenu() {
-    wxMenu* settingsMenu = new wxMenu;
-    settingsMenu->Append(wxID_ANY, "Configure Paths...");
-    settingsMenu->Append(wxID_ANY, "Detection Rules...");
-    settingsMenu->AppendSeparator();
-    settingsMenu->Append(wxID_ANY, "Reset to Defaults");
-    
-    wxPoint pos = m_settingsButton->GetPosition();
-    pos.y += m_settingsButton->GetSize().GetHeight();
-    PopupMenu(settingsMenu, pos);
-    
-    delete settingsMenu;
-}
-
-void MainFrame::OpenSecondWindow() {
-    SecondWindow* secondWindow = new SecondWindow(this, "Terminal", m_isoPathCtrl->GetValue());
-    this->Hide();
-    secondWindow->Show(true);
 }
