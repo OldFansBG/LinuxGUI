@@ -5,54 +5,54 @@
       "background": "#FFFFFF",
       "text": "#000000",
       "secondaryText": "#666666",
-      "border": "#E0E0E0",
+      "border": "#C3C3C3",
       "button": {
-        "background": "#0078D4",
-        "hover": "#106EBE",
-        "pressed": "#005A9E",
-        "text": "#FFFFFF"
+        "background": "#E1E1E1",
+        "hover": "#D0D0D0",
+        "pressed": "#E1E1E1",
+        "text": "#000000"
       },
       "input": {
         "background": "#FFFFFF",
-        "border": "#D1D1D1",
+        "border": "#C3C3C3",
         "text": "#000000",
         "placeholder": "#666666"
       },
       "gauge": {
-        "background": "#F0F0F0",
-        "fill": "#0078D4"
+        "background": "#FFFFFF",
+        "fill": "#00B0FF"
       },
       "panel": {
-        "background": "#F8F8F8",
-        "border": "#E0E0E0"
+        "background": "#FFFFFF",
+        "border": "#C3C3C3"
       }
     },
     "dark": {
-      "titleBar": "#2D2D2D",
-      "statusBar": "#1F1F1F",
-      "background": "#1F1F1F",
-      "text": "#FFFFFF",
+      "titleBar": "#1A1A1A",
+      "statusBar": "#282C34",
+      "background": "#282C34",
+      "text": "#E5E5E5",
       "secondaryText": "#CCCCCC",
-      "border": "#404040",
+      "border": "#6272A4",
       "button": {
-        "background": "#0078D4",
-        "hover": "#106EBE",
-        "pressed": "#005A9E",
+        "background": "#44475A",
+        "hover": "#6272A4",
+        "pressed": "#44475A",
         "text": "#FFFFFF"
       },
       "input": {
-        "background": "#2D2D2D",
-        "border": "#404040",
-        "text": "#FFFFFF",
+        "background": "#282C34",
+        "border": "#6272A4",
+        "text": "#E5E5E5",
         "placeholder": "#CCCCCC"
       },
       "gauge": {
-        "background": "#2D2D2D",
-        "fill": "#0078D4"
+        "background": "#282C34",
+        "fill": "#FF79C6"
       },
       "panel": {
-        "background": "#2D2D2D",
-        "border": "#404040"
+        "background": "#282C34",
+        "border": "#6272A4"
       }
     },
     "high contrast light": {
