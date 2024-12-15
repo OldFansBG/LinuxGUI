@@ -35,6 +35,15 @@ void ThemeConfig::LoadThemes(const wxString& filename) {
     }
 }
 
+void ThemeConfig::ParseButtonColors(const YAML::Node& buttonNode, ThemeColors::ButtonColors& colors) {
+    if (buttonNode) {
+        colors.background = ParseColor(buttonNode["background"]);
+        colors.hover = ParseColor(buttonNode["hover"]);
+        colors.pressed = ParseColor(buttonNode["pressed"]);
+        colors.text = ParseColor(buttonNode["text"]);
+    }
+}
+
 wxColour ThemeConfig::ParseColor(const YAML::Node& node) const {
     if (!node.IsScalar()) return *wxBLACK;
     
@@ -54,13 +63,8 @@ void ThemeConfig::ParseThemeColors(const YAML::Node& themeNode, ThemeColors& col
     colors.secondaryText = ParseColor(themeNode["secondaryText"]);
     colors.border = ParseColor(themeNode["border"]);
     
-    const auto& buttonNode = themeNode["button"];
-    if (buttonNode) {
-        colors.button.background = ParseColor(buttonNode["background"]);
-        colors.button.hover = ParseColor(buttonNode["hover"]);
-        colors.button.pressed = ParseColor(buttonNode["pressed"]);
-        colors.button.text = ParseColor(buttonNode["text"]);
-    }
+    ParseButtonColors(themeNode["button"], colors.button);
+    ParseButtonColors(themeNode["extractButton"], colors.extractButton);
     
     const auto& inputNode = themeNode["input"];
     if (inputNode) {
@@ -115,8 +119,13 @@ void ThemeConfig::ApplyThemeToControl(wxWindow* control, const ThemeColors& colo
         statusBar->SetBackgroundColour(colors.statusBar);
     }
     else if (auto* button = dynamic_cast<wxButton*>(control)) {
-        button->SetBackgroundColour(colors.button.background);
-        button->SetForegroundColour(colors.button.text);
+        if (button->GetId() == ID_EXTRACT) {
+            button->SetBackgroundColour(colors.extractButton.background);
+            button->SetForegroundColour(colors.extractButton.text);
+        } else {
+            button->SetBackgroundColour(colors.button.background);
+            button->SetForegroundColour(colors.button.text);
+        }
     }
     else if (auto* textCtrl = dynamic_cast<wxTextCtrl*>(control)) {
         textCtrl->SetBackgroundColour(colors.input.background);

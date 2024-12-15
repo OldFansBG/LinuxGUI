@@ -5,6 +5,7 @@
 #include <yaml-cpp/yaml.h>
 #include <string>
 #include <map>
+#include "WindowIDs.h"
 
 struct ThemeColors {
     struct ButtonColors {
@@ -38,6 +39,7 @@ struct ThemeColors {
     wxColour secondaryText;
     wxColour border;
     ButtonColors button;
+    ButtonColors extractButton;
     InputColors input;
     GaugeColors gauge;
     PanelColors panel;
@@ -65,6 +67,7 @@ private:
     wxColour ParseColor(const YAML::Node& node) const;
     void ParseThemeColors(const YAML::Node& themeNode, ThemeColors& colors);
     void ApplyColorsRecursively(wxWindow* window, const ThemeColors& colors);
+    void ParseButtonColors(const YAML::Node& buttonNode, ThemeColors::ButtonColors& colors);
 
     YAML::Node m_themes;
     std::map<wxString, ThemeColors> m_themeColors;

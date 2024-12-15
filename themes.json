@@ -12,6 +12,12 @@
         "pressed": "#E1E1E1",
         "text": "#000000"
       },
+      "extractButton": {
+        "background": "#0078D4",
+        "hover": "#106EBE",
+        "pressed": "#005A9E",
+        "text": "#FFFFFF"
+      },
       "input": {
         "background": "#FFFFFF",
         "border": "#C3C3C3",
@@ -40,6 +46,12 @@
         "pressed": "#44475A",
         "text": "#FFFFFF"
       },
+      "extractButton": {
+        "background": "#BD93F9",
+        "hover": "#A374F8",
+        "pressed": "#9955F7",
+        "text": "#FFFFFF"
+      },
       "input": {
         "background": "#282C34",
         "border": "#6272A4",
@@ -63,6 +75,12 @@
       "secondaryText": "#000000",
       "border": "#000000",
       "button": {
+        "background": "#000000",
+        "hover": "#404040",
+        "pressed": "#666666",
+        "text": "#FFFFFF"
+      },
+      "extractButton": {
         "background": "#000000",
         "hover": "#404040",
         "pressed": "#666666",
@@ -96,6 +114,12 @@
         "pressed": "#999999",
         "text": "#000000"
       },
+      "extractButton": {
+        "background": "#FFFFFF",
+        "hover": "#CCCCCC",
+        "pressed": "#999999",
+        "text": "#000000"
+      },
       "input": {
         "background": "#000000",
         "border": "#FFFFFF",
@@ -111,5 +135,4 @@
         "border": "#FFFFFF"
       }
     }
-  }
-  
+}

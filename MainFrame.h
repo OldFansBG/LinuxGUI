@@ -12,6 +12,7 @@
 #include "CustomStatusBar.h"
 #include "ISOExtractor.h"
 #include "SecondWindow.h"
+#include "WindowIDs.h"
 
 #ifdef __WXMSW__
   #include <dwmapi.h>
@@ -34,7 +35,6 @@ private:
    void OpenSecondWindow();
    wxString m_currentISOPath;
 
-   // Event handlers
    void OnBrowseISO(wxCommandEvent& event);
    void OnBrowseWorkDir(wxCommandEvent& event);
    void OnDetect(wxCommandEvent& event);
@@ -43,23 +43,19 @@ private:
    void OnSettings(wxCommandEvent& event);
    void UpdateExtractionProgress(int progress, const wxString& status);
 
-   // ISO Analysis functions
    bool SearchReleaseFile(const wxString& isoPath, wxString& releaseContent);
    bool SearchGrubEnv(const wxString& isoPath, wxString& distributionName);
    wxString ExtractNameFromGrubEnv(const wxString& content);
    wxString DetectDistribution(const wxString& releaseContent);
    
-   // Configuration and UI setup
    bool LoadConfig();
    void CreateSettingsMenu();
    
-   // UI Creation functions
    wxPanel* CreateLogoPanel(wxWindow* parent);
    wxPanel* CreateDetectionPanel(wxWindow* parent);
    wxPanel* CreateProjectPanel(wxWindow* parent);
    wxPanel* CreateProgressPanel(wxWindow* parent);
 
-   // Member variables
    wxTextCtrl* m_isoPathCtrl;
    wxTextCtrl* m_distroCtrl;
    wxTextCtrl* m_projectNameCtrl;
@@ -72,15 +68,6 @@ private:
    CustomStatusBar* m_statusBar;
    YAML::Node m_config;
    ISOExtractor* m_currentExtractor;
-
-   enum {
-       ID_BROWSE_ISO = 1,
-       ID_BROWSE_WORKDIR,
-       ID_DETECT,
-       ID_EXTRACT,
-       ID_CANCEL,
-       ID_SETTINGS
-   };
 
    DECLARE_EVENT_TABLE()
 };
