@@ -34,7 +34,7 @@ MainFrame::MainFrame(const wxString& title)
     // Load the themes first
     ThemeConfig& themeConfig = ThemeConfig::Get();
     themeConfig.LoadThemes("themes.json");  // Explicitly specify the file
-    themeConfig.SetCurrentTheme("light");
+    themeConfig.SetCurrentTheme("dark");
     
     #ifdef __WXMSW__
         HWND hwnd = GetHandle();
@@ -67,7 +67,7 @@ MainFrame::MainFrame(const wxString& title)
     CreateFrameControls();
     
     // Apply theme after all controls are created
-    themeConfig.ApplyTheme(this, "light");
+    themeConfig.ApplyTheme(this, "dark");
     
     SetMinSize(wxSize(600, 500));
     SetSize(wxSize(600, 500));
