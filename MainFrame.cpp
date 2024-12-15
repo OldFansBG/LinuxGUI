@@ -31,9 +31,11 @@ MainFrame::MainFrame(const wxString& title)
 
     SetBackgroundStyle(wxBG_STYLE_PAINT);
 
-    ThemeConfig::Get().LoadThemes();
-    ThemeConfig::Get().ApplyTheme(this, "light");
-
+    // Load the themes first
+    ThemeConfig& themeConfig = ThemeConfig::Get();
+    themeConfig.LoadThemes("themes.json");  // Explicitly specify the file
+    themeConfig.SetCurrentTheme("light");
+    
     #ifdef __WXMSW__
         HWND hwnd = GetHandle();
         if (hwnd) {
@@ -63,6 +65,9 @@ MainFrame::MainFrame(const wxString& title)
     }
 
     CreateFrameControls();
+    
+    // Apply theme after all controls are created
+    themeConfig.ApplyTheme(this, "light");
     
     SetMinSize(wxSize(600, 500));
     SetSize(wxSize(600, 500));
@@ -332,9 +337,11 @@ void MainFrame::OnSettings(wxCommandEvent& event) {
     SettingsDialog* dialog = new SettingsDialog(this);
     if (dialog->ShowModal() == wxID_OK) {
         wxString selectedTheme = dialog->GetSelectedTheme();
+        ThemeConfig::Get().LoadThemes();  // Reload themes
         ThemeConfig::Get().SetCurrentTheme(selectedTheme);
         ThemeConfig::Get().ApplyTheme(this, selectedTheme);
-        Refresh();
+        Layout();
+        Refresh(true);
         Update();
     }
     dialog->Destroy();

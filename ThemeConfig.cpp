@@ -15,7 +15,7 @@ ThemeConfig& ThemeConfig::Get() {
 void ThemeConfig::LoadThemes(const wxString& filename) {
     std::ifstream fin(filename.ToStdString());
     if (!fin.is_open()) {
-        wxLogError("Failed to open theme file: %s", filename);
+        wxLogDebug("Failed to open theme file: %s", filename);
         return;
     }
 
@@ -23,17 +23,20 @@ void ThemeConfig::LoadThemes(const wxString& filename) {
         m_themes = YAML::Load(fin);
         m_themeColors.clear();
 
+        wxLogDebug("Loading themes from file");
         for (const auto& theme : m_themes) {
             wxString themeName = wxString::FromUTF8(theme.first.as<std::string>());
             ThemeColors colors;
             ParseThemeColors(theme.second, colors);
             m_themeColors[themeName.Lower()] = colors;
+            wxLogDebug("Loaded theme: %s", themeName);
         }
     }
     catch (const YAML::Exception& e) {
-        wxLogError("Error parsing theme file: %s", e.what());
+        wxLogDebug("Error parsing theme file: %s", e.what());
     }
 }
+
 
 void ThemeConfig::ParseButtonColors(const YAML::Node& buttonNode, ThemeColors::ButtonColors& colors) {
     if (buttonNode) {
@@ -113,32 +116,41 @@ void ThemeConfig::ApplyThemeToControl(wxWindow* control, const ThemeColors& colo
     if (!control) return;
 
     if (auto* titleBar = dynamic_cast<CustomTitleBar*>(control)) {
+        wxLogDebug("Applying titlebar colors");
         titleBar->SetBackgroundColour(colors.titleBar);
     }
     else if (auto* statusBar = dynamic_cast<CustomStatusBar*>(control)) {
+        wxLogDebug("Applying statusbar colors");
         statusBar->SetBackgroundColour(colors.statusBar);
     }
     else if (auto* button = dynamic_cast<wxButton*>(control)) {
-        if (button->GetId() == ID_EXTRACT) {
+        wxLogDebug("Button found - ID: %d, Label: %s", button->GetId(), button->GetLabel());
+        if (button->GetLabel() == "Extract") {  // Check both ID and label
+            wxLogDebug("Extract button found - Applying special colors");
             button->SetBackgroundColour(colors.extractButton.background);
             button->SetForegroundColour(colors.extractButton.text);
         } else {
+            wxLogDebug("Regular button - Applying standard colors");
             button->SetBackgroundColour(colors.button.background);
             button->SetForegroundColour(colors.button.text);
         }
     }
     else if (auto* textCtrl = dynamic_cast<wxTextCtrl*>(control)) {
+        wxLogDebug("Applying text control colors");
         textCtrl->SetBackgroundColour(colors.input.background);
         textCtrl->SetForegroundColour(colors.input.text);
     }
     else if (auto* staticText = dynamic_cast<wxStaticText*>(control)) {
+        wxLogDebug("Applying static text colors");
         staticText->SetForegroundColour(colors.text);
     }
     else if (auto* gauge = dynamic_cast<wxGauge*>(control)) {
+        wxLogDebug("Applying gauge colors");
         gauge->SetBackgroundColour(colors.gauge.background);
         gauge->SetForegroundColour(colors.gauge.fill);
     }
     else if (auto* panel = dynamic_cast<wxPanel*>(control)) {
+        wxLogDebug("Applying panel colors");
         panel->SetBackgroundColour(colors.panel.background);
     }
 
