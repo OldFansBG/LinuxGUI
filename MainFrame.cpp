@@ -279,6 +279,47 @@ void MainFrame::OnBrowseWorkDir(wxCommandEvent& event) {
         return;
     m_workDirCtrl->SetValue(dirDialog.GetPath());
 }
+//! With extraction 
+// void MainFrame::OnExtract(wxCommandEvent& event) {
+//     if (m_workDirCtrl->IsEmpty() || m_isoPathCtrl->IsEmpty()) {
+//         wxMessageBox("Please select both ISO file and working directory.", 
+//                     "Error", wxOK | wxICON_ERROR);
+//         return;
+//     }
+
+//     if (m_projectNameCtrl->IsEmpty()) {
+//         wxMessageBox("Please enter a project name.", "Error", wxOK | wxICON_ERROR);
+//         return;
+//     }
+
+//     wxString projectPath = wxFileName(m_workDirCtrl->GetValue(), 
+//                                     m_projectNameCtrl->GetValue()).GetFullPath();
+//     if (!wxFileName::Mkdir(projectPath, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL)) {
+//         wxMessageBox("Failed to create project directory.", 
+//                     "Error", wxOK | wxICON_ERROR);
+//         return;
+//     }
+
+//     m_currentExtractor = new ISOExtractor(
+//         m_isoPathCtrl->GetValue(), 
+//         projectPath,
+//         [this](int progress, const wxString& status) {
+//             CallAfter(&MainFrame::UpdateExtractionProgress, progress, status);
+//         }
+//     );
+
+//     if (m_currentExtractor->Run() != wxTHREAD_NO_ERROR) {
+//         wxMessageBox("Failed to start extraction thread.", 
+//                     "Error", wxOK | wxICON_ERROR);
+//         delete m_currentExtractor;
+//         m_currentExtractor = nullptr;
+//         return;
+//     }
+
+//     m_currentISOPath = m_isoPathCtrl->GetValue();
+//     FindWindow(ID_EXTRACT)->Enable(false);
+//     FindWindow(ID_CANCEL)->Enable(true);
+// }
 
 void MainFrame::OnExtract(wxCommandEvent& event) {
     if (m_workDirCtrl->IsEmpty() || m_isoPathCtrl->IsEmpty()) {
@@ -292,33 +333,13 @@ void MainFrame::OnExtract(wxCommandEvent& event) {
         return;
     }
 
-    wxString projectPath = wxFileName(m_workDirCtrl->GetValue(), 
-                                    m_projectNameCtrl->GetValue()).GetFullPath();
-    if (!wxFileName::Mkdir(projectPath, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL)) {
-        wxMessageBox("Failed to create project directory.", 
-                    "Error", wxOK | wxICON_ERROR);
-        return;
-    }
-
-    m_currentExtractor = new ISOExtractor(
-        m_isoPathCtrl->GetValue(), 
-        projectPath,
-        [this](int progress, const wxString& status) {
-            CallAfter(&MainFrame::UpdateExtractionProgress, progress, status);
-        }
-    );
-
-    if (m_currentExtractor->Run() != wxTHREAD_NO_ERROR) {
-        wxMessageBox("Failed to start extraction thread.", 
-                    "Error", wxOK | wxICON_ERROR);
-        delete m_currentExtractor;
-        m_currentExtractor = nullptr;
-        return;
-    }
-
+    // Just store the current ISO path and move forward
     m_currentISOPath = m_isoPathCtrl->GetValue();
-    FindWindow(ID_EXTRACT)->Enable(false);
-    FindWindow(ID_CANCEL)->Enable(true);
+    
+    // Skip the extraction process and directly open the second window
+    SecondWindow* secondWindow = new SecondWindow(this, "Terminal", m_currentISOPath);
+    this->Hide();
+    secondWindow->Show(true);
 }
 
 void MainFrame::OnCancel(wxCommandEvent& event) {
