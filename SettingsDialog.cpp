@@ -1,5 +1,8 @@
+
+// SettingsDialog.cpp
 #include "SettingsDialog.h"
 #include "CustomTitleBar.h"
+
 BEGIN_EVENT_TABLE(SettingsDialog, wxDialog)
     EVT_BUTTON(wxID_OK, SettingsDialog::OnOK)
     EVT_BUTTON(wxID_CANCEL, SettingsDialog::OnCancel)
@@ -9,7 +12,7 @@ END_EVENT_TABLE()
 
 SettingsDialog::SettingsDialog(wxWindow* parent)
     : wxDialog(parent, wxID_ANY, "Settings", 
-              wxDefaultPosition, wxSize(500, 400),
+              wxDefaultPosition, wxSize(500, 450),
               wxDEFAULT_DIALOG_STYLE)
 {
     CreateControls();
@@ -20,9 +23,9 @@ void SettingsDialog::CreateControls() {
     m_mainPanel = new wxPanel(this);
     
     auto* mainSizer = new wxBoxSizer(wxVERTICAL);
-    auto* themeSizer = new wxBoxSizer(wxHORIZONTAL);
     
-    // Theme selection
+    // Theme selection section
+    auto* themeSizer = new wxBoxSizer(wxHORIZONTAL);
     auto* themeLabel = new wxStaticText(m_mainPanel, wxID_ANY, "Theme:");
     wxArrayString themes;
     themes.Add("Light");
@@ -32,25 +35,45 @@ void SettingsDialog::CreateControls() {
     
     m_themeChoice = new wxChoice(m_mainPanel, wxID_ANY, 
                                 wxDefaultPosition, wxDefaultSize, themes);
-    
-    m_themeChoice->SetSelection(0);  // Default to first theme
+    m_themeChoice->SetSelection(0);
     
     themeSizer->Add(themeLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
     themeSizer->Add(m_themeChoice, 1, wxEXPAND);
 
-    // Animations
+    // Container Options section
+    auto* containerBox = new wxStaticBox(m_mainPanel, wxID_ANY, "Container Options");
+    auto* containerSizer = new wxStaticBoxSizer(containerBox, wxVERTICAL);
+
+    m_dockerCheckbox = new wxCheckBox(containerBox, wxID_ANY, "Use Docker (Recommended)");
+    m_dockerCheckbox->SetValue(true); // Docker is default
+    containerSizer->Add(m_dockerCheckbox, 0, wxALL, 5);
+
+    // Only show WSL option on Windows
+    #ifdef __WXMSW__
+    m_wslCheckbox = new wxCheckBox(containerBox, wxID_ANY, "Use Windows Subsystem for Linux (WSL)");
+    m_wslCheckbox->SetValue(false);
+    containerSizer->Add(m_wslCheckbox, 0, wxALL, 5);
+
+    // Bind events for container type changes
+    m_dockerCheckbox->Bind(wxEVT_CHECKBOX, &SettingsDialog::OnContainerTypeChanged, this);
+    m_wslCheckbox->Bind(wxEVT_CHECKBOX, &SettingsDialog::OnContainerTypeChanged, this);
+    #else
+    m_wslCheckbox = nullptr;
+    #endif
+
+    // Animations section
     auto* animSizer = new wxBoxSizer(wxHORIZONTAL);
     m_animationsCheckbox = new wxCheckBox(m_mainPanel, wxID_ANY, 
                                         "Enable theme transition animations");
     m_animationsCheckbox->SetValue(true);
-    
     animSizer->Add(m_animationsCheckbox, 0, wxALIGN_CENTER_VERTICAL);
 
-    // Transition duration
+    // Transition duration section
     auto* transSizer = new wxBoxSizer(wxHORIZONTAL);
     auto* transLabel = new wxStaticText(m_mainPanel, wxID_ANY, "Transition Duration:");
     m_transitionSlider = new wxSlider(m_mainPanel, wxID_ANY, 
-                                     200, 100, 500, wxDefaultPosition, wxDefaultSize,
+                                     200, 100, 500,
+                                     wxDefaultPosition, wxDefaultSize,
                                      wxSL_HORIZONTAL | wxSL_LABELS);
     
     transSizer->Add(transLabel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
@@ -68,7 +91,9 @@ void SettingsDialog::CreateControls() {
     buttonSizer->Add(okButton, 0, wxRIGHT, 5);
     buttonSizer->Add(cancelButton);
 
+    // Add all sections to main sizer
     mainSizer->Add(themeSizer, 0, wxEXPAND | wxALL, 10);
+    mainSizer->Add(containerSizer, 0, wxEXPAND | wxALL, 10);
     mainSizer->Add(animSizer, 0, wxEXPAND | wxALL, 10);
     mainSizer->Add(transSizer, 0, wxEXPAND | wxALL, 10);
     mainSizer->Add(m_previewPanel, 1, wxEXPAND | wxALL, 10);
@@ -80,6 +105,22 @@ void SettingsDialog::CreateControls() {
     auto* dialogSizer = new wxBoxSizer(wxVERTICAL);
     dialogSizer->Add(m_mainPanel, 1, wxEXPAND);
     SetSizer(dialogSizer);
+}
+
+void SettingsDialog::OnContainerTypeChanged(wxCommandEvent& event) {
+    #ifdef __WXMSW__
+    if (event.GetEventObject() == m_dockerCheckbox && m_dockerCheckbox->GetValue()) {
+        m_wslCheckbox->SetValue(false);
+    }
+    else if (event.GetEventObject() == m_wslCheckbox && m_wslCheckbox->GetValue()) {
+        m_dockerCheckbox->SetValue(false);
+    }
+    
+    // Ensure at least one option is selected
+    if (!m_dockerCheckbox->GetValue() && !m_wslCheckbox->GetValue()) {
+        m_dockerCheckbox->SetValue(true);
+    }
+    #endif
 }
 
 void SettingsDialog::OnThemeSelect(wxCommandEvent& event) {
@@ -102,22 +143,25 @@ void SettingsDialog::OnAnimationToggle(wxCommandEvent& event) {
 
 void SettingsDialog::OnOK(wxCommandEvent& event) {
     wxString selectedTheme = m_themeChoice->GetStringSelection().Lower();
-    wxLogMessage("Selected theme: %s", selectedTheme);  // Debug print
     
+    // Save theme settings
     ThemeConfig::Get().LoadThemes();
     
-    // Find the title bar by traversing the window hierarchy
+    // Find and update the title bar
     wxFrame* mainFrame = wxDynamicCast(GetParent(), wxFrame);
     if (mainFrame) {
         wxWindowList& children = mainFrame->GetChildren();
         for (wxWindow* child : children) {
             if (CustomTitleBar* titleBar = dynamic_cast<CustomTitleBar*>(child)) {
                 ThemeConfig::Get().ApplyTheme(titleBar, selectedTheme);
-                wxLogMessage("Found and updated titlebar");  // Debug print
                 break;
             }
         }
     }
+
+    // Save container preferences
+    // In a real application, you would typically save these to a configuration file
+    // For now, we just return them via the UseDocker() and UseWSL() methods
     
     EndModal(wxID_OK);
 }
