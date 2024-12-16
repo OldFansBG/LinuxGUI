@@ -6,6 +6,10 @@
 #include <wx/gauge.h>
 #include "CustomTitleBar.h"
 #include "CustomStatusBar.h"
+#include "SystemTheme.h"
+#ifdef __WXMSW__
+#include <windows.h>
+#endif
 
 ThemeConfig& ThemeConfig::Get() {
     static ThemeConfig instance;
@@ -36,7 +40,6 @@ void ThemeConfig::LoadThemes(const wxString& filename) {
         wxLogDebug("Error parsing theme file: %s", e.what());
     }
 }
-
 
 void ThemeConfig::ParseButtonColors(const YAML::Node& buttonNode, ThemeColors::ButtonColors& colors) {
     if (buttonNode) {
@@ -116,41 +119,32 @@ void ThemeConfig::ApplyThemeToControl(wxWindow* control, const ThemeColors& colo
     if (!control) return;
 
     if (auto* titleBar = dynamic_cast<CustomTitleBar*>(control)) {
-        wxLogDebug("Applying titlebar colors");
         titleBar->SetBackgroundColour(colors.titleBar);
     }
     else if (auto* statusBar = dynamic_cast<CustomStatusBar*>(control)) {
-        wxLogDebug("Applying statusbar colors");
         statusBar->SetBackgroundColour(colors.statusBar);
     }
     else if (auto* button = dynamic_cast<wxButton*>(control)) {
-        wxLogDebug("Button found - ID: %d, Label: %s", button->GetId(), button->GetLabel());
-        if (button->GetLabel() == "Extract") {  // Check both ID and label
-            wxLogDebug("Extract button found - Applying special colors");
+        if (button->GetLabel() == "Extract") {
             button->SetBackgroundColour(colors.extractButton.background);
             button->SetForegroundColour(colors.extractButton.text);
         } else {
-            wxLogDebug("Regular button - Applying standard colors");
             button->SetBackgroundColour(colors.button.background);
             button->SetForegroundColour(colors.button.text);
         }
     }
     else if (auto* textCtrl = dynamic_cast<wxTextCtrl*>(control)) {
-        wxLogDebug("Applying text control colors");
         textCtrl->SetBackgroundColour(colors.input.background);
         textCtrl->SetForegroundColour(colors.input.text);
     }
     else if (auto* staticText = dynamic_cast<wxStaticText*>(control)) {
-        wxLogDebug("Applying static text colors");
         staticText->SetForegroundColour(colors.text);
     }
     else if (auto* gauge = dynamic_cast<wxGauge*>(control)) {
-        wxLogDebug("Applying gauge colors");
         gauge->SetBackgroundColour(colors.gauge.background);
         gauge->SetForegroundColour(colors.gauge.fill);
     }
     else if (auto* panel = dynamic_cast<wxPanel*>(control)) {
-        wxLogDebug("Applying panel colors");
         panel->SetBackgroundColour(colors.panel.background);
     }
 
@@ -174,4 +168,67 @@ const ThemeColors& ThemeConfig::GetThemeColors(const wxString& themeName) const 
     wxString lowerThemeName = themeName.Lower();
     auto it = m_themeColors.find(lowerThemeName);
     return it != m_themeColors.end() ? it->second : defaultColors;
+}
+
+bool ThemeConfig::IsSystemDarkMode() const {
+#ifdef __WXMSW__
+    HKEY hKey;
+    DWORD value = 0;
+    DWORD size = sizeof(value);
+    
+    if (RegOpenKeyExW(HKEY_CURRENT_USER,
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        
+        if (RegQueryValueExW(hKey, L"AppsUseLightTheme", NULL, NULL, 
+                          reinterpret_cast<LPBYTE>(&value), &size) == ERROR_SUCCESS) {
+            RegCloseKey(hKey);
+            return value == 0;
+        }
+        RegCloseKey(hKey);
+    }
+#elif defined(__WXGTK__)
+    wxString cmd = "gsettings get org.gnome.desktop.interface color-scheme";
+    wxArrayString output;
+    wxExecute(cmd, output, wxEXEC_SYNC);
+    
+    if (!output.IsEmpty()) {
+        wxString result = output[0].Lower();
+        return result.Contains("dark");
+    }
+#endif
+    return false;
+}
+
+void ThemeConfig::UpdateSystemTheme() {
+    SetCurrentTheme(IsSystemDarkMode() ? "dark" : "light");
+    
+    // Update all registered windows
+    for (wxWindow* window : m_registeredWindows) {
+        if (window) {
+            ApplyTheme(window, GetCurrentTheme());
+        }
+    }
+}
+
+void ThemeConfig::RegisterWindow(wxWindow* window) {
+    if (window && std::find(m_registeredWindows.begin(), m_registeredWindows.end(), window) 
+        == m_registeredWindows.end()) {
+        m_registeredWindows.push_back(window);
+    }
+}
+
+void ThemeConfig::UnregisterWindow(wxWindow* window) {
+    auto it = std::find(m_registeredWindows.begin(), m_registeredWindows.end(), window);
+    if (it != m_registeredWindows.end()) {
+        m_registeredWindows.erase(it);
+    }
+}
+
+void ThemeConfig::InitializeWithSystemTheme() {
+    UpdateSystemTheme();
+}
+
+void ThemeConfig::SetCurrentTheme(const wxString& themeName) {
+    m_currentTheme = themeName.Lower();
 }

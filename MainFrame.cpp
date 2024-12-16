@@ -13,6 +13,7 @@
 #include <wx/settings.h>
 #include <wx/display.h>
 #include <wx/filename.h>
+#include "SystemTheme.h"
 
 BEGIN_EVENT_TABLE(MainFrame, wxFrame)
    EVT_BUTTON(ID_BROWSE_ISO, MainFrame::OnBrowseISO)
@@ -33,8 +34,13 @@ MainFrame::MainFrame(const wxString& title)
 
     // Load the themes first
     ThemeConfig& themeConfig = ThemeConfig::Get();
-    themeConfig.LoadThemes("themes.json");  // Explicitly specify the file
-    themeConfig.SetCurrentTheme("dark");
+    themeConfig.LoadThemes("themes.json");
+    
+    // Register for system theme changes
+    SystemTheme::RegisterForThemeChanges(this);
+    
+    // Register this window with ThemeConfig
+    themeConfig.RegisterWindow(this);
     
     #ifdef __WXMSW__
         HWND hwnd = GetHandle();
@@ -66,8 +72,8 @@ MainFrame::MainFrame(const wxString& title)
 
     CreateFrameControls();
     
-    // Apply theme after all controls are created
-    themeConfig.ApplyTheme(this, "dark");
+    // Initialize with system theme
+    themeConfig.InitializeWithSystemTheme();
     
     SetMinSize(wxSize(600, 500));
     SetSize(wxSize(600, 500));
@@ -77,6 +83,11 @@ MainFrame::MainFrame(const wxString& title)
    
     Centre();
     Layout();
+}
+
+MainFrame::~MainFrame() {
+    // Unregister from ThemeConfig when window is destroyed
+    ThemeConfig::Get().UnregisterWindow(this);
 }
 
 void MainFrame::CreateFrameControls() 

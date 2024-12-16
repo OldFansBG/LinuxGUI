@@ -5,6 +5,7 @@
 #include <yaml-cpp/yaml.h>
 #include <string>
 #include <map>
+#include <vector>
 #include "WindowIDs.h"
 
 struct ThemeColors {
@@ -57,7 +58,13 @@ public:
     bool HasTheme(const wxString& themeName) const;
     wxArrayString GetAvailableThemes() const;
     wxString GetCurrentTheme() const { return m_currentTheme; }
-    void SetCurrentTheme(const wxString& themeName) { m_currentTheme = themeName.Lower(); }
+    void SetCurrentTheme(const wxString& themeName);
+
+    // System theme related functions
+    void UpdateSystemTheme();
+    void RegisterWindow(wxWindow* window);
+    void UnregisterWindow(wxWindow* window);
+    void InitializeWithSystemTheme();
 
 private:
     ThemeConfig() = default;
@@ -68,10 +75,12 @@ private:
     void ParseThemeColors(const YAML::Node& themeNode, ThemeColors& colors);
     void ApplyColorsRecursively(wxWindow* window, const ThemeColors& colors);
     void ParseButtonColors(const YAML::Node& buttonNode, ThemeColors::ButtonColors& colors);
+    bool IsSystemDarkMode() const;
 
     YAML::Node m_themes;
     std::map<wxString, ThemeColors> m_themeColors;
     wxString m_currentTheme = "light";
+    std::vector<wxWindow*> m_registeredWindows;
 };
 
-#endif // THEMECONFIG_H
+#endif // THEMECONFIG_
