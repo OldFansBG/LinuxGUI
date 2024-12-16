@@ -31,6 +31,7 @@ public:
    void SetStatusText(const wxString& text);
 
 private:
+   bool SearchSquashFS(const wxString& isoPath, wxArrayString& foundFiles);
    void CreateFrameControls();
    void OpenSecondWindow();
    wxString m_currentISOPath;
@@ -56,6 +57,7 @@ private:
    wxPanel* CreateProjectPanel(wxWindow* parent);
    wxPanel* CreateProgressPanel(wxWindow* parent);
 
+   // Control members
    wxTextCtrl* m_isoPathCtrl;
    wxTextCtrl* m_distroCtrl;
    wxTextCtrl* m_projectNameCtrl;
@@ -69,6 +71,7 @@ private:
    YAML::Node m_config;
    ISOExtractor* m_currentExtractor;
 
+   // Event table declaration
    DECLARE_EVENT_TABLE()
 };
 

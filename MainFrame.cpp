@@ -333,10 +333,25 @@ void MainFrame::OnExtract(wxCommandEvent& event) {
         return;
     }
 
-    // Just store the current ISO path and move forward
+    // Search for SquashFS files in the ISO
+    wxArrayString squashfsFiles;
+    if (!SearchSquashFS(m_isoPathCtrl->GetValue(), squashfsFiles)) {
+        wxMessageBox("No SquashFS or SFS files found in the ISO.\nThe ISO might not be a Linux distribution or might be corrupted.",
+                    "Error", wxOK | wxICON_ERROR);
+        return;
+    }
+
+    // Log found files
+    wxString message = wxString::Format("Found %zu SquashFS/SFS files:\n", squashfsFiles.GetCount());
+    for (const wxString& file : squashfsFiles) {
+        message += "\n- " + file;
+    }
+    SetStatusText(message);
+
+    // Store current ISO path and proceed
     m_currentISOPath = m_isoPathCtrl->GetValue();
     
-    // Skip the extraction process and directly open the second window
+    // Open second window
     SecondWindow* secondWindow = new SecondWindow(this, "Terminal", m_currentISOPath);
     this->Hide();
     secondWindow->Show(true);
@@ -406,7 +421,36 @@ bool MainFrame::LoadConfig() {
         return false;
     }
 }
+bool MainFrame::SearchSquashFS(const wxString& isoPath, wxArrayString& foundFiles) {
+    try {
+        ISOReader reader(isoPath.ToStdString());
+        if (!reader.open()) {
+            wxMessageBox("Failed to open ISO file: " + wxString(reader.getLastError()),
+                        "Error", wxOK | wxICON_ERROR);
+            return false;
+        }
 
+        auto files = reader.listFiles();
+        bool found = false;
+        
+        for (const auto& file : files) {
+            wxString wxFile = wxString::FromUTF8(file);
+            wxString extension = wxFileName(wxFile).GetExt().Lower();
+            
+            if (extension == "squashfs" || extension == "sfs" || extension == "img") {
+                foundFiles.Add(wxFile);
+                found = true;
+            }
+        }
+        
+        return found;
+    }
+    catch (const std::exception& e) {
+        wxMessageBox("Error reading ISO: " + wxString(e.what()),
+                    "Error", wxOK | wxICON_ERROR);
+        return false;
+    }
+}
 void MainFrame::OnDetect(wxCommandEvent& event) {
     wxString isoPath = m_isoPathCtrl->GetValue();
     if (isoPath.IsEmpty()) {
