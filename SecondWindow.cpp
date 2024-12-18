@@ -129,7 +129,6 @@ void SecondWindow::CreateControls()
     m_mainPanel->SetSizer(mainSizer);
     SetMinSize(wxSize(800, 600));
 }
-
 void SecondWindow::OnClose(wxCloseEvent& event)
 {
     if (GetParent()) {
@@ -226,33 +225,41 @@ void SecondWindow::CreateSQLPanel()
 
     m_currentSqlTab = ID_SQL_DESKTOP;
     CreateDesktopTab();
-    m_sqlContent->Layout();
 }
 
 void SecondWindow::OnSQLTabChanged(wxCommandEvent& event) 
 {
-    wxWindow* currentContent = m_sqlContent->GetChildren().GetFirst() ? 
-                              m_sqlContent->GetChildren().GetFirst()->GetData() : 
-                              nullptr;
-    if (currentContent) {
-        currentContent->Destroy();
+    // Update button colors
+    for (wxButton* btn : m_sqlTabButtons) {
+        if (btn->GetId() == event.GetId()) {
+            btn->SetBackgroundColour(wxColour(44, 49, 58));
+            btn->SetForegroundColour(*wxWHITE);
+        } else {
+            btn->SetBackgroundColour(wxColour(26, 26, 26));
+            btn->SetForegroundColour(wxColour(156, 163, 175));
+        }
+        btn->Refresh();
     }
 
     ShowSQLTab(event.GetId());
-    m_sqlContent->Layout();
-    m_sqlTab->Layout();
 }
 
 void SecondWindow::ShowSQLTab(int tabId) 
 {
-    m_currentSqlTab = tabId;
+    // Destroy all existing children
+    wxWindowList children = m_sqlContent->GetChildren();
+    for (wxWindowList::iterator it = children.begin(); it != children.end(); ++it) {
+        (*it)->Destroy();
+    }
     
-    wxSizer* oldSizer = m_sqlContent->GetSizer();
-    if (oldSizer) {
-        oldSizer->Clear(true);
-        delete oldSizer;
+    // Clear any existing sizer
+    if (m_sqlContent->GetSizer()) {
+        m_sqlContent->GetSizer()->Clear(true);
+        m_sqlContent->SetSizer(nullptr);
     }
 
+    m_currentSqlTab = tabId;
+    
     switch(tabId) {
         case ID_SQL_DESKTOP:
             CreateDesktopTab();
@@ -276,7 +283,7 @@ void SecondWindow::ShowSQLTab(int tabId)
 
 void SecondWindow::CreateDesktopTab() 
 {
-    wxSizer* sizer = new wxBoxSizer(wxVERTICAL);
+    wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
     
     wxStaticBox* box = new wxStaticBox(m_sqlContent, wxID_ANY, "Desktop Environment");
     box->SetForegroundColour(*wxWHITE);
