@@ -448,7 +448,7 @@ bool MainFrame::SearchSquashFS(const wxString& isoPath, wxArrayString& foundFile
             wxString wxFile = wxString::FromUTF8(file);
             wxString extension = wxFileName(wxFile).GetExt().Lower();
             
-            if (extension == "squashfs" || extension == "sfs" || extension == "img") {
+            if (extension == "squashfs" || extension == "sfs" || extension == "img" || extension == "cramfs") {
                 foundFiles.Add(wxFile);
                 found = true;
             }
