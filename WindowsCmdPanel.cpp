@@ -1,9 +1,10 @@
 #include "WindowsCmdPanel.h"
+#include "ContainerManager.h"  // Add this include at the top
 #include <wx/file.h>
 #include <wx/filename.h>
 
 #ifdef __WINDOWS__
-#include <wx/msw/private.h>
+    #include <windows.h>
 #endif
 
 wxBEGIN_EVENT_TABLE(WindowsCmdPanel, wxPanel)
@@ -24,6 +25,11 @@ WindowsCmdPanel::~WindowsCmdPanel()
     if (m_hwndCmd)
     {
         ::SendMessage(m_hwndCmd, WM_CLOSE, 0, 0);
+    }
+    
+    wxString containerId = ContainerManager::Get().GetCurrentContainerId();
+    if (!containerId.IsEmpty()) {
+        ContainerManager::Get().CleanupContainer(containerId);
     }
 #endif
 }
@@ -61,6 +67,12 @@ void WindowsCmdPanel::CreateCmdWindow()
     if (!output.IsEmpty()) {
         wxString containerId = output[0].Trim();
         
+        // Save container ID using ContainerManager
+        if (!ContainerManager::Get().SaveContainerId(containerId, m_isoPath)) {
+            wxLogError("Failed to save container ID");
+            return;
+        }
+
         // Install requirements first
         wxString setupCmd = "docker exec " + containerId + " /bin/bash -c \"apt-get update && "
             "DEBIAN_FRONTEND=noninteractive apt-get install -y "
@@ -147,9 +159,4 @@ void WindowsCmdPanel::OnSize(wxSizeEvent& event)
     }
 #endif
     event.Skip();
-}
-
-void WindowsCmdPanel::OnDockerProgress(int progress, const wxString& status)
-{
-    wxLogMessage(status);
 }

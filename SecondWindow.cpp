@@ -1,7 +1,14 @@
 #include "SecondWindow.h"
-#include <wx/notebook.h>
+#include <wx/dir.h>
+#include <wx/filename.h>
+#include <wx/wfstream.h>
+#include <wx/zipstrm.h>
+#include <wx/progdlg.h>
 #include <wx/statline.h>
-
+#include <wx/stdpaths.h>
+#include <wx/progdlg.h>
+#include <wx/stdpaths.h>
+#include <wx/filename.h>
 wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)
     EVT_CLOSE(SecondWindow::OnClose)
     EVT_BUTTON(ID_NEXT_BUTTON, SecondWindow::OnNext)
@@ -11,8 +18,11 @@ wxEND_EVENT_TABLE()
 
 SecondWindow::SecondWindow(wxWindow* parent, const wxString& title, const wxString& isoPath)
     : wxFrame(parent, wxID_ANY, title, wxDefaultPosition, wxSize(800, 650)),
-      m_isoPath(isoPath), m_cmdPanel(nullptr), m_terminalPanel(nullptr)
+      m_isoPath(isoPath)
 {
+    // Use ContainerManager to get container ID
+    m_containerId = ContainerManager::Get().GetCurrentContainerId();
+    
     CreateControls();
     Centre();
     SetBackgroundColour(wxColour(40, 44, 52));
@@ -21,7 +31,12 @@ SecondWindow::SecondWindow(wxWindow* parent, const wxString& title, const wxStri
 SecondWindow::~SecondWindow()
 {
     UnbindSQLEvents();
+    // Cleanup if we haven't already
+    if (!m_containerId.IsEmpty()) {
+        ContainerManager::Get().CleanupContainer(m_containerId);
+    }
 }
+
 
 void SecondWindow::UnbindSQLEvents()
 {
@@ -60,8 +75,8 @@ void SecondWindow::CreateControls()
     terminalButton->SetForegroundColour(*wxWHITE);
 
     wxStaticLine* separator = new wxStaticLine(tabPanel, wxID_ANY, 
-                                             wxDefaultPosition, wxDefaultSize,
-                                             wxLI_VERTICAL);
+                                         wxDefaultPosition, wxDefaultSize,
+                                         wxLI_VERTICAL);
     separator->SetBackgroundColour(wxColour(64, 64, 64));
 
     wxButton* sqlButton = new wxButton(tabPanel, ID_SQL_TAB, "SQL",
@@ -129,14 +144,129 @@ void SecondWindow::CreateControls()
     m_mainPanel->SetSizer(mainSizer);
     SetMinSize(wxSize(800, 600));
 }
+
+// In SecondWindow.cpp, container cleanup could be more thorough:
+
 void SecondWindow::OnClose(wxCloseEvent& event)
 {
+    // Container cleanup will now be handled by ContainerManager
+    if (!m_containerId.IsEmpty()) {
+        ContainerManager::Get().CleanupContainer(m_containerId);
+    }
+    
     if (GetParent()) {
         GetParent()->Show();
     }
     Destroy();
 }
 
+
+bool SecondWindow::RetryFailedOperation(const wxString& operation, int maxAttempts)
+{
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (ExecuteOperation(operation)) {
+            return true;
+        }
+        wxMilliSleep(1000 * attempt); // Exponential backoff
+    }
+    return false;
+}
+
+
+bool SecondWindow::CopyISOFromContainer(const wxString& containerId, const wxString& destPath) {
+    wxString copyCmd = wxString::Format(
+        "docker cp %s:/output/custom.iso \"%s\"",
+        containerId, destPath
+    );
+
+    if (ExecuteOperation(copyCmd)) {
+        return true;
+    }
+
+    // Fallback: try copying entire output directory
+    wxString altCopyCmd = wxString::Format(
+        "docker cp %s:/output/. \"%s\"",
+        containerId, wxFileName::GetPathSeparator() + destPath
+    );
+    
+    return ExecuteOperation(altCopyCmd);
+}
+
+void SecondWindow::ShowCompletionDialog(const wxString& isoPath) {
+    wxString msg = wxString::Format(
+        "Custom ISO created at:\n%s\n\n"
+        "Size: %s\n\n"
+        "Would you like to open the containing folder?",
+        isoPath, GetFileSizeString(isoPath)
+    );
+
+    if (wxMessageBox(msg, "ISO Creation Complete", 
+                    wxYES_NO | wxICON_INFORMATION) == wxYES) {
+        wxString explorerCmd = wxString::Format("explorer.exe /select,\"%s\"", isoPath);
+        wxExecute(explorerCmd);
+    }
+}
+
+void SecondWindow::OnNext(wxCommandEvent& event) {
+    wxProgressDialog progress("Creating Custom ISO", "Preparing environment...", 
+                            100, this, 
+                            wxPD_APP_MODAL | wxPD_AUTO_HIDE | 
+                            wxPD_SMOOTH | wxPD_ELAPSED_TIME | 
+                            wxPD_ESTIMATED_TIME | 
+                            wxPD_REMAINING_TIME);
+
+    progress.Update(60, "Running copy script...");
+
+    // Execute the Windows batch script
+    wxString copyScript = "copy_iso.bat";
+    if (wxExecute(copyScript, wxEXEC_SYNC) != 0) {
+        wxMessageBox("Failed to copy ISO", "Error", wxOK | wxICON_ERROR);
+        return;
+    }
+
+    progress.Update(100, "Complete!");
+    ShowCompletionDialog("I:\\Files\\Desktop\\LinuxGUI\\iso\\custom.iso");
+}
+
+bool SecondWindow::CopyScriptsToContainer(const wxString& containerId) {
+   wxString setupCmd = wxString::Format(
+       "docker cp setup.sh %s:/setup.sh && "
+       "docker cp copy_iso.sh %s:/copy_iso.sh && "
+       "docker exec %s chmod +x /setup.sh /copy_iso.sh",
+       containerId, containerId, containerId
+   );
+   return ExecuteOperation(setupCmd);
+}
+
+bool SecondWindow::RunScript(const wxString& containerId, const wxString& script) {
+   wxString cmd = wxString::Format("docker exec %s %s", containerId, script);
+   return ExecuteOperation(cmd);
+}
+
+bool SecondWindow::ExecuteOperation(const wxString& operation) {
+   wxArrayString output, errors;
+   int exitCode = wxExecute(operation, output, errors, wxEXEC_SYNC);
+   
+   for(const auto& line : output) {
+       LogToFile("build.log", line);
+   }
+   for(const auto& error : errors) {
+       LogToFile("build.log", "ERROR: " + error);
+   }
+   
+   return exitCode == 0;
+}
+
+void SecondWindow::LogToFile(const wxString& logPath, const wxString& message) {
+   wxFile file;
+   if (!file.Open(logPath, wxFile::write_append)) {
+       return;
+   }
+   wxString logMessage = wxString::Format("[%s] %s\n", 
+       wxDateTime::Now().Format("%Y-%m-%d %H:%M:%S"), message);
+   file.Write(logMessage);
+   file.Close();
+}
 void SecondWindow::OnTabChanged(wxCommandEvent& event)
 {
     if (event.GetId() == ID_TERMINAL_TAB) {
@@ -170,11 +300,28 @@ void SecondWindow::OnTabChanged(wxCommandEvent& event)
     m_mainPanel->Layout();
 }
 
-void SecondWindow::OnNext(wxCommandEvent& event)
-{
-    wxString currentTab = m_terminalTab->IsShown() ? "Terminal" : "SQL";
-    wxMessageBox(wxString::Format("Moving to next step from %s tab...", currentTab),
-                "Next Step", wxOK | wxICON_INFORMATION);
+
+
+wxString SecondWindow::GetFileSizeString(const wxString& filePath) {
+    wxULongLong size = wxFileName::GetSize(filePath);
+    
+    if (size == wxInvalidSize) {
+        return "Unknown size";
+    }
+
+    const double KB = 1024;
+    const double MB = KB * 1024;
+    const double GB = MB * 1024;
+
+    if (size.ToDouble() >= GB) {
+        return wxString::Format("%.2f GB", size.ToDouble() / GB);
+    } else if (size.ToDouble() >= MB) {
+        return wxString::Format("%.2f MB", size.ToDouble() / MB);
+    } else if (size.ToDouble() >= KB) {
+        return wxString::Format("%.2f KB", size.ToDouble() / KB);
+    } else {
+        return wxString::Format("%llu bytes", size.GetValue());
+    }
 }
 
 void SecondWindow::CreateSQLPanel() 

@@ -87,6 +87,7 @@ set(HEADERS
     DockerTransfer.h
     MyButton.h
     gear_icon.h
+    ContainerManager.h  # Add this line
 )
 
 # Platform-specific configurations
