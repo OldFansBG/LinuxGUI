@@ -13,12 +13,14 @@ class WindowsCmdPanel : public wxPanel {
 public:
     WindowsCmdPanel(wxWindow* parent);
     virtual ~WindowsCmdPanel();
-    void SetISOPath(const wxString& path); // Removed inline implementation
+    void SetISOPath(const wxString& path);
 
 private:
     void CreateCmdWindow();
+    bool CopyScriptsToContainer(const wxString& containerId);
     void OnSize(wxSizeEvent& event);
-    void OnDockerProgress(int progress, const wxString& status);
+    bool VerifyContainerSetup(const wxString& containerId);
+    bool CreateOutputDirectory(const wxString& containerId);
 
 #ifdef __WINDOWS__
     HWND m_hwndCmd;

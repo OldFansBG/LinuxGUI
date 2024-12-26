@@ -211,31 +211,98 @@ void SecondWindow::OnNext(wxCommandEvent& event) {
     wxProgressDialog progress("Creating Custom ISO", "Preparing environment...", 
                             100, this, 
                             wxPD_APP_MODAL | wxPD_AUTO_HIDE | 
-                            wxPD_SMOOTH | wxPD_ELAPSED_TIME | 
-                            wxPD_ESTIMATED_TIME | 
-                            wxPD_REMAINING_TIME);
+                            wxPD_SMOOTH | wxPD_ELAPSED_TIME);
 
-    progress.Update(60, "Running copy script...");
+    wxString containerId = ContainerManager::Get().GetCurrentContainerId();
+    if (containerId.IsEmpty()) {
+        wxMessageBox("No active container found", "Error", wxOK | wxICON_ERROR);
+        return;
+    }
 
-    // Execute the Windows batch script
+    // Check if output directory exists and set permissions
+    progress.Update(30, "Setting up output directory...");
+    wxString checkDirCmd = wxString::Format(
+        "docker exec %s test -d /output", 
+        containerId);
+    if (wxExecute(checkDirCmd, wxEXEC_SYNC) == 0) {
+        // Directory exists, ensure owner permissions
+        wxString chmodCmd = wxString::Format(
+            "docker exec %s chmod 755 /output",
+            containerId);
+        if (wxExecute(chmodCmd, wxEXEC_SYNC) != 0) {
+            wxMessageBox("Failed to set output directory permissions", "Error", wxOK | wxICON_ERROR);
+            return;
+        }
+    } else {
+        // Create directory with secure permissions
+        wxString mkdirCmd = wxString::Format(
+            "docker exec %s /bin/bash -c 'mkdir -p /output && chmod 755 /output'",
+            containerId);
+        if (wxExecute(mkdirCmd, wxEXEC_SYNC) != 0) {
+            wxMessageBox("Failed to create output directory", "Error", wxOK | wxICON_ERROR);
+            return;
+        }
+    }
+
+    // Verify directory is writable
+    wxString testWriteCmd = wxString::Format(
+        "docker exec %s test -w /output",
+        containerId);
+    if (wxExecute(testWriteCmd, wxEXEC_SYNC) != 0) {
+        wxMessageBox("Output directory is not writable", "Error", wxOK | wxICON_ERROR);
+        return;
+    }
+
+    // Run create_iso.sh in container
+    progress.Update(50, "Creating ISO...");
+    wxString createIsoCmd = wxString::Format("docker exec %s /create_iso.sh", containerId);
+    
+    wxArrayString output, errors;
+    int exitCode = wxExecute(createIsoCmd, output, errors, wxEXEC_SYNC);
+    
+    if (exitCode != 0) {
+        wxString errorMsg = "Failed to create ISO:\n";
+        for (const auto& error : errors) {
+            errorMsg += error + "\n";
+        }
+        wxMessageBox(errorMsg, "Error", wxOK | wxICON_ERROR);
+        return;
+    }
+
+    // Run copy_iso.bat to copy the ISO locally
+    progress.Update(80, "Copying ISO...");
     wxString copyScript = "copy_iso.bat";
-    if (wxExecute(copyScript, wxEXEC_SYNC) != 0) {
-        wxMessageBox("Failed to copy ISO", "Error", wxOK | wxICON_ERROR);
+    wxString copyLogPath = wxFileName::GetTempDir() + "\\iso_copy.log";
+    wxString copyCmd = copyScript + wxString::Format(" > \"%s\" 2>&1", copyLogPath);
+    
+    exitCode = wxExecute(copyCmd, output, errors, wxEXEC_SYNC);
+    
+    // Read and display copy log
+    wxString copyContent;
+    if (wxFile::Exists(copyLogPath)) {
+        wxFile file(copyLogPath);
+        file.ReadAll(&copyContent);
+        wxMessageBox(copyContent, "Copy Operation Log", wxOK | wxICON_INFORMATION);
+    }
+
+    if (exitCode != 0) {
+        wxMessageBox("Failed to copy ISO - Check log at: " + copyLogPath, 
+                    "Error", wxOK | wxICON_ERROR);
+        return;
+    }
+
+    // Verify ISO was created
+    wxString isoPath = "I:\\Files\\Desktop\\LinuxGUI\\iso\\custom.iso";
+    if (!wxFileExists(isoPath)) {
+        wxMessageBox("ISO file was not created", "Error", wxOK | wxICON_ERROR);
         return;
     }
 
     progress.Update(100, "Complete!");
-    ShowCompletionDialog("I:\\Files\\Desktop\\LinuxGUI\\iso\\custom.iso");
-}
+    ShowCompletionDialog(isoPath);
 
-bool SecondWindow::CopyScriptsToContainer(const wxString& containerId) {
-   wxString setupCmd = wxString::Format(
-       "docker cp setup.sh %s:/setup.sh && "
-       "docker cp copy_iso.sh %s:/copy_iso.sh && "
-       "docker exec %s chmod +x /setup.sh /copy_iso.sh",
-       containerId, containerId, containerId
-   );
-   return ExecuteOperation(setupCmd);
+    // Clean up container
+    ContainerManager::Get().CleanupContainer(containerId);
 }
 
 bool SecondWindow::RunScript(const wxString& containerId, const wxString& script) {

@@ -1,5 +1,3 @@
-2024-12-24 09:56:33
+Started: 2024-12-26 16:32:58
 ISO: /iso.iso
-Container: c2dc8e1394d2
-Completed: 2024-12-24 09:59:40
-Status: Success
+Container: 9174c68f5f4b
