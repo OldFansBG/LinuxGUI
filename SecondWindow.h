@@ -26,7 +26,6 @@ private:
     void OnNext(wxCommandEvent& event);
     bool RetryFailedOperation(const wxString& operation, int maxAttempts = 3);
     bool ExecuteOperation(const wxString& operation);
-    bool CopyScriptsToContainer(const wxString& containerId);
     bool RunScript(const wxString& containerId, const wxString& script);
     bool CopyISOFromContainer(const wxString& containerId, const wxString& destPath);
     void ShowCompletionDialog(const wxString& isoPath);

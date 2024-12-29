@@ -1,2 +1,7 @@
 /build/
 /backup/
+/.history/
+/iso/
+/.lh/
+/tools/
+*.7z

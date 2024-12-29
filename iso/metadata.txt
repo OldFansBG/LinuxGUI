@@ -1,3 +1,0 @@
-Started: 2024-12-26 16:32:58
-ISO: /iso.iso
-Container: 9174c68f5f4b

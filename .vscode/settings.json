@@ -3,6 +3,7 @@
         ".fantomasignore": "ignore",
         "xstring": "cpp",
         "functional": "cpp",
-        "chrono": "cpp"
+        "chrono": "cpp",
+        "iosfwd": "cpp"
     }
 }
