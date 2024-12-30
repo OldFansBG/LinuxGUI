@@ -108,16 +108,51 @@ void WindowsCmdPanel::CreateCmdWindow()
     std::wstring baseDir = L"I:\\Files\\Desktop\\LinuxGUI\\build";
     wxLogMessage("Using base directory: %s", baseDir);
     
-    std::wstring cmdLine = L"cmd.exe /K \"cd /d " + baseDir +
-                           L" && docker run -it --privileged --name my_unique_container ubuntu:latest bash\"";
-    wxLogMessage("Docker run command: %s", cmdLine);
+    // Create Docker container
+    std::wstring dockerRunCmd = L"docker run -d --privileged --name my_unique_container ubuntu:latest tail -f /dev/null";
+    wxLogMessage("Docker run command: %s", dockerRunCmd);
 
-    if (CreateProcessW(NULL, const_cast<wchar_t*>(cmdLine.c_str()), NULL, NULL, FALSE,
+    if (CreateProcessW(NULL, const_cast<wchar_t*>(dockerRunCmd.c_str()), NULL, NULL, FALSE,
             CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) 
     {
-        wxLogMessage("Created process successfully, waiting for container startup...");
-        Sleep(3000);  // Allow container to start
+        wxLogMessage("Docker container created successfully");
 
+        // Embed the CMD window immediately after container creation
+        Sleep(200);  // Give the window time to appear
+        m_hwndCmd = FindWindowExW(NULL, NULL, L"ConsoleWindowClass", NULL);
+        
+        if (m_hwndCmd) 
+        {
+            wxLogMessage("Found CMD window, setting up window properties");
+
+            // Remove window decorations
+            LONG style = GetWindowLong(m_hwndCmd, GWL_STYLE);
+            style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+            SetWindowLong(m_hwndCmd, GWL_STYLE, style);
+            
+            LONG exStyle = GetWindowLong(m_hwndCmd, GWL_EXSTYLE);
+            exStyle &= ~(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE);
+            SetWindowLong(m_hwndCmd, GWL_EXSTYLE, exStyle);
+
+            // Embed the CMD window
+            ::SetParent(m_hwndCmd, (HWND)GetHWND());
+            ::ShowWindow(m_hwndCmd, SW_SHOW);
+            ::SetWindowPos(
+                m_hwndCmd, NULL, 0, 0, GetClientSize().GetWidth(), GetClientSize().GetHeight(), 
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+            ::SetForegroundWindow(m_hwndCmd);
+            ::SetFocus(m_hwndCmd);
+            wxLogMessage("CMD window embedded successfully");
+        }
+        else {
+            wxLogError("Failed to find CMD window");
+        }
+
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        wxLogMessage("Process handles cleaned up");
+
+        // Capture container ID
         std::wstring captureCmd = L"cmd.exe /C docker ps -aqf name=my_unique_container > \"" + 
                                  baseDir + L"\\container_id.txt\"";
         wxLogMessage("Capturing container ID with command: %s", captureCmd);
@@ -237,45 +272,10 @@ void WindowsCmdPanel::CreateCmdWindow()
         }
 
         m_containerId = wxString(containerId);
-
-        // Embed the CMD window
-        Sleep(200);  // Give the window time to appear
-        m_hwndCmd = FindWindowExW(NULL, NULL, L"ConsoleWindowClass", NULL);
-        
-        if (m_hwndCmd) 
-        {
-            wxLogMessage("Found CMD window, setting up window properties");
-
-            // Remove window decorations
-            LONG style = GetWindowLong(m_hwndCmd, GWL_STYLE);
-            style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
-            SetWindowLong(m_hwndCmd, GWL_STYLE, style);
-            
-            LONG exStyle = GetWindowLong(m_hwndCmd, GWL_EXSTYLE);
-            exStyle &= ~(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE);
-            SetWindowLong(m_hwndCmd, GWL_EXSTYLE, exStyle);
-
-            // Embed the CMD window
-            ::SetParent(m_hwndCmd, (HWND)GetHWND());
-            ::ShowWindow(m_hwndCmd, SW_SHOW);
-            ::SetWindowPos(
-                m_hwndCmd, NULL, 0, 0, GetClientSize().GetWidth(), GetClientSize().GetHeight(), 
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
-            ::SetForegroundWindow(m_hwndCmd);
-            ::SetFocus(m_hwndCmd);
-            wxLogMessage("CMD window embedded successfully");
-        }
-        else {
-            wxLogError("Failed to find CMD window");
-        }
-
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-        wxLogMessage("Process handles cleaned up");
     } 
     else 
     {
-        wxLogError("Failed to create CMD process");
+        wxLogError("Failed to create Docker container");
     }
 #endif
 }
