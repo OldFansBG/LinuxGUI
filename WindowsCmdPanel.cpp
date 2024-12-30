@@ -1,18 +1,18 @@
 #include "WindowsCmdPanel.h"
 #include "ContainerManager.h"
+
 #include <wx/file.h>
 #include <wx/filename.h>
-#include <wx/stdpaths.h>  // Add this header for wxStandardPaths
+#include <wx/stdpaths.h>
+#include <wx/wx.h>
+#include <wx/msgdlg.h>
+#include <wx/log.h>
+
 #include <sddl.h>
 #include <aclapi.h>
 #include <fstream>
 #include <iostream>
 #include <string>
-#include <string>
-#include <fstream>
-#include <wx/wx.h>
-#include <wx/msgdlg.h>
-#include <wx/log.h>
 
 #ifdef __WINDOWS__
     #include <windows.h>
@@ -23,7 +23,7 @@ wxBEGIN_EVENT_TABLE(WindowsCmdPanel, wxPanel)
 wxEND_EVENT_TABLE()
 
 WindowsCmdPanel::WindowsCmdPanel(wxWindow* parent)
-    : wxPanel(parent)
+    : wxPanel(parent), m_hwndCmd(nullptr), m_initTimer(nullptr), m_initStep(0)
 {
     // Initialize logging
     static bool logInitialized = false;
@@ -37,20 +37,25 @@ WindowsCmdPanel::WindowsCmdPanel(wxWindow* parent)
 WindowsCmdPanel::~WindowsCmdPanel()
 {
 #ifdef __WINDOWS__
-    if (m_hwndCmd)
-    {
+    wxLogMessage("WindowsCmdPanel destructor called");
+    if (m_hwndCmd) {
+        wxLogMessage("Closing CMD window");
         ::SendMessage(m_hwndCmd, WM_CLOSE, 0, 0);
     }
-    
+
     wxString containerId = ContainerManager::Get().GetCurrentContainerId();
     if (!containerId.IsEmpty()) {
+        wxLogMessage("Cleaning up container: %s", containerId);
         ContainerManager::Get().CleanupContainer(containerId);
     }
 #endif
+
+    CleanupTimer();
 }
 
 void WindowsCmdPanel::SetISOPath(const wxString& path)
 {
+    wxLogMessage("Setting ISO path: %s", path);
     m_isoPath = path;
     if (!m_isoPath.IsEmpty()) {
         CreateCmdWindow();
@@ -60,16 +65,16 @@ void WindowsCmdPanel::SetISOPath(const wxString& path)
 void WindowsCmdPanel::OnSize(wxSizeEvent& event)
 {
 #ifdef __WINDOWS__
-    if (m_hwndCmd)
-    {
+    if (m_hwndCmd) {
         wxSize size = GetClientSize();
+        wxLogMessage("Resizing CMD window to %dx%d", size.GetWidth(), size.GetHeight());
         ::MoveWindow(m_hwndCmd, 0, 0, size.GetWidth(), size.GetHeight(), TRUE);
     }
 #endif
     event.Skip();
 }
 
-void WindowsCmdPanel::CreateCmdWindow() 
+void WindowsCmdPanel::CreateCmdWindow()
 {
 #ifdef __WINDOWS__
     wxLogMessage("Starting CreateCmdWindow");
@@ -78,10 +83,11 @@ void WindowsCmdPanel::CreateCmdWindow()
     BOOL isAdmin = FALSE;
     PSID adminGroup = NULL;
     SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
-    
+
+    wxLogMessage("Checking for admin rights");
     if (AllocateAndInitializeSid(&ntAuthority, 2,
-        SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS,
-        0, 0, 0, 0, 0, 0, &adminGroup)) {
+                                SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS,
+                                0, 0, 0, 0, 0, 0, &adminGroup)) {
         CheckTokenMembership(NULL, adminGroup, &isAdmin);
         FreeSid(adminGroup);
     }
@@ -93,189 +99,267 @@ void WindowsCmdPanel::CreateCmdWindow()
                      wxICON_ERROR | wxOK);
         return;
     }
-    wxLogMessage("Admin rights check passed");
+    wxLogMessage("Admin rights confirmed");
 
-    STARTUPINFOW si;
-    PROCESS_INFORMATION pi;
+    // Start initialization sequence
+    wxLogMessage("Starting initialization sequence");
+    m_initStep = 0;
+    m_initTimer = new InitTimer(this);
+    m_initTimer->Start(100); // Start first step after 100ms
+#endif
+}
 
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;  // Hide the window initially
+void WindowsCmdPanel::ContinueInitialization()
+{
+#ifdef __WINDOWS__
+    wxLogMessage("Continuing initialization step %d", m_initStep);
+    switch (m_initStep) {
+        case 0: { // Create container and embed immediately
+            wxLogMessage("Step 0: Creating Docker container");
+            std::wstring baseDir = L"I:\\Files\\Desktop\\LinuxGUI\\build";
+            std::wstring cmdLine = L"cmd.exe /K \"cd /d " + baseDir +
+                                   L" && docker run -it --privileged --name my_unique_container ubuntu:latest bash\"";
 
-    ZeroMemory(&pi, sizeof(pi));
+            STARTUPINFOW si;
+            PROCESS_INFORMATION pi;
+            ZeroMemory(&si, sizeof(si));
+            si.cb = sizeof(si);
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_SHOW;  // Changed from SW_HIDE to SW_SHOW
+            ZeroMemory(&pi, sizeof(pi));
 
-    std::wstring baseDir = L"I:\\Files\\Desktop\\LinuxGUI\\build";
-    wxLogMessage("Using base directory: %s", baseDir);
-    
-    std::wstring cmdLine = L"cmd.exe /K \"cd /d " + baseDir +
-                           L" && docker run -it --privileged --name my_unique_container ubuntu:latest bash\"";
-    wxLogMessage("Docker run command: %s", cmdLine);
+            if (CreateProcessW(NULL, const_cast<wchar_t*>(cmdLine.c_str()),
+                              NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) {
+                wxLogMessage("Container process created successfully");
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
 
-    if (CreateProcessW(NULL, const_cast<wchar_t*>(cmdLine.c_str()), NULL, NULL, FALSE,
-            CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) 
-    {
-        wxLogMessage("Created process successfully, waiting for container startup...");
-        Sleep(3000);  // Allow container to start
+                // Wait briefly for the window to be created
+                Sleep(500);
 
-        std::wstring captureCmd = L"cmd.exe /C docker ps -aqf name=my_unique_container > \"" + 
-                                 baseDir + L"\\container_id.txt\"";
-        wxLogMessage("Capturing container ID with command: %s", captureCmd);
-        
-        int captureResult = _wsystem(captureCmd.c_str());
-        wxLogMessage("Container ID capture command result: %d", captureResult);
+                // Find and embed the CMD window immediately
+                m_hwndCmd = FindWindowExW(NULL, NULL, L"ConsoleWindowClass", NULL);
+                if (m_hwndCmd) {
+                    wxLogMessage("Found CMD window, embedding immediately");
+                    LONG style = GetWindowLong(m_hwndCmd, GWL_STYLE);
+                    style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX |
+                               WS_MAXIMIZEBOX | WS_SYSMENU);
+                    SetWindowLong(m_hwndCmd, GWL_STYLE, style);
 
-        Sleep(1000);
+                    LONG exStyle = GetWindowLong(m_hwndCmd, GWL_EXSTYLE);
+                    exStyle &= ~(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE);
+                    SetWindowLong(m_hwndCmd, GWL_EXSTYLE, exStyle);
 
-        std::string containerId;
-        {
+                    ::SetParent(m_hwndCmd, (HWND)GetHWND());
+                    ::ShowWindow(m_hwndCmd, SW_SHOW);
+                    ::SetWindowPos(m_hwndCmd, NULL, 0, 0,
+                                   GetClientSize().GetWidth(), GetClientSize().GetHeight(),
+                                   SWP_FRAMECHANGED);
+                    ::SetForegroundWindow(m_hwndCmd);
+                    ::SetFocus(m_hwndCmd);
+                    wxLogMessage("CMD window embedded successfully");
+                } else {
+                    wxLogError("Failed to find CMD window for immediate embedding");
+                }
+
+                m_initTimer->StartOnce(3000); // Wait 3 seconds before next step
+                m_initStep++;
+            } else {
+                wxLogError("Failed to create container process. Error code: %d", GetLastError());
+                CleanupTimer();
+            }
+            break;
+        }
+
+        case 1: { // Get container ID
+            wxLogMessage("Step 1: Getting container ID");
+            std::wstring baseDir = L"I:\\Files\\Desktop\\LinuxGUI\\build";
+            std::wstring captureCmd = L"docker ps -aqf name=my_unique_container > \"" +
+                                      baseDir + L"\\container_id.txt\"";
+            wxLogMessage("Running command: %s", captureCmd);
+
+            STARTUPINFOW siHidden = { sizeof(STARTUPINFOW) };
+            PROCESS_INFORMATION piHidden;
+            siHidden.dwFlags = STARTF_USESHOWWINDOW;
+            siHidden.wShowWindow = SW_HIDE;
+
+            std::wstring fullCmd = L"cmd.exe /C " + captureCmd;
+            CreateProcessW(NULL, const_cast<LPWSTR>(fullCmd.c_str()),
+                          NULL, NULL, FALSE, CREATE_NO_WINDOW,
+                          NULL, NULL, &siHidden, &piHidden);
+
+            // Wait for the command to complete
+            WaitForSingleObject(piHidden.hProcess, INFINITE);
+            CloseHandle(piHidden.hProcess);
+            CloseHandle(piHidden.hThread);
+
+            std::string containerId;
             std::ifstream file((baseDir + L"\\container_id.txt").c_str());
             if (file.is_open()) {
-                wxLogMessage("Container ID file opened successfully");
                 std::getline(file, containerId);
                 file.close();
-                
                 containerId.erase(0, containerId.find_first_not_of(" \n\r\t"));
                 containerId.erase(containerId.find_last_not_of(" \n\r\t") + 1);
-                wxLogMessage("Container ID captured: '%s'", containerId);
+
+                if (!containerId.empty()) {
+                    m_containerId = containerId;
+                    wxLogMessage("Container ID captured: %s", containerId);
+                    m_initTimer->StartOnce(100);
+                    m_initStep++;
+                } else {
+                    wxLogError("Container ID is empty");
+                    CleanupTimer();
+                }
             } else {
-                wxLogError("Failed to open container ID file");
-                return;
+                wxLogError("Failed to read container ID file");
+                CleanupTimer();
             }
+            break;
         }
 
-        if (containerId.empty()) {
-            wxLogError("Container ID is empty");
-            return;
-        }
+        case 2: { // Copy scripts and set permissions
+            wxLogMessage("Step 2: Copying scripts and setting permissions");
+            for (const auto& script : {"setup_output.sh", "setup_chroot.sh", "create_iso.sh"}) {
+                wxString cmd = wxString::Format("docker cp \"I:\\Files\\Desktop\\LinuxGUI\\build\\%s\" %s:/%s",
+                                                script, m_containerId, script);
+                wxLogMessage("Copying script: %s", cmd);
+                wxArrayString output, errors;
+                wxExecute(cmd, output, errors, wxEXEC_SYNC | wxEXEC_NOEVENTS);
 
-        // Copy scripts
-        wxString cmd1 = wxString::Format("docker cp \"%s\\setup_output.sh\" %s:/setup_output.sh", 
-                                        baseDir, containerId);
-        wxString cmd2 = wxString::Format("docker cp \"%s\\setup_chroot.sh\" %s:/setup_chroot.sh", 
-                                        baseDir, containerId);
-        wxString cmd3 = wxString::Format("docker cp \"%s\\create_iso.sh\" %s:/create_iso.sh", 
-                                        baseDir, containerId);
-
-        wxLogMessage("Executing script copy commands:");
-        wxLogMessage("1: %s", cmd1);
-        wxLogMessage("2: %s", cmd2);
-        wxLogMessage("3: %s", cmd3);
-
-        wxArrayString output, errors;
-        int result1 = wxExecute(cmd1, output, errors, wxEXEC_SYNC);
-        int result2 = wxExecute(cmd2, output, errors, wxEXEC_SYNC);
-        int result3 = wxExecute(cmd3, output, errors, wxEXEC_SYNC);
-
-        if (result1 != 0 || result2 != 0 || result3 != 0) {
-            wxLogError("Failed to copy scripts to container");
-            return;
-        }
-        wxLogMessage("Scripts copied successfully");
-
-        // Set execute permissions
-        wxString chmodCmd = wxString::Format("docker exec %s chmod +x /setup_output.sh /setup_chroot.sh /create_iso.sh", 
-                                           containerId);
-        wxExecute(chmodCmd, wxEXEC_SYNC);
-        wxLogMessage("Set execute permissions on scripts");
-
-        // Copy ISO if path is set
-        if (!m_isoPath.IsEmpty()) {
-            wxLogMessage("Copying ISO from: %s", m_isoPath);
-            
-            // Create mnt/iso directory
-            wxString mkdirCmd = wxString::Format("docker exec %s mkdir -p /mnt/iso", containerId);
-            wxExecute(mkdirCmd, wxEXEC_SYNC);
-            
-            // Copy ISO file
-            wxString copyIsoCmd = wxString::Format("docker cp \"%s\" %s:/mnt/iso/base.iso",
-                                                 m_isoPath, containerId);
-            wxLogMessage("Copying ISO with command: %s", copyIsoCmd);
-
-            wxArrayString isoOutput, isoErrors;
-            if (wxExecute(copyIsoCmd, isoOutput, isoErrors, wxEXEC_SYNC) != 0) {
-                wxLogError("Failed to copy ISO to container");
-                for(const auto& error : isoErrors) {
-                    wxLogError("Error: %s", error);
+                if (!errors.IsEmpty()) {
+                    wxLogMessage("Script copy errors:");
+                    for (const auto& error : errors) {
+                        wxLogMessage(" - %s", error);
+                    }
                 }
-                return;
             }
-            wxLogMessage("ISO copied successfully");
 
-            // Set permissions on ISO directory
-            wxString chmodIsoCmd = wxString::Format("docker exec %s chmod -R 777 /mnt/iso", containerId);
-            wxExecute(chmodIsoCmd, wxEXEC_SYNC);
-            wxLogMessage("Set permissions on ISO directory");
+            wxString chmodCmd = wxString::Format(
+                "docker exec %s chmod +x /setup_output.sh /setup_chroot.sh /create_iso.sh",
+                m_containerId);
+            wxLogMessage("Setting permissions: %s", chmodCmd);
+            wxExecute(chmodCmd, wxEXEC_SYNC | wxEXEC_NOEVENTS);
 
-            // Run setup_output.sh
-            wxString setupOutputCmd = wxString::Format("docker exec %s /setup_output.sh", containerId);
-            wxLogMessage("Running setup_output.sh");
-            
-            if (wxExecute(setupOutputCmd, output, errors, wxEXEC_SYNC) != 0) {
-                wxLogError("Failed to run setup_output.sh");
-                for(const auto& error : errors) {
-                    wxLogError("Error: %s", error);
+            m_initTimer->StartOnce(100);
+            m_initStep++;
+            break;
+        }
+
+        case 3: { // Copy ISO and run setup scripts if path is set
+            wxLogMessage("Step 3: ISO setup and script execution");
+            if (!m_isoPath.IsEmpty()) {
+                wxString mkdirCmd = wxString::Format("docker exec %s mkdir -p /mnt/iso", m_containerId);
+                wxLogMessage("Creating ISO directory: %s", mkdirCmd);
+                wxExecute(mkdirCmd, wxEXEC_SYNC | wxEXEC_NOHIDE);
+
+                wxString copyIsoCmd = wxString::Format("docker cp \"%s\" %s:/mnt/iso/base.iso",
+                                                       m_isoPath, m_containerId);
+                wxLogMessage("Copying ISO: %s", copyIsoCmd);
+
+                wxArrayString output, errors;
+                if (wxExecute(copyIsoCmd, output, errors, wxEXEC_SYNC | wxEXEC_NOHIDE) == 0) {
+                    wxLogMessage("ISO copied successfully");
+                    wxString setupOutputCmd = wxString::Format("docker exec %s /setup_output.sh", m_containerId);
+                    wxString setupChrootCmd = wxString::Format("docker exec %s /setup_chroot.sh", m_containerId);
+
+                    wxLogMessage("Running setup_output.sh");
+                    wxExecute(setupOutputCmd, wxEXEC_SYNC | wxEXEC_NOEVENTS);
+                    wxLogMessage("Running setup_chroot.sh");
+                    wxExecute(setupChrootCmd, wxEXEC_SYNC | wxEXEC_NOEVENTS);
+                } else {
+                    wxLogError("Failed to copy ISO. Errors:");
+                    for (const auto& error : errors) {
+                        wxLogError(" - %s", error);
+                    }
                 }
-                return;
+            } else {
+                wxLogMessage("No ISO path set, skipping ISO setup");
             }
-            wxLogMessage("setup_output.sh completed successfully");
 
-            // Run setup_chroot.sh
-            wxString setupChrootCmd = wxString::Format("docker exec %s /setup_chroot.sh", containerId);
-            wxLogMessage("Running setup_chroot.sh");
-            
-            if (wxExecute(setupChrootCmd, output, errors, wxEXEC_SYNC) != 0) {
-                wxLogError("Failed to run setup_chroot.sh");
-                for(const auto& error : errors) {
-                    wxLogError("Error: %s", error);
-                }
-                return;
-            }
-            wxLogMessage("setup_chroot.sh completed successfully");
-        } else {
-            wxLogMessage("No ISO path set, skipping ISO copy and script execution");
+            m_initTimer->StartOnce(200);
+            m_initStep++;
+            break;
         }
 
-        m_containerId = wxString(containerId);
-
-        // Embed the CMD window
-        Sleep(200);  // Give the window time to appear
-        m_hwndCmd = FindWindowExW(NULL, NULL, L"ConsoleWindowClass", NULL);
-        
-        if (m_hwndCmd) 
-        {
-            wxLogMessage("Found CMD window, setting up window properties");
-
-            // Remove window decorations
-            LONG style = GetWindowLong(m_hwndCmd, GWL_STYLE);
-            style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
-            SetWindowLong(m_hwndCmd, GWL_STYLE, style);
-            
-            LONG exStyle = GetWindowLong(m_hwndCmd, GWL_EXSTYLE);
-            exStyle &= ~(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE);
-            SetWindowLong(m_hwndCmd, GWL_EXSTYLE, exStyle);
-
-            // Embed the CMD window
-            ::SetParent(m_hwndCmd, (HWND)GetHWND());
-            ::ShowWindow(m_hwndCmd, SW_SHOW);
-            ::SetWindowPos(
-                m_hwndCmd, NULL, 0, 0, GetClientSize().GetWidth(), GetClientSize().GetHeight(), 
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
-            ::SetForegroundWindow(m_hwndCmd);
-            ::SetFocus(m_hwndCmd);
-            wxLogMessage("CMD window embedded successfully");
+        case 4: { // Final cleanup
+            wxLogMessage("Step 4: Initialization complete");
+            CleanupTimer();
+            break;
         }
-        else {
-            wxLogError("Failed to find CMD window");
-        }
-
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-        wxLogMessage("Process handles cleaned up");
-    } 
-    else 
-    {
-        wxLogError("Failed to create CMD process");
     }
 #endif
+}
+
+void WindowsCmdPanel::CleanupTimer()
+{
+    if (m_initTimer) {
+        wxLogMessage("Cleaning up initialization timer");
+        m_initTimer->Stop();
+        delete m_initTimer;
+        m_initTimer = nullptr;
+    }
+}
+
+bool WindowsCmdPanel::ExecuteHiddenCommand(const wxString& cmd, wxArrayString* output)
+{
+#ifdef __WINDOWS__
+    STARTUPINFOW si = { sizeof(STARTUPINFOW) };
+    PROCESS_INFORMATION pi;
+
+    // Create pipes for standard handles
+    HANDLE hStdInRead, hStdInWrite;
+    HANDLE hStdOutRead, hStdOutWrite;
+    HANDLE hStdErrRead, hStdErrWrite;
+
+    if (!CreatePipe(&hStdInRead, &hStdInWrite, NULL, 0)) return false;
+    if (!CreatePipe(&hStdOutRead, &hStdOutWrite, NULL, 0)) return false;
+    if (!CreatePipe(&hStdErrRead, &hStdErrWrite, NULL, 0)) return false;
+
+    // Set up STARTUPINFOW
+    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.hStdInput = hStdInRead;
+    si.hStdOutput = hStdOutWrite;
+    si.hStdError = hStdErrWrite;
+    si.wShowWindow = SW_HIDE;
+
+    // Prepare the command line
+    std::wstring fullCmd = L"cmd.exe /C " + std::wstring(cmd.wc_str());
+
+    BOOL result = CreateProcessW(NULL, const_cast<wchar_t*>(fullCmd.c_str()),
+                                 NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi);
+
+    // Close the handles to the pipes
+    CloseHandle(hStdInRead);
+    CloseHandle(hStdInWrite);
+    CloseHandle(hStdOutRead);
+    CloseHandle(hStdOutWrite);
+    CloseHandle(hStdErrRead);
+    CloseHandle(hStdErrWrite);
+
+    if (!result) {
+        wxLogError("Failed to execute command: %s", cmd);
+        return false;
+    }
+
+    // Wait for the process to complete
+    WaitForSingleObject(pi.hProcess, INFINITE);
+
+    // Get exit code
+    DWORD exitCode;
+    GetExitCodeProcess(pi.hProcess, &exitCode);
+
+    // Cleanup
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    return (exitCode == 0);
+#else
+    return false;
+#endif
+}
+
+bool WindowsCmdPanel::ExecuteDockerCommand(const wxString& cmd, wxArrayString* output)
+{
+    wxString dockerCmd = wxString::Format("docker %s", cmd);
+    return ExecuteHiddenCommand(dockerCmd, output);
 }
