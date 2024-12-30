@@ -101,7 +101,7 @@ void WindowsCmdPanel::CreateCmdWindow()
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
     si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_SHOW;
+    si.wShowWindow = SW_HIDE;  // Hide the window initially
 
     ZeroMemory(&pi, sizeof(pi));
 
@@ -239,11 +239,14 @@ void WindowsCmdPanel::CreateCmdWindow()
         m_containerId = wxString(containerId);
 
         // Embed the CMD window
+        Sleep(200);  // Give the window time to appear
         m_hwndCmd = FindWindowExW(NULL, NULL, L"ConsoleWindowClass", NULL);
         
         if (m_hwndCmd) 
         {
             wxLogMessage("Found CMD window, setting up window properties");
+
+            // Remove window decorations
             LONG style = GetWindowLong(m_hwndCmd, GWL_STYLE);
             style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
             SetWindowLong(m_hwndCmd, GWL_STYLE, style);
@@ -252,6 +255,7 @@ void WindowsCmdPanel::CreateCmdWindow()
             exStyle &= ~(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE);
             SetWindowLong(m_hwndCmd, GWL_EXSTYLE, exStyle);
 
+            // Embed the CMD window
             ::SetParent(m_hwndCmd, (HWND)GetHWND());
             ::ShowWindow(m_hwndCmd, SW_SHOW);
             ::SetWindowPos(
@@ -267,7 +271,7 @@ void WindowsCmdPanel::CreateCmdWindow()
 
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
-        wxLogMessage("Process handles clesaned up");
+        wxLogMessage("Process handles cleaned up");
     } 
     else 
     {
