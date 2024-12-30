@@ -126,7 +126,7 @@ void WindowsCmdPanel::ContinueInitialization()
             ZeroMemory(&si, sizeof(si));
             si.cb = sizeof(si);
             si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_SHOW;  // Show the window for the main container process
+            si.wShowWindow = SW_HIDE;  // Hide the window initially
             ZeroMemory(&pi, sizeof(pi));
 
             if (CreateProcessW(NULL, const_cast<wchar_t*>(cmdLine.c_str()),
@@ -154,7 +154,7 @@ void WindowsCmdPanel::ContinueInitialization()
                     SetWindowLong(m_hwndCmd, GWL_EXSTYLE, exStyle);
 
                     ::SetParent(m_hwndCmd, (HWND)GetHWND());
-                    ::ShowWindow(m_hwndCmd, SW_SHOW);
+                    ::ShowWindow(m_hwndCmd, SW_SHOW);  // Show the window after embedding
                     ::SetWindowPos(m_hwndCmd, NULL, 0, 0,
                                    GetClientSize().GetWidth(), GetClientSize().GetHeight(),
                                    SWP_FRAMECHANGED);
