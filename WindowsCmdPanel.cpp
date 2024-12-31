@@ -193,8 +193,7 @@ void WindowsCmdPanel::ContinueInitialization()
         case 1: { // Step 1: Get container ID
             wxLogMessage("Step 1: Getting container ID");
             std::wstring baseDir = L"I:\\Files\\Desktop\\LinuxGUI\\build";
-            std::wstring captureCmd = L"docker ps -aqf name=my_unique_container > \"" +
-                                      baseDir + L"\\container_id.txt\"";
+            std::wstring captureCmd = L"docker ps -aqf name=my_unique_container > \"" + baseDir + L"\\container_id.txt\"";
             wxLogMessage("Running command to capture container ID: %s", captureCmd);
 
             STARTUPINFOW siHidden = { sizeof(STARTUPINFOW) };
@@ -426,7 +425,10 @@ void WindowsCmdPanel::ContinueInitialization()
             }
 
             // Command to run docker exec -it, execute setup_chroot.sh, and enter chroot
-            std::wstring attachCmd = L"cmd.exe /K docker exec -it my_unique_container /bin/bash -c \"/setup_chroot.sh 'echo $$'\""; 
+            std::wstring attachCmd = wxString::Format(
+                L"cmd.exe /K docker exec -it %s /bin/bash -c \"/setup_chroot.sh 'echo $$'\"",
+                m_containerId
+            ).ToStdWstring();
 
             STARTUPINFOW si;
             PROCESS_INFORMATION pi;
@@ -476,6 +478,131 @@ void WindowsCmdPanel::ContinueInitialization()
                 wxLogError("Failed to create new CMD window for docker exec -it. Error code: %d", GetLastError());
             }
 
+            // Clean up the timer and increment the step
+            CleanupTimer();
+            m_initStep++; // Move to the next step
+            break;
+        }
+
+        case 7: { // Step 7: Execute create_iso.sh
+            wxLogMessage("Step 7: Executing create_iso.sh");
+
+            // Detach the existing CMD window (if any)
+            if (m_hwndCmd) {
+                ::SendMessage(m_hwndCmd, WM_CLOSE, 0, 0); // Close the existing CMD window
+                m_hwndCmd = nullptr; // Reset the handle
+            }
+
+            // Command to run docker exec -it and execute create_iso.sh
+            std::wstring createIsoCmd = wxString::Format(
+                L"cmd.exe /K docker exec -it %s /bin/bash -c \"/create_iso.sh\"",
+                m_containerId
+            ).ToStdWstring();
+
+            STARTUPINFOW si;
+            PROCESS_INFORMATION pi;
+            ZeroMemory(&si, sizeof(si));
+            si.cb = sizeof(si);
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE; // Hide the window initially
+            ZeroMemory(&pi, sizeof(pi));
+
+            if (CreateProcessW(NULL, const_cast<wchar_t*>(createIsoCmd.c_str()),
+                            NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) {
+                wxLogMessage("New CMD window created successfully for docker exec -it");
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+
+                // Wait for the new CMD window to be created
+                Sleep(2000);
+
+                // Find and embed the new CMD window
+                m_hwndCmd = FindWindowExW(NULL, NULL, L"ConsoleWindowClass", NULL);
+                if (m_hwndCmd) {
+                    wxLogMessage("Found new CMD window, embedding immediately");
+
+                    // Remove window decorations
+                    LONG style = GetWindowLong(m_hwndCmd, GWL_STYLE);
+                    style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX |
+                            WS_MAXIMIZEBOX | WS_SYSMENU);
+                    SetWindowLong(m_hwndCmd, GWL_STYLE, style);
+
+                    LONG exStyle = GetWindowLong(m_hwndCmd, GWL_EXSTYLE);
+                    exStyle &= ~(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE);
+                    SetWindowLong(m_hwndCmd, GWL_EXSTYLE, exStyle);
+
+                    // Embed the window into the application
+                    ::SetParent(m_hwndCmd, (HWND)GetHWND());
+                    ::ShowWindow(m_hwndCmd, SW_SHOW);  // Show the window after embedding
+                    ::SetWindowPos(m_hwndCmd, NULL, 0, 0,
+                                GetClientSize().GetWidth(), GetClientSize().GetHeight(),
+                                SWP_FRAMECHANGED);
+                    ::SetForegroundWindow(m_hwndCmd);
+                    ::SetFocus(m_hwndCmd);
+                    wxLogMessage("New CMD window embedded successfully");
+                } else {
+                    wxLogError("Failed to find new CMD window for embedding");
+                }
+
+                // Wait for create_iso.sh to complete
+                wxLogMessage("Waiting for create_iso.sh to complete...");
+                wxMilliSleep(10000); // Wait for 10 seconds (adjust as needed)
+            } else {
+                wxLogError("Failed to create new CMD window for docker exec -it. Error code: %d", GetLastError());
+            }
+
+            // Increment the step
+            m_initStep++; // Move to the next step
+            break;
+        }
+
+        case 8: { // Step 8: Copy the ISO file from the container to the host
+            wxLogMessage("Step 8: Copying ISO file from container to host");
+
+            wxString isoDir = "I:\\Files\\Desktop\\LinuxGUI\\iso";
+            wxLogMessage("Checking if output directory exists: %s", isoDir);
+            if (!wxDirExists(isoDir)) {
+                wxLogMessage("Output directory does not exist. Creating it.");
+                if (!wxFileName::Mkdir(isoDir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL)) {
+                    wxLogError("Failed to create output directory.");
+                    wxMessageBox("Failed to create local output directory. Please check permissions.",
+                                "Error", wxOK | wxICON_ERROR);
+                    CleanupTimer();
+                    return;
+                }
+                wxLogMessage("Output directory created successfully.");
+            }
+
+            wxString finalIsoPath = isoDir + "\\custom.iso";
+            wxLogMessage("Copying ISO from container to: %s", finalIsoPath);
+            wxString copyIsoCmd = wxString::Format("docker cp %s:/output/custom.iso \"%s\"", m_containerId, finalIsoPath);
+            wxArrayString copyOutput, copyErrors;
+            if (wxExecute(copyIsoCmd, copyOutput, copyErrors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) != 0) {
+                wxLogError("Failed to copy ISO. Errors:");
+                for (const auto& error : copyErrors) {
+                    wxLogError(" - %s", error);
+                }
+                wxMessageBox("Failed to copy ISO.", "Error", wxOK | wxICON_ERROR);
+                CleanupTimer();
+                return;
+            }
+            wxLogMessage("Successfully copied ISO to: %s", finalIsoPath);
+
+            // Verify the ISO file
+            wxLogMessage("Verifying ISO file: %s", finalIsoPath);
+            if (!wxFileExists(finalIsoPath)) {
+                wxLogError("ISO file does not exist.");
+                wxMessageBox("Failed to verify ISO file. Please check the logs.",
+                            "Error", wxOK | wxICON_ERROR);
+                CleanupTimer();
+                return;
+            }
+            wxLogMessage("ISO file verified: %s", finalIsoPath);
+
+            // Show completion dialog
+            wxLogMessage("ISO creation process completed successfully.");
+            ShowCompletionDialog(finalIsoPath); // Call the completion dialog here
+
             CleanupTimer();
             break;
         }
@@ -483,6 +610,41 @@ void WindowsCmdPanel::ContinueInitialization()
 #endif
 }
 
+wxString WindowsCmdPanel::GetFileSizeString(const wxString& filePath) {
+    wxULongLong size = wxFileName::GetSize(filePath);
+
+    if (size == wxInvalidSize) {
+        return "Unknown size";
+    }
+
+    const double KB = 1024;
+    const double MB = KB * 1024;
+    const double GB = MB * 1024;
+
+    if (size.ToDouble() >= GB) {
+        return wxString::Format("%.2f GB", size.ToDouble() / GB);
+    } else if (size.ToDouble() >= MB) {
+        return wxString::Format("%.2f MB", size.ToDouble() / MB);
+    } else if (size.ToDouble() >= KB) {
+        return wxString::Format("%.2f KB", size.ToDouble() / KB);
+    } else {
+        return wxString::Format("%llu bytes", size.GetValue());
+    }
+}
+void WindowsCmdPanel::ShowCompletionDialog(const wxString& isoPath) {
+    wxString msg = wxString::Format(
+        "Custom ISO created at:\n%s\n\n"
+        "Size: %s\n\n"
+        "Would you like to open the containing folder?",
+        isoPath, GetFileSizeString(isoPath)
+    );
+
+    if (wxMessageBox(msg, "ISO Creation Complete", 
+                    wxYES_NO | wxICON_INFORMATION) == wxYES) {
+        wxString explorerCmd = wxString::Format("explorer.exe /select,\"%s\"", isoPath);
+        wxExecute(explorerCmd);
+    }
+}
 bool WindowsCmdPanel::WaitForISOToBeCopied(const wxString& containerId) {
     wxString checkCmd = wxString::Format("docker exec %s ls -l /mnt/iso/base.iso", containerId);
     wxArrayString output, errors;
@@ -516,15 +678,15 @@ bool WindowsCmdPanel::WaitForISOToBeCopied(const wxString& containerId) {
     return false;
 }
 
-void WindowsCmdPanel::CleanupTimer()
-{
-    if (m_initTimer) {
-        wxLogMessage("Cleaning up initialization timer");
-        m_initTimer->Stop();
-        delete m_initTimer;
-        m_initTimer = nullptr;
-    }
-}
+void  WindowsCmdPanel :: CleanupTimer ( ) 
+{ 
+    if  ( m_initTimer )  { 
+        wxLogMessage ( "Cleaning up initialization timer" ) ; 
+        m_initTimer -> Stop ( ) ; 
+        delete  m_initTimer ; 
+        m_initTimer  =  nullptr ; 
+    } 
+} 
 
 bool WindowsCmdPanel::ExecuteHiddenCommand(const wxString& cmd, wxArrayString* output)
 {

@@ -19,6 +19,8 @@ public:
    virtual ~WindowsCmdPanel();
    void SetISOPath(const wxString& path);
    void ContinueInitialization();
+   wxString GetFileSizeString(const wxString& filePath); // Add this line
+   void ShowCompletionDialog(const wxString& isoPath);
 
 private:
    void CreateCmdWindow();

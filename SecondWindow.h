@@ -28,8 +28,6 @@ private:
     bool ExecuteOperation(const wxString& operation);
     bool RunScript(const wxString& containerId, const wxString& script);
     bool CopyISOFromContainer(const wxString& containerId, const wxString& destPath);
-    void ShowCompletionDialog(const wxString& isoPath);
-    wxString GetFileSizeString(const wxString& filePath);
     void LogToFile(const wxString& logPath, const wxString& message);
     
     void OnTabChanged(wxCommandEvent& event);

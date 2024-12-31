@@ -193,26 +193,9 @@ bool SecondWindow::CopyISOFromContainer(const wxString& containerId, const wxStr
     return ExecuteOperation(altCopyCmd);
 }
 */
-void SecondWindow::ShowCompletionDialog(const wxString& isoPath) {
-    wxString msg = wxString::Format(
-        "Custom ISO created at:\n%s\n\n"
-        "Size: %s\n\n"
-        "Would you like to open the containing folder?",
-        isoPath, GetFileSizeString(isoPath)
-    );
-
-    if (wxMessageBox(msg, "ISO Creation Complete", 
-                    wxYES_NO | wxICON_INFORMATION) == wxYES) {
-        wxString explorerCmd = wxString::Format("explorer.exe /select,\"%s\"", isoPath);
-        wxExecute(explorerCmd);
-    }
-}
 
 void SecondWindow::OnNext(wxCommandEvent& event) {
-    wxProgressDialog progress("Creating Custom ISO", "Preparing environment...", 
-                            100, this, 
-                            wxPD_APP_MODAL | wxPD_AUTO_HIDE | 
-                            wxPD_SMOOTH | wxPD_ELAPSED_TIME);
+    wxProgressDialog progress("Creating Custom ISO", "Preparing environment...", 100, this, wxPD_APP_MODAL | wxPD_AUTO_HIDE | wxPD_SMOOTH | wxPD_ELAPSED_TIME);
 
     // Step 1: Read the container ID from container_id.txt
     progress.Update(10, "Reading container ID...");
@@ -284,7 +267,7 @@ void SecondWindow::OnNext(wxCommandEvent& event) {
     }
     wxLogMessage("Process ID read successfully: %s", processId);
 
-    // Step 4: Send the kill -HUP signal to the process
+    // Step 4: Send the kill -HUP signal to the process (exit chroot)
     progress.Update(40, "Exiting chroot environment...");
     wxString killCmd = wxString::Format("docker exec %s kill -HUP %s", containerId, processId);
     wxArrayString killOutput, killErrors;
@@ -298,63 +281,9 @@ void SecondWindow::OnNext(wxCommandEvent& event) {
     }
     wxLogMessage("Successfully sent kill -HUP to process ID: %s", processId);
 
-    // Step 5: Execute create_iso.sh in the container
-    progress.Update(50, "Creating ISO...");
-    wxString createIsoCmd = wxString::Format("docker exec %s /create_iso.sh", containerId);
-    wxArrayString createOutput, createErrors;
-    if (wxExecute(createIsoCmd, createOutput, createErrors, wxEXEC_SYNC) != 0) {
-        wxLogError("Failed to execute create_iso.sh. Errors:");
-        for (const auto& error : createErrors) {
-            wxLogError(" - %s", error);
-        }
-        wxMessageBox("Failed to create ISO.", "Error", wxOK | wxICON_ERROR);
-        return;
-    }
-    wxLogMessage("Successfully executed create_iso.sh.");
-
-    // Step 6: Copy the ISO file from the container to the host
-    progress.Update(80, "Copying ISO...");
-    wxString isoDir = "I:\\Files\\Desktop\\LinuxGUI\\iso";
-    wxLogMessage("Checking if output directory exists: %s", isoDir);
-    if (!wxDirExists(isoDir)) {
-        wxLogMessage("Output directory does not exist. Creating it.");
-        if (!wxFileName::Mkdir(isoDir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL)) {
-            wxLogError("Failed to create output directory.");
-            wxMessageBox("Failed to create local output directory. Please check permissions.",
-                        "Error", wxOK | wxICON_ERROR);
-            return;
-        }
-        wxLogMessage("Output directory created successfully.");
-    }
-
-    wxString finalIsoPath = isoDir + "\\custom.iso";
-    wxLogMessage("Copying ISO from container to: %s", finalIsoPath);
-    wxString copyIsoCmd = wxString::Format("docker cp %s:/output/custom.iso \"%s\"", containerId, finalIsoPath);
-    wxArrayString copyOutput, copyErrors;
-    if (wxExecute(copyIsoCmd, copyOutput, copyErrors, wxEXEC_SYNC) != 0) {
-        wxLogError("Failed to copy ISO. Errors:");
-        for (const auto& error : copyErrors) {
-            wxLogError(" - %s", error);
-        }
-        wxMessageBox("Failed to copy ISO.", "Error", wxOK | wxICON_ERROR);
-        return;
-    }
-    wxLogMessage("Successfully copied ISO to: %s", finalIsoPath);
-
-    // Step 7: Verify the ISO file
-    progress.Update(100, "Verifying ISO...");
-    wxLogMessage("Verifying ISO file: %s", finalIsoPath);
-    if (!wxFileExists(finalIsoPath)) {
-        wxLogError("ISO file does not exist.");
-        wxMessageBox("Failed to verify ISO file. Please check the logs.",
-                    "Error", wxOK | wxICON_ERROR);
-        return;
-    }
-    wxLogMessage("ISO file verified: %s", finalIsoPath);
-
-    // Step 8: Show completion dialog
-    wxLogMessage("ISO creation process completed successfully.");
-    ShowCompletionDialog(finalIsoPath);
+    // Step 5: Trigger Step 7 (execute create_iso.sh)
+    progress.Update(50, "Creating custom ISO...");
+    m_cmdPanel->ContinueInitialization(); // Trigger Step 7 in WindowsCmdPanel
 }
 
 bool SecondWindow::RunScript(const wxString& containerId, const wxString& script) {
@@ -419,29 +348,6 @@ void SecondWindow::OnTabChanged(wxCommandEvent& event)
     m_mainPanel->Layout();
 }
 
-
-
-wxString SecondWindow::GetFileSizeString(const wxString& filePath) {
-    wxULongLong size = wxFileName::GetSize(filePath);
-    
-    if (size == wxInvalidSize) {
-        return "Unknown size";
-    }
-
-    const double KB = 1024;
-    const double MB = KB * 1024;
-    const double GB = MB * 1024;
-
-    if (size.ToDouble() >= GB) {
-        return wxString::Format("%.2f GB", size.ToDouble() / GB);
-    } else if (size.ToDouble() >= MB) {
-        return wxString::Format("%.2f MB", size.ToDouble() / MB);
-    } else if (size.ToDouble() >= KB) {
-        return wxString::Format("%.2f KB", size.ToDouble() / KB);
-    } else {
-        return wxString::Format("%llu bytes", size.GetValue());
-    }
-}
 
 void SecondWindow::CreateSQLPanel() 
 {
