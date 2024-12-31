@@ -546,7 +546,7 @@ void WindowsCmdPanel::ContinueInitialization()
 
                 // Wait for create_iso.sh to complete
                 wxLogMessage("Waiting for create_iso.sh to complete...");
-                wxMilliSleep(10000); // Wait for 10 seconds (adjust as needed)
+                wxMilliSleep(120000); // Wait for 10 seconds (adjust as needed)
             } else {
                 wxLogError("Failed to create new CMD window for docker exec -it. Error code: %d", GetLastError());
             }
@@ -559,24 +559,58 @@ void WindowsCmdPanel::ContinueInitialization()
         case 8: { // Step 8: Copy the ISO file from the container to the host
             wxLogMessage("Step 8: Copying ISO file from container to host");
 
+            // Step 8.1: Verify the container is still running
+            wxString checkContainerCmd = wxString::Format("docker ps -q --filter \"id=%s\"", m_containerId);
+            wxArrayString containerOutput, containerErrors;
+            wxLogMessage("Checking if container is running: %s", checkContainerCmd);
+
+            if (wxExecute(checkContainerCmd, containerOutput, containerErrors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) != 0 || containerOutput.IsEmpty()) {
+                wxLogError("Container is not running.");
+                wxMessageBox("Container is not running.", "Error", wxOK | wxICON_ERROR);
+                CleanupTimer();
+                return;
+            }
+            wxLogMessage("Container is running.");
+
+            // Step 8.2: Verify the ISO file exists in the container
+            wxString checkIsoCmd = wxString::Format("docker exec %s ls -l /root/custom_iso/custom_linuxmint.iso", m_containerId);
+            wxArrayString checkIsoOutput, checkIsoErrors;
+            wxLogMessage("Checking if ISO exists in container: %s", checkIsoCmd);
+
+            if (wxExecute(checkIsoCmd, checkIsoOutput, checkIsoErrors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) != 0) {
+                wxLogError("ISO file not found in container.");
+                wxMessageBox("ISO file not found in container.", "Error", wxOK | wxICON_ERROR);
+                CleanupTimer();
+                return;
+            }
+            wxLogMessage("ISO file found in container.");
+
+            // Step 8.3: Define the output directory on the host
             wxString isoDir = "I:\\Files\\Desktop\\LinuxGUI\\iso";
             wxLogMessage("Checking if output directory exists: %s", isoDir);
+
+            // Create the output directory if it doesn't exist
             if (!wxDirExists(isoDir)) {
                 wxLogMessage("Output directory does not exist. Creating it.");
                 if (!wxFileName::Mkdir(isoDir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL)) {
                     wxLogError("Failed to create output directory.");
-                    wxMessageBox("Failed to create local output directory. Please check permissions.",
-                                "Error", wxOK | wxICON_ERROR);
+                    wxMessageBox("Failed to create local output directory. Please check permissions.", "Error", wxOK | wxICON_ERROR);
                     CleanupTimer();
                     return;
                 }
                 wxLogMessage("Output directory created successfully.");
             }
 
-            wxString finalIsoPath = isoDir + "\\custom.iso";
+            // Step 8.4: Define the final ISO path on the host
+            wxString finalIsoPath = isoDir + "\\custom_linuxmint.iso";
             wxLogMessage("Copying ISO from container to: %s", finalIsoPath);
-            wxString copyIsoCmd = wxString::Format("docker cp %s:/output/custom.iso \"%s\"", m_containerId, finalIsoPath);
+
+            // Step 8.5: Command to copy the ISO from the container to the host
+            wxString copyIsoCmd = wxString::Format("docker cp %s:/root/custom_iso/custom_linuxmint.iso \"%s\"", m_containerId, finalIsoPath);
             wxArrayString copyOutput, copyErrors;
+            wxLogMessage("Executing command: %s", copyIsoCmd);
+
+            // Execute the copy command
             if (wxExecute(copyIsoCmd, copyOutput, copyErrors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) != 0) {
                 wxLogError("Failed to copy ISO. Errors:");
                 for (const auto& error : copyErrors) {
@@ -586,20 +620,33 @@ void WindowsCmdPanel::ContinueInitialization()
                 CleanupTimer();
                 return;
             }
-            wxLogMessage("Successfully copied ISO to: %s", finalIsoPath);
 
-            // Verify the ISO file
+            wxLogMessage("Command output:");
+            for (const auto& line : copyOutput) {
+                wxLogMessage(" - %s", line);
+            }
+
+            // Step 8.6: Verify the ISO file exists on the host
             wxLogMessage("Verifying ISO file: %s", finalIsoPath);
             if (!wxFileExists(finalIsoPath)) {
                 wxLogError("ISO file does not exist.");
-                wxMessageBox("Failed to verify ISO file. Please check the logs.",
-                            "Error", wxOK | wxICON_ERROR);
+                wxMessageBox("Failed to verify ISO file. Please check the logs.", "Error", wxOK | wxICON_ERROR);
                 CleanupTimer();
                 return;
             }
-            wxLogMessage("ISO file verified: %s", finalIsoPath);
 
-            // Show completion dialog
+            // Step 8.7: Verify the ISO file is not empty
+            wxULongLong isoSize = wxFileName::GetSize(finalIsoPath);
+            if (isoSize == 0) {
+                wxLogError("ISO file is empty.");
+                wxMessageBox("ISO file is empty.", "Error", wxOK | wxICON_ERROR);
+                CleanupTimer();
+                return;
+            }
+
+            wxLogMessage("ISO file verified: %s (Size: %s)", finalIsoPath, GetFileSizeString(finalIsoPath));
+
+            // Step 8.8: Show completion dialog
             wxLogMessage("ISO creation process completed successfully.");
             ShowCompletionDialog(finalIsoPath); // Call the completion dialog here
 
