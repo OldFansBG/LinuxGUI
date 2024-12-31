@@ -39,7 +39,7 @@ fi
 log "Rebuilding the squashfs filesystem..."
 cd "$CUSTOM_ISO_DIR" || handle_error "Failed to cd to $CUSTOM_ISO_DIR"
 rm -f casper/filesystem.squashfs || handle_error "Failed to remove old filesystem.squashfs"
-mksquashfs "$SQUASHFS_ROOT" casper/filesystem.squashfs -comp xz -b 1M -Xdict-size 100% || handle_error "Failed to create new filesystem.squashfs"
+mksquashfs "$SQUASHFS_ROOT" casper/filesystem.squashfs -comp xz || handle_error "Failed to create new filesystem.squashfs"
 
 # Step 2: Update the filesystem.size file
 log "Updating the filesystem.size file..."
