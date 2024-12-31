@@ -423,7 +423,7 @@ void WindowsCmdPanel::ContinueInitialization()
             }
 
             // Command to run docker exec -it, execute setup_chroot.sh, and enter chroot
-            std::wstring attachCmd = L"cmd.exe /K docker exec -it my_unique_container /bin/bash -c \"/setup_chroot.sh 'echo $$'\"";
+            std::wstring attachCmd = L"cmd.exe /K docker exec -it my_unique_container /bin/bash -c \"/setup_chroot.sh 'echo $$'\""; 
 
             STARTUPINFOW si;
             PROCESS_INFORMATION pi;

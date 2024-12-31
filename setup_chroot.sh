@@ -79,10 +79,14 @@ cp /etc/resolv.conf /output/iso_contents/squashfs-root/etc/ || handle_error "Fai
 
 log "Chroot environment setup complete"
 
-# Check if a command is provided
+# Run the command inside the chroot and save the output to a file in the container
 if [ -n "$1" ]; then
-    # Execute the command and then start an interactive shell
-    exec chroot /output/iso_contents/squashfs-root /bin/bash -c "$1; exec /bin/bash"
+    # Execute the command inside the chroot and capture the output
+    chroot /output/iso_contents/squashfs-root /bin/bash -c "$1" > /output/process_id.txt
+    log "Process ID saved to /output/process_id.txt"
+
+    # Start an interactive shell
+    exec chroot /output/iso_contents/squashfs-root /bin/bash
 else
     # Start an interactive shell
     exec chroot /output/iso_contents/squashfs-root /bin/bash
