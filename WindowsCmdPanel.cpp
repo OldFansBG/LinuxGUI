@@ -110,7 +110,7 @@ void WindowsCmdPanel::CreateCmdWindow()
 }
 
 bool WindowsCmdPanel::CheckISOExistsInContainer(const wxString& containerId) {
-    wxString checkCmd = wxString::Format("docker exec %s [ -f /mnt/iso/base.iso ] && echo 'exists'", containerId);
+    wxString checkCmd = wxString::Format("docker exec %s [ -f /base.iso ] && echo 'exists'", containerId);
     wxArrayString output, errors;
     if (wxExecute(checkCmd, output, errors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) == 0) {
         for (const auto& line : output) {
@@ -318,7 +318,7 @@ void WindowsCmdPanel::ContinueInitialization()
                 }
 
                 // Copy the ISO file into the container
-                wxString copyIsoCmd = wxString::Format("docker cp \"%s\" %s:/mnt/iso/base.iso", m_isoPath, m_containerId);
+                wxString copyIsoCmd = wxString::Format("docker cp \"%s\" %s:/base.iso", m_isoPath, m_containerId);
                 wxLogMessage("Copying ISO file into container with command: %s", copyIsoCmd);
 
                 wxArrayString output, errors;
@@ -330,7 +330,7 @@ void WindowsCmdPanel::ContinueInitialization()
                     }
 
                     // Verify the ISO file is fully copied
-                    wxString checkCmd = wxString::Format("docker exec %s stat -c %%s /mnt/iso/base.iso", m_containerId);
+                    wxString checkCmd = wxString::Format("docker exec %s stat -c %%s /base.iso", m_containerId);
                     wxArrayString checkOutput, checkErrors;
                     if (wxExecute(checkCmd, checkOutput, checkErrors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) == 0) {
                         wxString isoSize = checkOutput[0];
@@ -646,7 +646,7 @@ void WindowsCmdPanel::ShowCompletionDialog(const wxString& isoPath) {
     }
 }
 bool WindowsCmdPanel::WaitForISOToBeCopied(const wxString& containerId) {
-    wxString checkCmd = wxString::Format("docker exec %s ls -l /mnt/iso/base.iso", containerId);
+    wxString checkCmd = wxString::Format("docker exec %s ls -l /base.iso", containerId);
     wxArrayString output, errors;
     int attempts = 0;
     const int maxAttempts = 30; // Wait for up to 30 seconds

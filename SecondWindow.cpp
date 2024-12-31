@@ -242,7 +242,7 @@ void SecondWindow::OnNext(wxCommandEvent& event) {
 
     // Step 3: Read the process ID from the file
     progress.Update(30, "Reading process ID...");
-    wxString readPidCmd = wxString::Format("docker exec %s cat /output/process_id.txt", containerId);
+    wxString readPidCmd = wxString::Format("docker exec %s cat root/process_id.txt", containerId);
     wxArrayString pidOutput, pidErrors;
     if (wxExecute(readPidCmd, pidOutput, pidErrors, wxEXEC_SYNC) != 0) {
         wxLogError("Failed to read process ID. Errors:");
@@ -269,7 +269,7 @@ void SecondWindow::OnNext(wxCommandEvent& event) {
 
     // Step 4: Send the kill -HUP signal to the process (exit chroot)
     progress.Update(40, "Exiting chroot environment...");
-    wxString killCmd = wxString::Format("docker exec %s kill -HUP %s", containerId, processId);
+    wxString killCmd = wxString::Format("docker exec %s kill -9 %s", containerId, processId);
     wxArrayString killOutput, killErrors;
     if (wxExecute(killCmd, killOutput, killErrors, wxEXEC_SYNC) != 0) {
         wxLogError("Failed to send kill -HUP. Errors:");
