@@ -245,46 +245,49 @@ void WindowsCmdPanel::ContinueInitialization()
 
         case 2: { // Step 2: Copy scripts and set permissions
             wxLogMessage("Step 2: Copying scripts and setting permissions");
-            for (const auto& script : {"setup_output.sh", "setup_chroot.sh"}) {
-                wxString cmd = wxString::Format("docker cp \"I:\\Files\\Desktop\\LinuxGUI\\build\\%s\" %s:/%s",
-                                                script, m_containerId, script);
-                wxLogMessage("Copying script: %s", cmd);
+
+            // List of scripts to copy
+            const wxString scripts[] = {"setup_output.sh", "setup_chroot.sh", "create_iso.sh"};
+
+            for (const auto& script : scripts) {
+                wxString scriptPath = wxString::Format("I:\\Files\\Desktop\\LinuxGUI\\build\\%s", script);
+                wxString copyCmd = wxString::Format("docker cp \"%s\" %s:/%s", scriptPath, m_containerId, script);
+
+                wxLogMessage("Copying script: %s", copyCmd);
+
                 wxArrayString output, errors;
-                if (wxExecute(cmd, output, errors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) == 0) {
-                    wxLogMessage("Script copied successfully: %s", script);
-                    wxLogMessage("Command output:");
-                    for (const auto& line : output) {
-                        wxLogMessage(" - %s", line);
-                    }
-                } else {
+                if (wxExecute(copyCmd, output, errors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) != 0) {
                     wxLogError("Failed to copy script: %s", script);
                     wxLogError("Command errors:");
                     for (const auto& error : errors) {
                         wxLogError(" - %s", error);
                     }
+                    wxMessageBox(wxString::Format("Failed to copy script: %s", script), "Error", wxOK | wxICON_ERROR);
+                    CleanupTimer();
+                    return;
                 }
+
+                wxLogMessage("Script copied successfully: %s", script);
             }
 
-            wxString chmodCmd = wxString::Format(
-                "docker exec %s chmod +x /setup_output.sh /setup_chroot.sh",
-                m_containerId);
-            wxLogMessage("Setting permissions: %s", chmodCmd);
+            // Set execute permissions on the scripts
+            wxString chmodCmd = wxString::Format("docker exec %s chmod +x /setup_output.sh /setup_chroot.sh /create_iso.sh", m_containerId);
             wxArrayString chmodOutput, chmodErrors;
-            if (wxExecute(chmodCmd, chmodOutput, chmodErrors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) == 0) {
-                wxLogMessage("Permissions set successfully");
-                wxLogMessage("Command output:");
-                for (const auto& line : chmodOutput) {
-                    wxLogMessage(" - %s", line);
-                }
-            } else {
-                wxLogError("Failed to set permissions");
+            if (wxExecute(chmodCmd, chmodOutput, chmodErrors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) != 0) {
+                wxLogError("Failed to set permissions on scripts.");
                 wxLogError("Command errors:");
                 for (const auto& error : chmodErrors) {
                     wxLogError(" - %s", error);
                 }
+                wxMessageBox("Failed to set permissions on scripts.", "Error", wxOK | wxICON_ERROR);
+                CleanupTimer();
+                return;
             }
 
-            m_initTimer->StartOnce(100);
+            wxLogMessage("Permissions set successfully on all scripts.");
+
+            // Proceed to the next step
+            m_initTimer->StartOnce(200);
             m_initStep++;
             break;
         }

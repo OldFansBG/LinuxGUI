@@ -214,68 +214,146 @@ void SecondWindow::OnNext(wxCommandEvent& event) {
                             wxPD_APP_MODAL | wxPD_AUTO_HIDE | 
                             wxPD_SMOOTH | wxPD_ELAPSED_TIME);
 
-    // Step 1: Exit the chroot environment
-    progress.Update(20, "Exiting chroot environment...");
-    wxString exitChrootCmd = wxString::Format("docker exec %s /bin/bash -c \"exit\"", m_containerId);
-    wxArrayString exitOutput, exitErrors;
-    if (wxExecute(exitChrootCmd, exitOutput, exitErrors, wxEXEC_SYNC) != 0) {
-        wxString errorMsg = "Failed to exit chroot environment:\n";
-        for (const auto& error : exitErrors) {
-            errorMsg += error + "\n";
-        }
-        wxMessageBox(errorMsg, "Error", wxOK | wxICON_ERROR);
+    // Step 1: Read the container ID from container_id.txt
+    progress.Update(10, "Reading container ID...");
+    wxString containerIdFilePath = "I:\\Files\\Desktop\\LinuxGUI\\build\\container_id.txt"; // Update this path
+    wxLogMessage("Reading container ID from file: %s", containerIdFilePath);
+
+    wxFile containerIdFile;
+    if (!containerIdFile.Open(containerIdFilePath, wxFile::read)) {
+        wxLogError("Failed to open container_id.txt.");
+        wxMessageBox("Failed to read container ID. Please check if the file exists.", "Error", wxOK | wxICON_ERROR);
         return;
     }
-    wxLogMessage("Successfully exited chroot environment.");
 
-    // Step 2: Execute create_iso.sh in the container
+    wxString containerId;
+    if (!containerIdFile.ReadAll(&containerId)) {
+        wxLogError("Failed to read container ID from file.");
+        wxMessageBox("Failed to read container ID from file.", "Error", wxOK | wxICON_ERROR);
+        containerIdFile.Close();
+        return;
+    }
+    containerIdFile.Close();
+
+    containerId = containerId.Trim().Trim(false); // Remove leading/trailing whitespace
+    if (containerId.IsEmpty()) {
+        wxLogError("Container ID is empty.");
+        wxMessageBox("Container ID is empty.", "Error", wxOK | wxICON_ERROR);
+        return;
+    }
+    wxLogMessage("Container ID read from file: %s", containerId);
+
+    // Step 2: Verify the container exists and is running
+    progress.Update(20, "Verifying container...");
+    wxString checkContainerCmd = wxString::Format("docker ps -q --filter \"id=%s\"", containerId);
+    wxArrayString containerOutput, containerErrors;
+    if (wxExecute(checkContainerCmd, containerOutput, containerErrors, wxEXEC_SYNC) != 0 || containerOutput.IsEmpty()) {
+        wxLogError("Container verification failed. Errors:");
+        for (const auto& error : containerErrors) {
+            wxLogError(" - %s", error);
+        }
+        wxMessageBox("Container does not exist or is not running.", "Error", wxOK | wxICON_ERROR);
+        return;
+    }
+    wxLogMessage("Container verified and running.");
+
+    // Step 3: Read the process ID from the file
+    progress.Update(30, "Reading process ID...");
+    wxString readPidCmd = wxString::Format("docker exec %s cat /output/process_id.txt", containerId);
+    wxArrayString pidOutput, pidErrors;
+    if (wxExecute(readPidCmd, pidOutput, pidErrors, wxEXEC_SYNC) != 0) {
+        wxLogError("Failed to read process ID. Errors:");
+        for (const auto& error : pidErrors) {
+            wxLogError(" - %s", error);
+        }
+        wxMessageBox("Failed to read process ID.", "Error", wxOK | wxICON_ERROR);
+        return;
+    }
+
+    // Extract the process ID from the output
+    if (pidOutput.IsEmpty()) {
+        wxLogError("Process ID file is empty.");
+        wxMessageBox("Process ID file is empty.", "Error", wxOK | wxICON_ERROR);
+        return;
+    }
+    wxString processId = pidOutput[0].Trim().Trim(false); // Remove leading/trailing whitespace
+    if (processId.IsEmpty()) {
+        wxLogError("Invalid process ID.");
+        wxMessageBox("Invalid process ID.", "Error", wxOK | wxICON_ERROR);
+        return;
+    }
+    wxLogMessage("Process ID read successfully: %s", processId);
+
+    // Step 4: Send the kill -HUP signal to the process
+    progress.Update(40, "Exiting chroot environment...");
+    wxString killCmd = wxString::Format("docker exec %s kill -HUP %s", containerId, processId);
+    wxArrayString killOutput, killErrors;
+    if (wxExecute(killCmd, killOutput, killErrors, wxEXEC_SYNC) != 0) {
+        wxLogError("Failed to send kill -HUP. Errors:");
+        for (const auto& error : killErrors) {
+            wxLogError(" - %s", error);
+        }
+        wxMessageBox("Failed to exit chroot environment.", "Error", wxOK | wxICON_ERROR);
+        return;
+    }
+    wxLogMessage("Successfully sent kill -HUP to process ID: %s", processId);
+
+    // Step 5: Execute create_iso.sh in the container
     progress.Update(50, "Creating ISO...");
-    wxString createIsoCmd = wxString::Format("docker exec %s /create_iso.sh", m_containerId);
+    wxString createIsoCmd = wxString::Format("docker exec %s /create_iso.sh", containerId);
     wxArrayString createOutput, createErrors;
     if (wxExecute(createIsoCmd, createOutput, createErrors, wxEXEC_SYNC) != 0) {
-        wxString errorMsg = "Failed to create ISO:\n";
+        wxLogError("Failed to execute create_iso.sh. Errors:");
         for (const auto& error : createErrors) {
-            errorMsg += error + "\n";
+            wxLogError(" - %s", error);
         }
-        wxMessageBox(errorMsg, "Error", wxOK | wxICON_ERROR);
+        wxMessageBox("Failed to create ISO.", "Error", wxOK | wxICON_ERROR);
         return;
     }
     wxLogMessage("Successfully executed create_iso.sh.");
 
-    // Step 3: Copy the ISO file from the container to the host
+    // Step 6: Copy the ISO file from the container to the host
     progress.Update(80, "Copying ISO...");
     wxString isoDir = "I:\\Files\\Desktop\\LinuxGUI\\iso";
+    wxLogMessage("Checking if output directory exists: %s", isoDir);
     if (!wxDirExists(isoDir)) {
+        wxLogMessage("Output directory does not exist. Creating it.");
         if (!wxFileName::Mkdir(isoDir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL)) {
+            wxLogError("Failed to create output directory.");
             wxMessageBox("Failed to create local output directory. Please check permissions.",
                         "Error", wxOK | wxICON_ERROR);
             return;
         }
+        wxLogMessage("Output directory created successfully.");
     }
 
     wxString finalIsoPath = isoDir + "\\custom.iso";
-    wxString copyIsoCmd = wxString::Format("docker cp %s:/output/custom.iso \"%s\"", m_containerId, finalIsoPath);
+    wxLogMessage("Copying ISO from container to: %s", finalIsoPath);
+    wxString copyIsoCmd = wxString::Format("docker cp %s:/output/custom.iso \"%s\"", containerId, finalIsoPath);
     wxArrayString copyOutput, copyErrors;
     if (wxExecute(copyIsoCmd, copyOutput, copyErrors, wxEXEC_SYNC) != 0) {
-        wxString errorMsg = "Failed to copy ISO:\n";
+        wxLogError("Failed to copy ISO. Errors:");
         for (const auto& error : copyErrors) {
-            errorMsg += error + "\n";
+            wxLogError(" - %s", error);
         }
-        wxMessageBox(errorMsg, "Error", wxOK | wxICON_ERROR);
+        wxMessageBox("Failed to copy ISO.", "Error", wxOK | wxICON_ERROR);
         return;
     }
     wxLogMessage("Successfully copied ISO to: %s", finalIsoPath);
 
-    // Step 4: Verify the ISO file
+    // Step 7: Verify the ISO file
     progress.Update(100, "Verifying ISO...");
+    wxLogMessage("Verifying ISO file: %s", finalIsoPath);
     if (!wxFileExists(finalIsoPath)) {
+        wxLogError("ISO file does not exist.");
         wxMessageBox("Failed to verify ISO file. Please check the logs.",
                     "Error", wxOK | wxICON_ERROR);
         return;
     }
     wxLogMessage("ISO file verified: %s", finalIsoPath);
 
-    // Step 5: Show completion dialog
+    // Step 8: Show completion dialog
+    wxLogMessage("ISO creation process completed successfully.");
     ShowCompletionDialog(finalIsoPath);
 }
 

@@ -65,7 +65,7 @@ log "Starting squashfs extraction"
 unsquashfs -d /output/iso_contents/squashfs-root /output/iso_contents/casper/filesystem.squashfs || handle_error "Squashfs extraction failed"
 
 # Ensure mount points exist
-mkdir -p /output/iso_contents/squashfs-root/proc /output/iso_contents/squashfs-root/sys /output/iso_contents/squashfs-root/dev/pts
+mkdir -p /output/iso_contents/squashfs-root/proc /output/iso_contents/squashfs-root/sys /output/iso_contents/squashfs-root/dev/pts /output/iso_contents/squashfs-root/output
 log "Created mount points for chroot environment"
 
 # Setup chroot environment
@@ -74,19 +74,22 @@ mount -t sysfs none /output/iso_contents/squashfs-root/sys || handle_error "Fail
 mount -o bind /dev /output/iso_contents/squashfs-root/dev || handle_error "Failed to bind /dev"
 mount -o bind /dev/pts /output/iso_contents/squashfs-root/dev/pts || handle_error "Failed to bind /dev/pts"
 
+# Bind mount the /output directory inside the chroot
+mount --bind /output /output/iso_contents/squashfs-root/output || handle_error "Failed to bind /output"
+
 # Ensure resolv.conf is copied
 cp /etc/resolv.conf /output/iso_contents/squashfs-root/etc/ || handle_error "Failed to copy resolv.conf"
 
 log "Chroot environment setup complete"
 
-# Run the command inside the chroot and save the output to a file in the container
-if [ -n "$1" ]; then
-    # Execute the command inside the chroot and capture the output
-    chroot /output/iso_contents/squashfs-root /bin/bash -c "$1" > /output/process_id.txt
-    log "Process ID saved to /output/process_id.txt"
+# Display and save the process ID
+log "Displaying and saving process ID..."
+chroot /output/iso_contents/squashfs-root /bin/bash -c "echo 'Process ID inside chroot: $$'; echo $$ > /output/process_id.txt"
 
-    # Start an interactive shell
-    exec chroot /output/iso_contents/squashfs-root /bin/bash
+# Check if a command is provided
+if [ -n "$1" ]; then
+    # Execute the command and then start an interactive shell
+    exec chroot /output/iso_contents/squashfs-root /bin/bash -c "$1; exec /bin/bash"
 else
     # Start an interactive shell
     exec chroot /output/iso_contents/squashfs-root /bin/bash
