@@ -26,6 +26,8 @@ private:
    void CleanupTimer();
    bool ExecuteHiddenCommand(const wxString& cmd, wxArrayString* output = nullptr);
    bool ExecuteDockerCommand(const wxString& cmd, wxArrayString* output = nullptr);
+   bool WaitForISOToBeCopied(const wxString& containerId);  // Add this line
+   bool CheckISOExistsInContainer(const wxString& containerId);  // Add this line
 
 #ifdef __WINDOWS__
    HWND m_hwndCmd;

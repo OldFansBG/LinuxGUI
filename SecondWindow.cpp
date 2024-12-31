@@ -214,7 +214,36 @@ void SecondWindow::OnNext(wxCommandEvent& event) {
                             wxPD_APP_MODAL | wxPD_AUTO_HIDE | 
                             wxPD_SMOOTH | wxPD_ELAPSED_TIME);
 
-    // Close any open handles and verify ISO path
+    // Step 1: Exit the chroot environment
+    progress.Update(20, "Exiting chroot environment...");
+    wxString exitChrootCmd = wxString::Format("docker exec %s /bin/bash -c \"exit\"", m_containerId);
+    wxArrayString exitOutput, exitErrors;
+    if (wxExecute(exitChrootCmd, exitOutput, exitErrors, wxEXEC_SYNC) != 0) {
+        wxString errorMsg = "Failed to exit chroot environment:\n";
+        for (const auto& error : exitErrors) {
+            errorMsg += error + "\n";
+        }
+        wxMessageBox(errorMsg, "Error", wxOK | wxICON_ERROR);
+        return;
+    }
+    wxLogMessage("Successfully exited chroot environment.");
+
+    // Step 2: Execute create_iso.sh in the container
+    progress.Update(50, "Creating ISO...");
+    wxString createIsoCmd = wxString::Format("docker exec %s /create_iso.sh", m_containerId);
+    wxArrayString createOutput, createErrors;
+    if (wxExecute(createIsoCmd, createOutput, createErrors, wxEXEC_SYNC) != 0) {
+        wxString errorMsg = "Failed to create ISO:\n";
+        for (const auto& error : createErrors) {
+            errorMsg += error + "\n";
+        }
+        wxMessageBox(errorMsg, "Error", wxOK | wxICON_ERROR);
+        return;
+    }
+    wxLogMessage("Successfully executed create_iso.sh.");
+
+    // Step 3: Copy the ISO file from the container to the host
+    progress.Update(80, "Copying ISO...");
     wxString isoDir = "I:\\Files\\Desktop\\LinuxGUI\\iso";
     if (!wxDirExists(isoDir)) {
         if (!wxFileName::Mkdir(isoDir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL)) {
@@ -224,94 +253,30 @@ void SecondWindow::OnNext(wxCommandEvent& event) {
         }
     }
 
-    // Clean up any existing ISO files
     wxString finalIsoPath = isoDir + "\\custom.iso";
-    if (wxFileExists(finalIsoPath)) {
-        // Try to remove existing file
-        for (int attempt = 1; attempt <= 3; attempt++) {
-            if (wxRemoveFile(finalIsoPath)) break;
-            wxMilliSleep(2000);  // Wait 2 seconds between attempts
-            if (attempt == 3) {
-                wxMessageBox("Cannot remove existing ISO file. Please ensure it's not in use.",
-                            "Error", wxOK | wxICON_ERROR);
-                return;
-            }
-        }
-    }
-
-    // Get container ID
-    wxString containerId = ContainerManager::Get().GetCurrentContainerId();
-    if (containerId.IsEmpty()) {
-        wxMessageBox("No active container found", "Error", wxOK | wxICON_ERROR);
-        return;
-    }
-
-    // Ensure container output directory exists with proper permissions
-    progress.Update(30, "Setting up output directory...");
-    if (!ContainerManager::Get().EnsureOutputDirectory(containerId)) {
-        wxMessageBox("Failed to create or set permissions for container output directory", 
-                    "Error", wxOK | wxICON_ERROR);
-        return;
-    }
-
-    // Run create_iso.sh in container
-    progress.Update(50, "Creating ISO...");
-    wxString createIsoCmd = wxString::Format("docker exec %s /create_iso.sh", containerId);
-    
-    wxArrayString output, errors;
-    int exitCode = wxExecute(createIsoCmd, output, errors, wxEXEC_SYNC);
-    
-    if (exitCode != 0) {
-        wxString errorMsg = "Failed to create ISO:\n";
-        for (const auto& error : errors) {
+    wxString copyIsoCmd = wxString::Format("docker cp %s:/output/custom.iso \"%s\"", m_containerId, finalIsoPath);
+    wxArrayString copyOutput, copyErrors;
+    if (wxExecute(copyIsoCmd, copyOutput, copyErrors, wxEXEC_SYNC) != 0) {
+        wxString errorMsg = "Failed to copy ISO:\n";
+        for (const auto& error : copyErrors) {
             errorMsg += error + "\n";
         }
         wxMessageBox(errorMsg, "Error", wxOK | wxICON_ERROR);
         return;
     }
+    wxLogMessage("Successfully copied ISO to: %s", finalIsoPath);
 
-    // Run copy_iso.bat with retry mechanism
-    progress.Update(80, "Copying ISO...");
-    
-    for (int attempt = 1; attempt <= 3; attempt++) {
-        wxString copyScript = "copy_iso.bat";
-        wxString copyLogPath = wxFileName::GetTempDir() + "\\iso_copy.log";
-        wxString copyCmd = copyScript + wxString::Format(" > \"%s\" 2>&1", copyLogPath);
-        
-        exitCode = wxExecute(copyCmd, output, errors, wxEXEC_SYNC);
-        
-        // Read and display copy log
-        wxString copyContent;
-        if (wxFile::Exists(copyLogPath)) {
-            wxFile file(copyLogPath);
-            file.ReadAll(&copyContent);
-        }
-
-        if (exitCode == 0 && wxFileExists(finalIsoPath)) {
-            // Verify the file is accessible
-            wxFile testFile;
-            if (testFile.Open(finalIsoPath)) {
-                testFile.Close();
-                progress.Update(100, "Complete!");
-                ShowCompletionDialog(finalIsoPath);
-                
-                // Clean up container
-                ContainerManager::Get().CleanupContainer(containerId);
-                return;
-            }
-        }
-
-        // If we reached here, something went wrong
-        wxMilliSleep(3000);  // Wait 3 seconds before retry
-        if (attempt == 3) {
-            wxMessageBox("Failed to copy ISO - Check log at: " + copyLogPath, 
-                        "Error", wxOK | wxICON_ERROR);
-            return;
-        }
+    // Step 4: Verify the ISO file
+    progress.Update(100, "Verifying ISO...");
+    if (!wxFileExists(finalIsoPath)) {
+        wxMessageBox("Failed to verify ISO file. Please check the logs.",
+                    "Error", wxOK | wxICON_ERROR);
+        return;
     }
+    wxLogMessage("ISO file verified: %s", finalIsoPath);
 
-    wxMessageBox("Failed to create and copy ISO after multiple attempts", 
-                "Error", wxOK | wxICON_ERROR);
+    // Step 5: Show completion dialog
+    ShowCompletionDialog(finalIsoPath);
 }
 
 bool SecondWindow::RunScript(const wxString& containerId, const wxString& script) {

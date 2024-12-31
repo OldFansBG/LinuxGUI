@@ -13,69 +13,77 @@ handle_error() {
     exit 1
 }
 
-# Prepare directories
-mkdir -p /mnt/iso
-chmod 777 /mnt/iso
-log "Prepared ISO mount directory"
+# Wait for the ISO file to be copied
+log "Waiting for ISO file to be copied..."
+while [ ! -f /mnt/iso/base.iso ]; do
+    sleep 1
+done
+log "ISO file found: /mnt/iso/base.iso"
 
-# Create working directory
-mkdir -p /output/custom_iso
-log "Created custom ISO working directory"
+# Wait for the ISO to be fully accessible
+log "Waiting for ISO file to be fully accessible..."
+while ! ls -l /mnt/iso/base.iso > /dev/null 2>&1; do
+    sleep 1
+done
+log "ISO file is fully accessible."
 
-# Extract ISO contents
-cd /output/custom_iso
-log "Mounting ISO file"
-mount /mnt/iso/base.iso /mnt/iso || handle_error "Failed to mount ISO"
+# Create a writable directory for ISO contents
+mkdir -p /output/iso_contents
+chmod 777 /output/iso_contents
+log "Created writable directory for ISO contents"
 
-# Copy contents to working directory
-cp -av /mnt/iso/* . || handle_error "Failed to copy ISO contents"
-log "Copied ISO contents successfully"
+# Mount the ISO file to a temporary read-only directory
+mkdir -p /mnt/iso_temp
+log "Mounting ISO file to temporary directory"
+mount /mnt/iso/base.iso /mnt/iso_temp || handle_error "Failed to mount ISO"
 
-# Unmount ISO
-umount /mnt/iso
+# Wait for the mount to stabilize
+log "Waiting for mount to stabilize..."
+sleep 5
+
+# Copy contents to the writable directory
+log "Copying ISO contents to writable directory"
+for file in /mnt/iso_temp/*; do
+    log "Copying $file"
+    if ! cp -av "$file" /output/iso_contents/ 2>> /output/chroot_setup.log; then
+        log "ERROR: Failed to copy $file"
+        exit 1
+    fi
+done
+
+# Unmount the ISO file
+umount /mnt/iso_temp
+log "Unmounted ISO file"
 
 # Check if squashfs file exists
-if [ ! -f casper/filesystem.squashfs ]; then
+if [ ! -f /output/iso_contents/casper/filesystem.squashfs ]; then
     handle_error "filesystem.squashfs not found in casper directory"
 fi
 
 # Extract squashfs
 log "Starting squashfs extraction"
-unsquashfs -d squashfs-root casper/filesystem.squashfs || handle_error "Squashfs extraction failed"
+unsquashfs -d /output/iso_contents/squashfs-root /output/iso_contents/casper/filesystem.squashfs || handle_error "Squashfs extraction failed"
 
 # Ensure mount points exist
-mkdir -p squashfs-root/proc squashfs-root/sys squashfs-root/dev/pts
+mkdir -p /output/iso_contents/squashfs-root/proc /output/iso_contents/squashfs-root/sys /output/iso_contents/squashfs-root/dev/pts
 log "Created mount points for chroot environment"
 
 # Setup chroot environment
-mount -t proc none squashfs-root/proc || handle_error "Failed to mount proc"
-mount -t sysfs none squashfs-root/sys || handle_error "Failed to mount sys"
-mount -o bind /dev squashfs-root/dev || handle_error "Failed to bind /dev"
-mount -o bind /dev/pts squashfs-root/dev/pts || handle_error "Failed to bind /dev/pts"
+mount -t proc none /output/iso_contents/squashfs-root/proc || handle_error "Failed to mount proc"
+mount -t sysfs none /output/iso_contents/squashfs-root/sys || handle_error "Failed to mount sys"
+mount -o bind /dev /output/iso_contents/squashfs-root/dev || handle_error "Failed to bind /dev"
+mount -o bind /dev/pts /output/iso_contents/squashfs-root/dev/pts || handle_error "Failed to bind /dev/pts"
 
 # Ensure resolv.conf is copied
-cp /etc/resolv.conf squashfs-root/etc/ || handle_error "Failed to copy resolv.conf"
+cp /etc/resolv.conf /output/iso_contents/squashfs-root/etc/ || handle_error "Failed to copy resolv.conf"
 
 log "Chroot environment setup complete"
 
-# Enter chroot and install packages
-chroot squashfs-root /bin/bash -c "
-set -e
-set -x
-
-# Install apt-utils to resolve debconf warning
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y apt-utils
-
-# Update package lists with verbose output
-apt-get update
-
-# Install packages, forcing yes to handle any interactive prompts
-DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gedit dolphin
-
-# Clean up
-apt-get clean
-rm -rf /tmp/*
-" || handle_error "Chroot package installation failed"
-
-log "Chroot package installation completed successfully"
+# Check if a command is provided
+if [ -n "$1" ]; then
+    # Execute the command and then start an interactive shell
+    exec chroot /output/iso_contents/squashfs-root /bin/bash -c "$1; exec /bin/bash"
+else
+    # Start an interactive shell
+    exec chroot /output/iso_contents/squashfs-root /bin/bash
+fi
