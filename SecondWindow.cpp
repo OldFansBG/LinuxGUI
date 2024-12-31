@@ -242,7 +242,7 @@ void SecondWindow::OnNext(wxCommandEvent& event) {
 
     // Step 3: Read the process ID from the file
     progress.Update(30, "Reading process ID...");
-    wxString readPidCmd = wxString::Format("docker exec %s cat root/process_id.txt", containerId);
+    wxString readPidCmd = wxString::Format("docker exec %s cat /root/custom_iso/squashfs-root/process_id.txt", containerId);
     wxArrayString pidOutput, pidErrors;
     if (wxExecute(readPidCmd, pidOutput, pidErrors, wxEXEC_SYNC) != 0) {
         wxLogError("Failed to read process ID. Errors:");

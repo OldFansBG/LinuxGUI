@@ -17,6 +17,8 @@ mount -t sysfs none squashfs-root/sys
 mount -o bind /dev squashfs-root/dev
 mount -o bind /dev/pts squashfs-root/dev/pts
 
+mkdir  -p  squashfs-root/output
+
 # Bind mount working directory
 mount --bind ~/custom_iso squashfs-root/output
 
