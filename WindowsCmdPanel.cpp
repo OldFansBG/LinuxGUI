@@ -546,13 +546,14 @@ void WindowsCmdPanel::ContinueInitialization()
 
                 // Wait for create_iso.sh to complete
                 wxLogMessage("Waiting for create_iso.sh to complete...");
-                wxMilliSleep(120000); // Wait for 10 seconds (adjust as needed)
+                wxMilliSleep(120000); // Wait for 120 seconds (adjust as needed)
+
+                // Increment the step and proceed to Step 8
+                m_initStep++;
+                ContinueInitialization(); // Directly call Step 8
             } else {
                 wxLogError("Failed to create new CMD window for docker exec -it. Error code: %d", GetLastError());
             }
-
-            // Increment the step
-            m_initStep++; // Move to the next step
             break;
         }
 

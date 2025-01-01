@@ -4,39 +4,41 @@
 echo "Starting create_iso.sh..."
 
 # Change to the working directory
-echo "Changing to the working directory: ~/custom_iso"
-cd ~/custom_iso || { echo "Failed to change to ~/custom_iso"; exit 1; }
+WORKDIR=~/custom_iso
+echo "Changing to the working directory: $WORKDIR"
+cd "$WORKDIR" || { echo "Failed to change to $WORKDIR"; exit 1; }
 
 # Step 1: Unmount chroot environment
 echo "Unmounting chroot environment..."
-sudo umount squashfs-root/proc || echo "Failed to unmount /proc"
-sudo umount squashfs-root/sys || echo "Failed to unmount /sys"
-sudo umount squashfs-root/dev/pts || echo "Failed to unmount /dev/pts"
-sudo umount squashfs-root/dev || echo "Failed to unmount /dev"
-sudo umount squashfs-root/output || echo "Failed to unmount /output"
+for mountpoint in proc sys dev/pts dev output; do
+    sudo umount "squashfs-root/$mountpoint" || echo "Failed to unmount /$mountpoint"
+done
 
 # Step 2: Rebuild squashfs filesystem
 echo "Rebuilding squashfs filesystem..."
-rm -f casper/filesystem.squashfs || echo "Failed to remove old squashfs"
+if [ -f casper/filesystem.squashfs ]; then
+    rm -f casper/filesystem.squashfs || echo "Failed to remove old squashfs"
+fi
 mksquashfs squashfs-root casper/filesystem.squashfs -comp xz || { echo "Failed to create squashfs"; exit 1; }
 
 # Step 3: Update filesystem.size
 echo "Updating filesystem.size..."
-printf "$(du -sx --block-size=1 squashfs-root | cut -f1)" > casper/filesystem.size || { echo "Failed to update filesystem.size"; exit 1; }
+du -sx --block-size=1 squashfs-root | cut -f1 > casper/filesystem.size || { echo "Failed to update filesystem.size"; exit 1; }
 
 # Step 4: Remove extracted filesystem
 echo "Removing extracted filesystem..."
 rm -rf squashfs-root || { echo "Failed to remove squashfs-root"; exit 1; }
 
-# Step 5: Recreate the ISO
-echo "Recreating the ISO..."
-xorriso -as mkisofs -r -V "Custom Linux Mint" \
-    -cache-inodes -J -l \
+# Step 5: Create the ISO using xorriso
+echo "Creating the ISO using xorriso..."
+xorriso -as mkisofs \
+    -r -V "Custom Linux Mint" \
+    -J -l \
     -b isolinux/isolinux.bin -c isolinux/boot.cat \
     -no-emul-boot -boot-load-size 4 -boot-info-table \
-    -eltorito-alt-boot -e EFI/boot/bootx64.efi -no-emul-boot \
-    -isohybrid-gpt-basdat \
-    -output custom_linuxmint.iso . || { echo "Failed to create ISO"; exit 1; }
+    -eltorito-alt-boot \
+    -e EFI/boot/bootx64.efi -no-emul-boot \
+    -o custom_linuxmint.iso . || { echo "Failed to create ISO"; exit 1; }
 
 # Step 6: Verify the ISO file
 echo "Verifying the ISO file..."
@@ -47,6 +49,14 @@ fi
 
 ISO_SIZE=$(du -h custom_linuxmint.iso | cut -f1)
 echo "ISO file created successfully. Size: $ISO_SIZE"
+
+# Step 7: (Optional) Check ISO hybrid compatibility for legacy BIOS
+if command -v isohybrid >/dev/null 2>&1; then
+    echo "Making the ISO hybrid using isohybrid..."
+    isohybrid --uefi custom_linuxmint.iso || echo "Failed to make ISO hybrid (optional step)."
+else
+    echo "isohybrid command not found, skipping hybridization step."
+fi
 
 # Log the completion of the script
 echo "create_iso.sh completed successfully."

@@ -5,4 +5,4 @@ mkdir -p ~/custom_iso
 
  # Update package lists and install necessary tools 
 apt-get update
-apt-get install -y squashfs-tools xorriso isolinux sudo
+apt-get install -y squashfs-tools xorriso isolinux sudo syslinux-utils genisoimage
