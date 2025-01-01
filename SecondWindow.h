@@ -13,7 +13,8 @@
 #include "OSDetector.h"
 #include "WindowsCmdPanel.h"
 #include "LinuxTerminalPanel.h"
-#include "ContainerManager.h"  // Add this include
+#include "ContainerManager.h"
+#include "SQLTab.h"  // Include the new SQLTab header
 
 class SecondWindow : public wxFrame {
 public:
@@ -29,17 +30,7 @@ private:
     bool RunScript(const wxString& containerId, const wxString& script);
     bool CopyISOFromContainer(const wxString& containerId, const wxString& destPath);
     void LogToFile(const wxString& logPath, const wxString& message);
-    
     void OnTabChanged(wxCommandEvent& event);
-    void OnSQLTabChanged(wxCommandEvent& event);
-    void ShowSQLTab(int tabId);
-    void CreateSQLPanel();
-    void CreateDesktopTab();
-    void CreateAppsTab(); 
-    void CreateSystemTab();
-    void CreateCustomizeTab();
-    void CreateHardwareTab();
-    void UnbindSQLEvents();
 
     OSDetector m_osDetector;
     WindowsCmdPanel* m_cmdPanel;
@@ -47,24 +38,14 @@ private:
     wxString m_isoPath;
     wxPanel* m_mainPanel;
     wxPanel* m_terminalTab;
-    wxPanel* m_sqlTab;
+    SQLTab* m_sqlTab;  // Use SQLTab instead of wxPanel
     wxSizer* m_terminalSizer;
-    wxSizer* m_sqlSizer;
-    wxPanel* m_sqlContent;
-    wxStaticLine* separator;
-    int m_currentSqlTab;
-    std::vector<wxButton*> m_sqlTabButtons;
     wxString m_containerId;
 
     enum {
         ID_TERMINAL_TAB = wxID_HIGHEST + 1,
         ID_SQL_TAB,
-        ID_NEXT_BUTTON,
-        ID_SQL_DESKTOP,
-        ID_SQL_APPS,
-        ID_SQL_SYSTEM, 
-        ID_SQL_CUSTOMIZE,
-        ID_SQL_HARDWARE
+        ID_NEXT_BUTTON
     };
 
     DECLARE_EVENT_TABLE()

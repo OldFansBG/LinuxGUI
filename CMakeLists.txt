@@ -72,6 +72,7 @@ set(SOURCES
    ContainerManager.cpp
    ScriptManager.cpp
    ScriptContents.cpp
+   SQLTab.cpp
 )
 
 # Header files
