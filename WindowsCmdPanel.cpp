@@ -7,7 +7,7 @@
 #include <wx/wx.h>
 #include <wx/msgdlg.h>
 #include <wx/log.h>
-
+#include <memory>
 #include <sddl.h>
 #include <aclapi.h>
 #include <fstream>

@@ -4,6 +4,9 @@ include(FetchContent)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Disable treating warnings as errors
+add_compile_options(-Wno-error)
+
 # Build output configuration
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 if(WIN32)
@@ -36,7 +39,7 @@ set(ENABLE_INSTALL OFF CACHE BOOL "")
 FetchContent_Declare(
    libarchive
    GIT_REPOSITORY https://github.com/libarchive/libarchive.git
-   GIT_TAG v3.7.2
+   GIT_TAG v3.7.2  # Use the latest version (e.g., v3.7.2 or newer)
    GIT_SHALLOW ON
 )
 FetchContent_MakeAvailable(libarchive)
@@ -53,52 +56,79 @@ set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "disable yaml tests")
 set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "disable yaml tools")
 FetchContent_MakeAvailable(yaml-cpp)
 
-# Source files
+# Find JsonCpp
+find_package(JsonCpp REQUIRED)
+
+# Find libcurl
+find_package(CURL REQUIRED)
+
+# FlatpakStore module
+set(SOURCES_FLATPAK
+    FlatpakStore.cpp
+)
+
+# Create a static library for the FlatpakStore module
+add_library(flatpak-store STATIC ${SOURCES_FLATPAK})
+
+# Include directories for FlatpakStore
+target_include_directories(flatpak-store PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# Link libraries for FlatpakStore
+target_link_libraries(flatpak-store PRIVATE
+    wx::core
+    wx::base
+    CURL::libcurl  # Link libcurl
+    JsonCpp::JsonCpp
+)
+
+# Main program
 set(SOURCES
-   main.cpp
-   MainFrame.cpp 
-   CustomTitleBar.cpp
-   CustomStatusBar.cpp
-   ISOReader.cpp
-   OSDetector.cpp
-   SecondWindow.cpp
-   WindowsCmdPanel.cpp
-   LinuxTerminalPanel.cpp
-   SettingsDialog.cpp
-   ISOExtractor.cpp
-   DockerTransfer.cpp
-   gear_icon.cpp
-   ThemeConfig.cpp
-   ContainerManager.cpp
-   ScriptManager.cpp
-   ScriptContents.cpp
-   SQLTab.cpp
+    main.cpp
+    MainFrame.cpp
+    CustomTitleBar.cpp
+    CustomStatusBar.cpp
+    ISOReader.cpp
+    OSDetector.cpp
+    SecondWindow.cpp
+    WindowsCmdPanel.cpp
+    LinuxTerminalPanel.cpp
+    SettingsDialog.cpp
+    ISOExtractor.cpp
+    DockerTransfer.cpp
+    gear_icon.cpp
+    ThemeConfig.cpp
+    ContainerManager.cpp
+    ScriptManager.cpp
+    ScriptContents.cpp
+    SQLTab.cpp
 )
 
 # Header files
 set(HEADERS
-   MainFrame.h
-   CustomTitleBar.h
-   CustomStatusBar.h
-   ISOReader.h
-   OSDetector.h
-   SecondWindow.h
-   WindowsCmdPanel.h
-   LinuxTerminalPanel.h
-   SettingsDialog.h
-   ISOExtractor.h
-   DockerTransfer.h
-   MyButton.h
-   gear_icon.h
-   ContainerManager.h
+    MainFrame.h
+    CustomTitleBar.h
+    CustomStatusBar.h
+    ISOReader.h
+    OSDetector.h
+    SecondWindow.h
+    WindowsCmdPanel.h
+    LinuxTerminalPanel.h
+    SettingsDialog.h
+    ISOExtractor.h
+    DockerTransfer.h
+    MyButton.h
+    gear_icon.h
+    ContainerManager.h
 )
 
 # Scripts and resources to copy
 set(SCRIPT_FILES
-   setup_output.sh
-   setup_chroot.sh
-   create_iso.sh
-   copy_iso.bat
+    setup_output.sh
+    setup_chroot.sh
+    create_iso.sh
+    copy_iso.bat
 )
 
 # Platform-specific configurations
@@ -116,10 +146,10 @@ if(WIN32)
    )
 endif()
 
-# Create executable
+# Create executable for the main program
 add_executable(iso_analyzer WIN32 ${SOURCES} ${HEADERS})
 
-# Include directories
+# Include directories for the main program
 target_include_directories(iso_analyzer 
    PRIVATE
        ${CMAKE_CURRENT_SOURCE_DIR}
@@ -129,7 +159,7 @@ target_include_directories(iso_analyzer
        ${libarchive_BINARY_DIR}
 )
 
-# Link libraries
+# Link libraries for the main program
 target_link_libraries(iso_analyzer 
    PRIVATE
        wx::core
@@ -137,6 +167,7 @@ target_link_libraries(iso_analyzer
        archive_static
        yaml-cpp
        ${PLATFORM_LIBS}
+       flatpak-store  # Link the FlatpakStore static library
 )
 
 # Windows-specific settings
@@ -179,8 +210,7 @@ file(COPY ${RESOURCE_FILES} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 # Copy themes file
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/themes.json
-              ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/themes.json
-              COPYONLY)
+              ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/themes.json COPYONLY)
 
 # Install configuration
 install(TARGETS iso_analyzer

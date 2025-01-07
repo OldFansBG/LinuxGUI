@@ -1,4 +1,5 @@
 #include "SQLTab.h"
+#include "FlatpakStore.h"  // Updated include for Flathub search functionality
 
 wxBEGIN_EVENT_TABLE(SQLTab, wxPanel)
     EVT_BUTTON(ID_SQL_DESKTOP, SQLTab::OnSQLTabChanged)
@@ -30,8 +31,8 @@ SQLTab::SQLTab(wxWindow* parent) : wxPanel(parent) {
 
     for (const auto& tab : tabs) {
         wxButton* tabButton = new wxButton(tabPanel, tab.id, tab.label,
-                                           wxDefaultPosition, wxSize(120, 50),
-                                           wxBORDER_NONE);
+                                         wxDefaultPosition, wxSize(120, 50),
+                                         wxBORDER_NONE);
         tabButton->SetBackgroundColour(wxColour(26, 26, 26));
         tabButton->SetForegroundColour(wxColour(156, 163, 175));
         tabSizer->Add(tabButton, 0, wxEXPAND);
@@ -143,60 +144,12 @@ void SQLTab::CreateDesktopTab() {
 }
 
 void SQLTab::CreateAppsTab() {
+    // Replace the existing content with the FlatpakStore module
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 
-    wxBoxSizer* searchSizer = new wxBoxSizer(wxHORIZONTAL);
-
-    wxTextCtrl* search = new wxTextCtrl(m_sqlContent, wxID_ANY, "Search applications...");
-    search->SetBackgroundColour(wxColour(31, 41, 55));
-    search->SetForegroundColour(*wxWHITE);
-
-    wxChoice* category = new wxChoice(m_sqlContent, wxID_ANY);
-    category->Append({"All Categories", "Internet", "Graphics", "Development", "Games"});
-    category->SetSelection(0);
-
-    searchSizer->Add(search, 1, wxRIGHT, 5);
-    searchSizer->Add(category, 0);
-
-    wxStaticBox* box = new wxStaticBox(m_sqlContent, wxID_ANY, "Featured Applications");
-    box->SetForegroundColour(*wxWHITE);
-    wxStaticBoxSizer* appsSizer = new wxStaticBoxSizer(box, wxVERTICAL);
-
-    wxGridSizer* grid = new wxGridSizer(2, 4, 10, 10);
-
-    const wxString apps[] = {
-        "Firefox", "VS Code", "GIMP", "Steam",
-        "Blender", "VLC", "Discord", "OBS Studio"
-    };
-
-    for (const auto& app : apps) {
-        wxPanel* card = new wxPanel(m_sqlContent);
-        card->SetBackgroundColour(wxColour(31, 41, 55));
-
-        wxBoxSizer* cardSizer = new wxBoxSizer(wxVERTICAL);
-
-        wxPanel* icon = new wxPanel(card, wxID_ANY, wxDefaultPosition, wxSize(48, 48));
-        icon->SetBackgroundColour(wxColour(55, 65, 81));
-
-        wxStaticText* name = new wxStaticText(card, wxID_ANY, app);
-        name->SetForegroundColour(*wxWHITE);
-
-        wxButton* install = new wxButton(card, wxID_ANY, "Install");
-        install->SetBackgroundColour(wxColour(37, 99, 235));
-        install->SetForegroundColour(*wxWHITE);
-
-        cardSizer->Add(icon, 0, wxALIGN_CENTER | wxALL, 5);
-        cardSizer->Add(name, 0, wxALL, 5);
-        cardSizer->Add(install, 0, wxEXPAND | wxALL, 5);
-
-        card->SetSizer(cardSizer);
-        grid->Add(card, 1, wxEXPAND);
-    }
-
-    appsSizer->Add(grid, 1, wxEXPAND | wxALL, 5);
-
-    sizer->Add(searchSizer, 0, wxEXPAND | wxALL, 10);
-    sizer->Add(appsSizer, 1, wxEXPAND | wxALL, 10);
+    // Create an instance of the FlatpakStore
+    FlatpakStore* flatpakStore = new FlatpakStore(m_sqlContent);
+    sizer->Add(flatpakStore, 1, wxEXPAND | wxALL, 10);
 
     m_sqlContent->SetSizer(sizer);
 }
