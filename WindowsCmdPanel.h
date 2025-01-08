@@ -1,10 +1,11 @@
 #ifndef WINDOWSCMDPANEL_H
 #define WINDOWSCMDPANEL_H
-
+#include <memory>
 #include <wx/wx.h>
 #include <wx/process.h>
 #include "DockerTransfer.h"
 #include "ScriptManager.h"
+#include <iostream>
 
 #ifdef __WINDOWS__
 #include <windows.h>
