@@ -1,8 +1,19 @@
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 project(iso_analyzer LANGUAGES CXX)
+
+# Disable all warnings
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    add_compile_options(-w)
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    add_compile_options(/W0)
+endif()
+
 include(FetchContent)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find and link libcurl
+find_package(CURL REQUIRED)
 
 # Build output configuration
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -73,6 +84,7 @@ set(SOURCES
    ScriptManager.cpp
    ScriptContents.cpp
    SQLTab.cpp
+   FlatpakStore.cpp
 )
 
 # Header files
@@ -137,6 +149,7 @@ target_link_libraries(iso_analyzer
        archive_static
        yaml-cpp
        ${PLATFORM_LIBS}
+       CURL::libcurl  # Link libcurl
 )
 
 # Windows-specific settings

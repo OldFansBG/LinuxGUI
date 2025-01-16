@@ -144,16 +144,19 @@ void SQLTab::CreateDesktopTab() {
 }
 
 void SQLTab::CreateAppsTab() {
-    // Replace the existing content with the FlatpakStore module
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 
     // Create an instance of the FlatpakStore
     FlatpakStore* flatpakStore = new FlatpakStore(m_sqlContent);
+    flatpakStore->SetContainerId(m_containerId); // Pass the container ID
     sizer->Add(flatpakStore, 1, wxEXPAND | wxALL, 10);
 
     m_sqlContent->SetSizer(sizer);
 }
 
+void SQLTab::SetContainerId(const wxString& containerId) {
+    m_containerId = containerId;
+}
 void SQLTab::CreateSystemTab() {
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 

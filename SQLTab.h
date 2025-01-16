@@ -9,6 +9,7 @@ class SQLTab : public wxPanel {
 public:
     SQLTab(wxWindow* parent);
     void ShowTab(int tabId);
+    void SetContainerId(const wxString& containerId); // Add this line
 
 private:
     void CreateDesktopTab();
@@ -17,6 +18,7 @@ private:
     void CreateCustomizeTab();
     void CreateHardwareTab();
     void OnSQLTabChanged(wxCommandEvent& event);
+    wxString m_containerId; // Add this line
 
     wxPanel* m_sqlContent;
     int m_currentSqlTab;

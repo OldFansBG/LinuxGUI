@@ -127,6 +127,7 @@ public:
 
     // Public methods
     void SetTotalResults(int total) { totalResults = total; }
+    void SetContainerId(const wxString& containerId); // Add this line
 
 private:
     // UI elements
@@ -144,6 +145,9 @@ private:
     std::atomic<bool> stopFlag;
     int searchId;
 
+    // Container ID for chroot environment
+    wxString m_containerId; // Add this line
+
     // Thread pool
     std::unique_ptr<ThreadPool> threadPool;
 
@@ -153,6 +157,7 @@ private:
     void OnResultReady(wxCommandEvent& event);
     void OnImageReady(wxCommandEvent& event);
     void OnUpdateProgress(wxCommandEvent& event);
+    void OnInstallButtonClicked(wxCommandEvent& event); // Add this line
 
     DECLARE_EVENT_TABLE()
 };
