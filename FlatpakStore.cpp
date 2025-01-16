@@ -339,21 +339,14 @@ void FlatpakStore::OnSearchComplete(wxCommandEvent& event) {
 }
 
 void FlatpakStore::OnInstallButtonClicked(wxCommandEvent& event) {
-    // Debugging: Log that the button was clicked
-    std::cout << "Install button clicked!" << std::endl;
-
     // Step 1: Read the container ID from container_id.txt
     std::ifstream file("container_id.txt");
     std::string containerId;
     if (file.is_open()) {
         std::getline(file, containerId);
         file.close();
-
-        // Trim any leading/trailing whitespace from the container ID
         containerId.erase(0, containerId.find_first_not_of(" \n\r\t"));
         containerId.erase(containerId.find_last_not_of(" \n\r\t") + 1);
-
-        // Check if the container ID is empty
         if (containerId.empty()) {
             wxLogError("Container ID is empty in container_id.txt.");
             wxMessageBox("Container ID is empty. Cannot proceed with installation.", "Installation Error", wxOK | wxICON_ERROR);
@@ -397,16 +390,19 @@ void FlatpakStore::OnInstallButtonClicked(wxCommandEvent& event) {
         return;
     }
 
-    wxString appId = appIdText->GetLabel().AfterFirst(':').Trim();
+    wxString appId = appIdText->GetLabel();
+    if (appId.StartsWith("App ID: ")) {
+        appId = appId.Mid(8); // Remove "App ID: " prefix
+    }
+    appId = appId.Trim().Trim(false); // Remove leading/trailing whitespace
     std::cout << "Retrieved app_id: " << appId << std::endl;
 
-    // Step 3: Construct the command to install the Flatpak app
+    // Step 3: Construct the corrected command
     wxString installCommand = wxString::Format(
-        "docker exec %s /bin/bash -c 'chroot /custom_iso/squashfs-root /bin/bash -c \"flatpak install -y flathub %s\"'",
+        "docker exec %s /bin/bash -c \"chroot /squashfs-root /bin/bash -c 'flatpak install -y flathub %s'\"",
         containerId, appId
     );
-
-    std::cout << "Install command: " << installCommand << std::endl;
+    std::cout << "Install Command: " << installCommand << std::endl;
 
     // Step 4: Execute the command
     wxArrayString output, errors;
