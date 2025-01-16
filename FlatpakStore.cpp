@@ -399,7 +399,7 @@ void FlatpakStore::OnInstallButtonClicked(wxCommandEvent& event) {
 
     // Step 3: Construct the corrected command
     wxString installCommand = wxString::Format(
-        "docker exec %s /bin/bash -c \"chroot /squashfs-root /bin/bash -c 'flatpak install -y flathub %s'\"",
+        "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'flatpak install -y flathub %s'\"",
         containerId, appId
     );
     std::cout << "Install Command: " << installCommand << std::endl;
