@@ -358,7 +358,7 @@ void FlatpakStore::OnInstallButtonClicked(wxCommandEvent& event) {
         return;
     }
 
-    // Step 2: Retrieve the app name and app ID from the result panel
+    // Step 2: Retrieve the app ID from the install button's client data
     wxButton* installButton = dynamic_cast<wxButton*>(event.GetEventObject());
     if (!installButton) {
         wxLogError("Install button not found!");
@@ -366,38 +366,17 @@ void FlatpakStore::OnInstallButtonClicked(wxCommandEvent& event) {
         return;
     }
 
-    wxPanel* resultPanel = dynamic_cast<wxPanel*>(installButton->GetParent());
-    if (!resultPanel) {
-        wxLogError("Result panel not found!");
-        wxMessageBox("Result panel not found!", "Error", wxOK | wxICON_ERROR);
+    wxString* appIdPtr = static_cast<wxString*>(installButton->GetClientData());
+    if (!appIdPtr) {
+        wxLogError("App ID not found in button client data!");
+        wxMessageBox("App ID not found in button client data!", "Error", wxOK | wxICON_ERROR);
         return;
     }
 
-    wxStaticText* nameText = dynamic_cast<wxStaticText*>(resultPanel->FindWindowByName("app_name"));
-    if (!nameText) {
-        wxLogError("App name not found!");
-        wxMessageBox("App name not found!", "Error", wxOK | wxICON_ERROR);
-        return;
-    }
+    wxString appId = *appIdPtr;
+    std::cout << "Installing app with app ID: " << appId << std::endl;
 
-    wxString appName = nameText->GetLabel();
-    std::cout << "Installing app: " << appName << std::endl;
-
-    wxStaticText* appIdText = dynamic_cast<wxStaticText*>(resultPanel->FindWindowByName("app_id"));
-    if (!appIdText) {
-        wxLogError("App ID not found!");
-        wxMessageBox("App ID not found!", "Error", wxOK | wxICON_ERROR);
-        return;
-    }
-
-    wxString appId = appIdText->GetLabel();
-    if (appId.StartsWith("App ID: ")) {
-        appId = appId.Mid(8); // Remove "App ID: " prefix
-    }
-    appId = appId.Trim().Trim(false); // Remove leading/trailing whitespace
-    std::cout << "Retrieved app_id: " << appId << std::endl;
-
-    // Step 3: Construct the corrected command
+    // Step 3: Construct the installation command
     wxString installCommand = wxString::Format(
         "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'flatpak install -y flathub %s'\"",
         containerId, appId
@@ -425,13 +404,13 @@ void FlatpakStore::OnInstallButtonClicked(wxCommandEvent& event) {
     // Step 6: Display success or failure message
     if (result == 0) {
         wxMessageBox(
-            wxString::Format("Successfully installed in chroot: %s\nApp ID: %s", appName, appId),
+            wxString::Format("Successfully installed app with ID: %s", appId),
             "Installation Complete",
             wxOK | wxICON_INFORMATION
         );
     } else {
         wxMessageBox(
-            wxString::Format("Installation failed for app: %s\nApp ID: %s", appName, appId),
+            wxString::Format("Installation failed for app with ID: %s", appId),
             "Installation Error",
             wxOK | wxICON_ERROR
         );
@@ -449,6 +428,9 @@ void FlatpakStore::OnResultReady(wxCommandEvent& event) {
     std::getline(iss, summary, '|');
     std::getline(iss, iconUrl, '|');
     std::getline(iss, appId, '|');
+
+    // Debug logging to verify the data
+    std::cout << "Adding result: " << name << " - " << appId << std::endl;
 
     // Create result panel
     wxPanel* resultPanel = new wxPanel(resultsPanel);
@@ -513,6 +495,10 @@ void FlatpakStore::OnResultReady(wxCommandEvent& event) {
     installButton->SetBackgroundColour(wxColour(37, 99, 235));
     installButton->SetForegroundColour(*wxWHITE);
     installButton->Bind(wxEVT_BUTTON, &FlatpakStore::OnInstallButtonClicked, this);
+
+    // Set appId as client data for the install button
+    installButton->SetClientData(new wxString(appId));
+
     resultSizer->Add(installButton, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
 
     resultPanel->SetSizer(resultSizer);
