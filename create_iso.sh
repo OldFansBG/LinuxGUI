@@ -3,6 +3,9 @@
 # Log the start of the script
 echo "Starting create_iso.sh..."
 
+# Remove the sentinel file if it exists (to avoid false positives)
+rm -f ~/custom_iso/creation_complete
+
 # Change to the working directory
 WORKDIR=~/custom_iso
 echo "Changing to the working directory: $WORKDIR"
@@ -57,6 +60,14 @@ if command -v isohybrid >/dev/null 2>&1; then
 else
     echo "isohybrid command not found, skipping hybridization step."
 fi
+
+# Step 8: Create a sentinel file to indicate completion
+SENTINEL_FILE=~/custom_iso/creation_complete
+touch "$SENTINEL_FILE" || { echo "Failed to create sentinel file"; exit 1; }
+echo "Sentinel file created at: $SENTINEL_FILE"
+
+# Wait for file system sync
+sleep 2
 
 # Log the completion of the script
 echo "create_iso.sh completed successfully."

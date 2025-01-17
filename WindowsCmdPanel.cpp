@@ -484,7 +484,7 @@ void WindowsCmdPanel::ContinueInitialization()
             break;
         }
 
-        case 7: { // Step 7: Execute create_iso.sh
+       case 7: { // Step 7: Execute create_iso.sh
             wxLogMessage("Step 7: Executing create_iso.sh");
 
             // Detach the existing CMD window (if any)
@@ -493,66 +493,22 @@ void WindowsCmdPanel::ContinueInitialization()
                 m_hwndCmd = nullptr; // Reset the handle
             }
 
-            // Command to run docker exec -it and execute create_iso.sh
+            // Command to run docker exec and execute create_iso.sh
             std::wstring createIsoCmd = wxString::Format(
-                L"cmd.exe /K docker exec -it %s /bin/bash -c \"/create_iso.sh\"",
+                L"docker exec %s /bin/bash -c \"/create_iso.sh\"",
                 m_containerId
             ).ToStdWstring();
 
-            STARTUPINFOW si;
-            PROCESS_INFORMATION pi;
-            ZeroMemory(&si, sizeof(si));
-            si.cb = sizeof(si);
-            si.dwFlags = STARTF_USESHOWWINDOW;
-            si.wShowWindow = SW_HIDE; // Hide the window initially
-            ZeroMemory(&pi, sizeof(pi));
-
-            if (CreateProcessW(NULL, const_cast<wchar_t*>(createIsoCmd.c_str()),
-                            NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) {
-                wxLogMessage("New CMD window created successfully for docker exec -it");
-                CloseHandle(pi.hProcess);
-                CloseHandle(pi.hThread);
-
-                // Wait for the new CMD window to be created
-                Sleep(2000);
-
-                // Find and embed the new CMD window
-                m_hwndCmd = FindWindowExW(NULL, NULL, L"ConsoleWindowClass", NULL);
-                if (m_hwndCmd) {
-                    wxLogMessage("Found new CMD window, embedding immediately");
-
-                    // Remove window decorations
-                    LONG style = GetWindowLong(m_hwndCmd, GWL_STYLE);
-                    style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX |
-                            WS_MAXIMIZEBOX | WS_SYSMENU);
-                    SetWindowLong(m_hwndCmd, GWL_STYLE, style);
-
-                    LONG exStyle = GetWindowLong(m_hwndCmd, GWL_EXSTYLE);
-                    exStyle &= ~(WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE);
-                    SetWindowLong(m_hwndCmd, GWL_EXSTYLE, exStyle);
-
-                    // Embed the window into the application
-                    ::SetParent(m_hwndCmd, (HWND)GetHWND());
-                    ::ShowWindow(m_hwndCmd, SW_SHOW);  // Show the window after embedding
-                    ::SetWindowPos(m_hwndCmd, NULL, 0, 0,
-                                GetClientSize().GetWidth(), GetClientSize().GetHeight(),
-                                SWP_FRAMECHANGED);
-                    ::SetForegroundWindow(m_hwndCmd);
-                    ::SetFocus(m_hwndCmd);
-                    wxLogMessage("New CMD window embedded successfully");
-                } else {
-                    wxLogError("Failed to find new CMD window for embedding");
-                }
-
-                // Wait for create_iso.sh to complete
-                wxLogMessage("Waiting for create_iso.sh to complete...");
-                wxMilliSleep(120000); // Wait for 120 seconds (adjust as needed)
-
-                // Increment the step and proceed to Step 8
-                m_initStep++;
+            // Execute the command and check the exit code
+            int exitCode = wxExecute(createIsoCmd, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE);
+            if (exitCode == 0) {
+                wxLogMessage("create_iso.sh has completed successfully.");
+                m_initStep++; // Proceed to Step 8
                 ContinueInitialization(); // Directly call Step 8
             } else {
-                wxLogError("Failed to create new CMD window for docker exec -it. Error code: %d", GetLastError());
+                wxLogError("create_iso.sh failed to complete. Exit code: %d", exitCode);
+                CleanupTimer();
+                return;
             }
             break;
         }
