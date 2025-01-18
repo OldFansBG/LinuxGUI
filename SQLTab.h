@@ -3,13 +3,14 @@
 
 #include <wx/wx.h>
 #include <vector>
-#include "FlatpakStore.h"  // Updated include
+#include "FlatpakStore.h"
+#include "DesktopTab.h"  // Include the new DesktopTab header
 
 class SQLTab : public wxPanel {
 public:
     SQLTab(wxWindow* parent);
     void ShowTab(int tabId);
-    void SetContainerId(const wxString& containerId); // Add this line
+    void SetContainerId(const wxString& containerId);
 
 private:
     void CreateDesktopTab();
@@ -18,7 +19,7 @@ private:
     void CreateCustomizeTab();
     void CreateHardwareTab();
     void OnSQLTabChanged(wxCommandEvent& event);
-    wxString m_containerId; // Add this line
+    wxString m_containerId;
 
     wxPanel* m_sqlContent;
     int m_currentSqlTab;

@@ -1,5 +1,6 @@
 #include "FlatpakStore.h"
 #include <fstream> // Add this line to include the file stream library
+#include <wx/gbsizer.h>
 
 // Define the event types
 wxDEFINE_EVENT(wxEVT_SEARCH_COMPLETE, wxCommandEvent);
@@ -179,19 +180,15 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
       isSearching(false), totalResults(0), currentSearchThread(nullptr),
       stopFlag(false), searchId(0)
 {
-    // Initialize the thread pool with 4 worker threads
     threadPool = std::make_unique<ThreadPool>(4);
-
     SetBackgroundColour(wxColour(31, 41, 55));
 
-    wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
+    auto mainSizer = new wxBoxSizer(wxVERTICAL);
 
     // Search controls
-    wxBoxSizer* searchControlsSizer = new wxBoxSizer(wxHORIZONTAL);
-
-    searchBox = new wxTextCtrl(this, wxID_ANY, "",
-                              wxDefaultPosition, wxDefaultSize,
-                              wxTE_PROCESS_ENTER);
+    auto searchControlsSizer = new wxGridBagSizer(5, 5);
+    searchBox = new wxTextCtrl(this, wxID_ANY, "", wxDefaultPosition, 
+                           wxDefaultSize, wxTE_PROCESS_ENTER);
     searchBox->SetBackgroundColour(wxColour(55, 65, 81));
     searchBox->SetForegroundColour(*wxWHITE);
     searchBox->SetHint("Search Flathub applications...");
@@ -202,8 +199,9 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
     searchButton->SetForegroundColour(*wxWHITE);
     searchButton->Bind(wxEVT_BUTTON, &FlatpakStore::OnSearch, this);
 
-    searchControlsSizer->Add(searchBox, 1, wxEXPAND | wxRIGHT, 5);
-    searchControlsSizer->Add(searchButton, 0);
+    searchControlsSizer->Add(searchBox, wxGBPosition(0, 0), wxGBSpan(1, 1), wxEXPAND);
+    searchControlsSizer->Add(searchButton, wxGBPosition(0, 1));
+    searchControlsSizer->AddGrowableCol(0, 1);
 
     // Progress bar
     progressBar = new wxGauge(this, wxID_ANY, 100);

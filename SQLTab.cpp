@@ -1,5 +1,6 @@
 #include "SQLTab.h"
-#include "FlatpakStore.h"  // Updated include for Flathub search functionality
+#include "FlatpakStore.h"
+#include "DesktopTab.h"
 
 wxBEGIN_EVENT_TABLE(SQLTab, wxPanel)
     EVT_BUTTON(ID_SQL_DESKTOP, SQLTab::OnSQLTabChanged)
@@ -70,6 +71,12 @@ void SQLTab::ShowTab(int tabId) {
     switch (tabId) {
         case ID_SQL_DESKTOP:
             CreateDesktopTab();
+            // Trigger a size event to force layout recalculation
+            if (!m_sqlContent->GetChildren().IsEmpty()) {
+                wxWindow* desktopTab = m_sqlContent->GetChildren().GetFirst()->GetData();
+                wxSizeEvent event(desktopTab->GetSize());
+                desktopTab->GetEventHandler()->ProcessEvent(event);
+            }
             break;
         case ID_SQL_APPS:
             CreateAppsTab();
@@ -104,51 +111,26 @@ void SQLTab::OnSQLTabChanged(wxCommandEvent& event) {
 }
 
 void SQLTab::CreateDesktopTab() {
+    DesktopTab* desktopTab = new DesktopTab(m_sqlContent);
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
-
-    wxStaticBox* box = new wxStaticBox(m_sqlContent, wxID_ANY, "Desktop Environment");
-    box->SetForegroundColour(*wxWHITE);
-    wxStaticBoxSizer* envSizer = new wxStaticBoxSizer(box, wxVERTICAL);
-
-    wxGridSizer* gridSizer = new wxGridSizer(3, 3, 10, 10);
-
-    const wxString environments[] = {
-        "GNOME", "KDE Plasma", "XFCE",
-        "Cinnamon", "MATE", "LXQt",
-        "Budgie", "Deepin", "Pantheon"
-    };
-
-    for (const auto& env : environments) {
-        wxPanel* card = new wxPanel(m_sqlContent);
-        card->SetBackgroundColour(wxColour(31, 41, 55));
-
-        wxBoxSizer* cardSizer = new wxBoxSizer(wxVERTICAL);
-
-        wxPanel* preview = new wxPanel(card, wxID_ANY, wxDefaultPosition, wxSize(-1, 100));
-        preview->SetBackgroundColour(wxColour(55, 65, 81));
-
-        wxStaticText* label = new wxStaticText(card, wxID_ANY, env);
-        label->SetForegroundColour(*wxWHITE);
-
-        cardSizer->Add(preview, 1, wxEXPAND | wxALL, 5);
-        cardSizer->Add(label, 0, wxALL, 5);
-
-        card->SetSizer(cardSizer);
-        gridSizer->Add(card, 1, wxEXPAND);
-    }
-
-    envSizer->Add(gridSizer, 1, wxEXPAND | wxALL, 5);
-    sizer->Add(envSizer, 1, wxEXPAND | wxALL, 10);
-
+    sizer->Add(desktopTab, 1, wxEXPAND);
     m_sqlContent->SetSizer(sizer);
+    
+    // Force immediate layout calculation
+    m_sqlContent->Layout();
+    
+    // Use CallAfter to ensure proper sizing after layout
+    CallAfter([this, desktopTab]() {
+        desktopTab->RecalculateLayout(m_sqlContent->GetSize().GetWidth());
+        m_sqlContent->Layout();
+    });
 }
 
 void SQLTab::CreateAppsTab() {
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 
-    // Create an instance of the FlatpakStore
     FlatpakStore* flatpakStore = new FlatpakStore(m_sqlContent);
-    flatpakStore->SetContainerId(m_containerId); // Pass the container ID
+    flatpakStore->SetContainerId(m_containerId);
     sizer->Add(flatpakStore, 1, wxEXPAND | wxALL, 10);
 
     m_sqlContent->SetSizer(sizer);
@@ -157,6 +139,7 @@ void SQLTab::CreateAppsTab() {
 void SQLTab::SetContainerId(const wxString& containerId) {
     m_containerId = containerId;
 }
+
 void SQLTab::CreateSystemTab() {
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 

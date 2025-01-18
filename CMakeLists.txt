@@ -85,6 +85,7 @@ set(SOURCES
    ScriptContents.cpp
    SQLTab.cpp
    FlatpakStore.cpp
+   DesktopTab.cpp
 )
 
 # Header files
