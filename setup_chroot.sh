@@ -34,39 +34,39 @@ chroot squashfs-root /bin/bash -c "apt-get update && apt-get install -y flatpak"
 # Add Flathub repository
 chroot squashfs-root /bin/bash -c "flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo"
 
-# Detect the GUI environment in the chroot
+# Detect the GUI environment in the chroot and save the output outside the chroot
 echo "Detecting the GUI environment in the chroot environment..."
+chroot squashfs-root /bin/bash -c '
+    declare -A GUI_ENV_MAP=(
+        ["GNOME"]="/usr/bin/gnome-shell"
+        ["KDE"]="/usr/bin/plasmashell"
+        ["XFCE"]="/usr/bin/xfwm4"
+        ["LXDE"]="/usr/bin/lxsession"
+        ["Cinnamon"]="/usr/bin/cinnamon-session"
+    )
 
-# Define paths to check for GUI binaries and configuration
-declare -A GUI_ENV_MAP=(
-    ["GNOME"]="/usr/bin/gnome-shell"
-    ["KDE"]="/usr/bin/plasmashell"
-    ["XFCE"]="/usr/bin/xfwm4"
-    ["LXDE"]="/usr/bin/lxsession"
-    ["Cinnamon"]="/usr/bin/cinnamon-session"
-)
+    SESSION_NAME="Unknown"
 
-# Initialize variable to store detected environment
-SESSION_NAME="Unknown"
+    for ENV in "${!GUI_ENV_MAP[@]}"; do
+        DETECT_PATH=${GUI_ENV_MAP[$ENV]}
+        if [ -f "$DETECT_PATH" ]; then
+            SESSION_NAME=$ENV
+            break
+        fi
+    done
 
-# Loop through the GUI environment map and check each one
-for ENV in "${!GUI_ENV_MAP[@]}"; do
-    DETECT_PATH=${GUI_ENV_MAP[$ENV]}
-    if chroot squashfs-root /bin/bash -c "[ -f $DETECT_PATH ]"; then
-        SESSION_NAME=$ENV
-        break
+    if [ "$SESSION_NAME" == "Unknown" ]; then
+        echo "No GUI binary detected, checking /usr/share/xsessions/*.desktop..."
+        SESSION_NAME=$(grep -m 1 "Name=" /usr/share/xsessions/*.desktop | cut -d"=" -f2 | head -n 1)
+        [ -z "$SESSION_NAME" ] && SESSION_NAME="Unknown"
     fi
-done
 
-# Fallback: Check for desktop session files if no binary is found
-if [ "$SESSION_NAME" == "Unknown" ]; then
-    echo "No GUI binary detected, checking /usr/share/xsessions/*.desktop..."
-    SESSION_NAME=$(chroot squashfs-root /bin/bash -c "grep -m 1 'Name=' /usr/share/xsessions/*.desktop | cut -d'=' -f2 | head -n 1")
-    [ -z "$SESSION_NAME" ] && SESSION_NAME="Unknown"
-fi
+    echo "Detected GUI environment: $SESSION_NAME"
+    echo "$SESSION_NAME" > /output/detected_gui.txt
+'
 
-# Display the detected session name
-echo "Detected GUI environment: $SESSION_NAME"
+# Display and save process ID
+chroot squashfs-root /bin/bash -c "echo 'Process ID inside chroot: $$'; echo $$ > /process_id.txt"
 
 # Check if a command is provided
 if [ -n "$1" ]; then

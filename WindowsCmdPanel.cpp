@@ -478,12 +478,94 @@ void WindowsCmdPanel::ContinueInitialization()
                 wxLogError("Failed to create new CMD window for docker exec -it. Error code: %d", GetLastError());
             }
 
-            // Clean up the timer and increment the step
-            CleanupTimer();
-            m_initStep++; // Move to the next step
+            // Step 6.5: Wait for detected_gui.txt to be created and copy it to the host
+            wxLogMessage("Waiting for detected_gui.txt to be created in the container...");
+
+            const int delay = 1000; // Check every 1 second
+            bool fileCopied = false;
+
+            while (!fileCopied) {
+                // Step 1: Check if the container is running
+                wxString checkContainerCmd = wxString::Format("docker ps -q --filter \"id=%s\"", m_containerId);
+                wxArrayString checkContainerOutput, checkContainerErrors;
+                wxLogMessage("Checking if container is running: %s", checkContainerCmd);
+
+                if (wxExecute(checkContainerCmd, checkContainerOutput, checkContainerErrors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) != 0 || checkContainerOutput.IsEmpty()) {
+                    wxLogError("Container is not running. Errors:");
+                    for (const auto& error : checkContainerErrors) {
+                        wxLogError(" - %s", error);
+                    }
+                    wxLogError("Cannot proceed. Exiting loop.");
+                    break;
+                } else {
+                    wxLogMessage("Container is running. Output:");
+                    for (const auto& line : checkContainerOutput) {
+                        wxLogMessage(" - %s", line);
+                    }
+                }
+
+                // Step 2: Check if the file exists in the container
+                wxString checkFileCmd = wxString::Format(
+                    "docker exec %s /bin/bash -c \"[ -f /root/custom_iso/detected_gui.txt ] && echo exists\"",
+                    m_containerId
+                );
+                wxArrayString checkFileOutput, checkFileErrors;
+                wxLogMessage("Checking for detected_gui.txt in container: %s", checkFileCmd);
+
+                if (wxExecute(checkFileCmd, checkFileOutput, checkFileErrors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) == 0) {
+                    wxLogMessage("Command output:");
+                    for (const auto& line : checkFileOutput) {
+                        wxLogMessage(" - %s", line);
+                        if (line.Contains("exists")) {
+                            wxLogMessage("detected_gui.txt found in container.");
+
+                            // Step 3: Copy the file to the host
+                            wxString copyGuiCmd = wxString::Format(
+                                "docker cp %s:/root/custom_iso/detected_gui.txt I:\\Files\\Desktop\\LinuxGUI\\build\\detected_gui.txt",
+                                m_containerId
+                            );
+                            wxArrayString copyGuiOutput, copyGuiErrors;
+                            wxLogMessage("Copying detected_gui.txt to host: %s", copyGuiCmd);
+
+                            if (wxExecute(copyGuiCmd, copyGuiOutput, copyGuiErrors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) == 0) {
+                                wxLogMessage("detected_gui.txt copied successfully to host.");
+                                wxLogMessage("Command output:");
+                                for (const auto& line : copyGuiOutput) {
+                                    wxLogMessage(" - %s", line);
+                                }
+                                fileCopied = true;
+                                break;
+                            } else {
+                                wxLogError("Failed to copy detected_gui.txt. Errors:");
+                                for (const auto& error : copyGuiErrors) {
+                                    wxLogError(" - %s", error);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    wxLogError("Failed to check for detected_gui.txt. Errors:");
+                    for (const auto& error : checkFileErrors) {
+                        wxLogError(" - %s", error);
+                    }
+                }
+
+                if (!fileCopied) {
+                    wxLogMessage("detected_gui.txt not found yet. Waiting...");
+                    wxMilliSleep(delay); // Wait for 1 second before checking again
+                }
+            }
+
+            // Proceed to Step 7 only after the file is copied
+            if (fileCopied) {
+                wxLogMessage("detected_gui.txt copied successfully. Waiting for manual trigger to proceed to Step 7.");
+                // Do not increment m_initStep or start the timer
+                // m_initStep remains at 6, and Step 7 will not be triggered automatically
+            } else {
+                wxLogError("Failed to copy detected_gui.txt. Exiting Step 6 without proceeding to Step 7.");
+            }
             break;
         }
-
        case 7: { // Step 7: Execute create_iso.sh
             wxLogMessage("Step 7: Executing create_iso.sh");
 
