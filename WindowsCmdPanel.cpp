@@ -128,6 +128,11 @@ void WindowsCmdPanel::ContinueInitialization()
 {
 #ifdef __WINDOWS__
     wxLogMessage("Continuing initialization step %d", m_initStep);
+
+    if (m_step6Completed && m_initStep == 6) {
+        wxLogMessage("Step 6 already completed. Proceeding to Step 7.");
+        m_initStep = 7; // Skip to Step 7
+    }
     switch (m_initStep) {
         case 0: { // Step 0: Create Docker container with sleep infinity
             wxLogMessage("Step 0: Creating Docker container");
@@ -415,7 +420,8 @@ void WindowsCmdPanel::ContinueInitialization()
             break;
         }
 
-        case 6: { // Step 6: Execute setup_chroot.sh and enter chroot
+
+        case 6: {
             wxLogMessage("Step 6: Executing setup_chroot.sh and entering chroot");
 
             // Detach the existing CMD window (if any)
@@ -533,6 +539,12 @@ void WindowsCmdPanel::ContinueInitialization()
                                 for (const auto& line : copyGuiOutput) {
                                     wxLogMessage(" - %s", line);
                                 }
+
+                                // Notify DesktopTab that the file is ready
+                                wxCommandEvent event(FILE_COPY_COMPLETE_EVENT, GetId());
+                                event.SetString("I:\\Files\\Desktop\\LinuxGUI\\build\\detected_gui.txt"); // File path
+                                wxPostEvent(GetParent(), event); // Send to parent (DesktopTab)
+
                                 fileCopied = true;
                                 break;
                             } else {
@@ -556,16 +568,15 @@ void WindowsCmdPanel::ContinueInitialization()
                 }
             }
 
-            // Proceed to Step 7 only after the file is copied
-            if (fileCopied) {
-                wxLogMessage("detected_gui.txt copied successfully. Waiting for manual trigger to proceed to Step 7.");
-                // Do not increment m_initStep or start the timer
-                // m_initStep remains at 6, and Step 7 will not be triggered automatically
-            } else {
-                wxLogError("Failed to copy detected_gui.txt. Exiting Step 6 without proceeding to Step 7.");
-            }
+            // Mark Step 6 as completed
+            m_step6Completed = true;
+
+            // Clean up the timer and increment the step
+            CleanupTimer();
+            m_initStep++; // Move to the next step
             break;
         }
+
        case 7: { // Step 7: Execute create_iso.sh
             wxLogMessage("Step 7: Executing create_iso.sh");
 

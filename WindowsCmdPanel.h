@@ -1,11 +1,13 @@
 #ifndef WINDOWSCMDPANEL_H
 #define WINDOWSCMDPANEL_H
+
 #include <memory>
 #include <wx/wx.h>
 #include <wx/process.h>
 #include "DockerTransfer.h"
 #include "ScriptManager.h"
 #include <iostream>
+#include "CustomEvents.h" // Include the shared header
 
 #ifdef __WINDOWS__
 #include <windows.h>
@@ -27,6 +29,7 @@ private:
    void CreateCmdWindow();
    void OnSize(wxSizeEvent& event);
    void CleanupTimer();
+   bool m_step6Completed; // Add this line
    bool ExecuteHiddenCommand(const wxString& cmd, wxArrayString* output = nullptr);
    bool ExecuteDockerCommand(const wxString& cmd, wxArrayString* output = nullptr);
    bool WaitForISOToBeCopied(const wxString& containerId);  // Add this line

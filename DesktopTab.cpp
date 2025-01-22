@@ -1,10 +1,25 @@
 #include "DesktopTab.h"
 #include <wx/filename.h>
 #include <array>
+#include <wx/textfile.h> // For reading text files
+#include <wx/timer.h> // For wxTimer
 
-DesktopTab::DesktopTab(wxWindow* parent) : wxPanel(parent) {
+// Custom event declaration (if not already declared in a shared header)
+wxDEFINE_EVENT(FILE_COPY_COMPLETE_EVENT, wxCommandEvent);
+
+// Timer event ID
+enum {
+    TIMER_ID = 1000
+};
+
+DesktopTab::DesktopTab(wxWindow* parent) : wxPanel(parent), m_timer(this, TIMER_ID) {
     CreateDesktopTab();
     Bind(wxEVT_SIZE, &DesktopTab::OnSize, this);
+    Bind(FILE_COPY_COMPLETE_EVENT, &DesktopTab::OnFileCopyComplete, this); // Bind custom event
+    Bind(wxEVT_TIMER, &DesktopTab::OnTimer, this, TIMER_ID); // Bind timer event
+
+    // Start the timer to check for the file every second
+    m_timer.Start(1000); // 1000ms = 1 second
 }
 
 wxBitmap DesktopTab::LoadImage(const wxString& imageName) {
@@ -64,6 +79,12 @@ void DesktopTab::CreateDesktopTab() {
 
     wxBoxSizer* scrolledSizer = new wxBoxSizer(wxVERTICAL);
     m_scrolledWindow->SetSizer(scrolledSizer);
+
+    // Add a wxStaticText to display the text from the file
+    m_textDisplay = new wxStaticText(m_scrolledWindow, wxID_ANY, "ENV is: ");
+    m_textDisplay->SetForegroundColour(*wxWHITE);
+    m_textDisplay->SetFont(wxFont(12, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
+    scrolledSizer->Add(m_textDisplay, 0, wxALIGN_LEFT | wxALL, 10);
 
     const std::array<wxString, 9> environments = {
         "GNOME", "KDE Plasma", "XFCE",
@@ -152,4 +173,36 @@ void DesktopTab::CreateDesktopTab() {
 
     // Initial layout calculation
     CallAfter(&DesktopTab::RecalculateLayout, GetSize().GetWidth());
+}
+
+void DesktopTab::UpdateTextFromFile(const wxString& filePath) {
+    wxTextFile textFile;
+    if (textFile.Open(filePath)) {
+        wxString fileContent;
+        for (size_t i = 0; i < textFile.GetLineCount(); ++i) {
+            fileContent += textFile.GetLine(i) + "\n";
+        }
+        textFile.Close();
+
+        // Update the wxStaticText with the file content
+        m_textDisplay->SetLabel("ENV is: " + fileContent);
+        wxLogMessage("Updated UI with content from: %s", filePath);
+    } else {
+        wxLogError("Failed to open file: %s", filePath);
+    }
+}
+
+void DesktopTab::OnFileCopyComplete(wxCommandEvent& event) {
+    wxString filePath = event.GetString(); // Get the file path from the event
+    wxLogMessage("Received file copy complete event. File path: %s", filePath);
+
+    // Update the UI with the content of the file
+    UpdateTextFromFile(filePath);
+}
+
+void DesktopTab::OnTimer(wxTimerEvent& event) {
+    wxString filePath = "I:\\Files\\Desktop\\LinuxGUI\\build\\detected_gui.txt";
+    if (wxFileName::FileExists(filePath)) {
+        UpdateTextFromFile(filePath);
+    }
 }
