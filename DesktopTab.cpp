@@ -2,24 +2,14 @@
 #include <wx/filename.h>
 #include <array>
 #include <wx/textfile.h> // For reading text files
-#include <wx/timer.h> // For wxTimer
 
 // Custom event declaration (if not already declared in a shared header)
 wxDEFINE_EVENT(FILE_COPY_COMPLETE_EVENT, wxCommandEvent);
 
-// Timer event ID
-enum {
-    TIMER_ID = 1000
-};
-
-DesktopTab::DesktopTab(wxWindow* parent) : wxPanel(parent), m_timer(this, TIMER_ID) {
+DesktopTab::DesktopTab(wxWindow* parent) : wxPanel(parent) {
     CreateDesktopTab();
     Bind(wxEVT_SIZE, &DesktopTab::OnSize, this);
     Bind(FILE_COPY_COMPLETE_EVENT, &DesktopTab::OnFileCopyComplete, this); // Bind custom event
-    Bind(wxEVT_TIMER, &DesktopTab::OnTimer, this, TIMER_ID); // Bind timer event
-
-    // Start the timer to check for the file every second
-    m_timer.Start(1000); // 1000ms = 1 second
 }
 
 wxBitmap DesktopTab::LoadImage(const wxString& imageName) {
@@ -175,7 +165,16 @@ void DesktopTab::CreateDesktopTab() {
     CallAfter(&DesktopTab::RecalculateLayout, GetSize().GetWidth());
 }
 
-void DesktopTab::UpdateTextFromFile(const wxString& filePath) {
+void DesktopTab::UpdateTextFromFile() {
+    wxString filePath = "I:\\Files\\Desktop\\LinuxGUI\\build\\detected_gui.txt";
+    wxLogMessage("Checking for file: %s", filePath);
+
+    // Debug: Check if file exists
+    if (!wxFileName::FileExists(filePath)) {
+        wxLogError("File does NOT exist: %s", filePath);
+        return;
+    }
+
     wxTextFile textFile;
     if (textFile.Open(filePath)) {
         wxString fileContent;
@@ -184,25 +183,26 @@ void DesktopTab::UpdateTextFromFile(const wxString& filePath) {
         }
         textFile.Close();
 
-        // Update the wxStaticText with the file content
+        // Debug: Log content
+        wxLogMessage("File content: '%s' (length: %zu)", fileContent, fileContent.length());
+
         m_textDisplay->SetLabel("ENV is: " + fileContent);
-        wxLogMessage("Updated UI with content from: %s", filePath);
+        m_textDisplay->Refresh(); // Force UI update
+        m_scrolledWindow->Layout(); // Refresh layout
     } else {
         wxLogError("Failed to open file: %s", filePath);
     }
 }
 
 void DesktopTab::OnFileCopyComplete(wxCommandEvent& event) {
-    wxString filePath = event.GetString(); // Get the file path from the event
-    wxLogMessage("Received file copy complete event. File path: %s", filePath);
+    wxLogMessage("Received FILE_COPY_COMPLETE_EVENT in DesktopTab.");
+
+    // Debug: Log before updating the UI
+    wxLogMessage("Checking for detected_gui.txt and updating UI...");
 
     // Update the UI with the content of the file
-    UpdateTextFromFile(filePath);
-}
+    UpdateTextFromFile();
 
-void DesktopTab::OnTimer(wxTimerEvent& event) {
-    wxString filePath = "I:\\Files\\Desktop\\LinuxGUI\\build\\detected_gui.txt";
-    if (wxFileName::FileExists(filePath)) {
-        UpdateTextFromFile(filePath);
-    }
+    // Debug: Log after updating the UI
+    wxLogMessage("UI update completed.");
 }
