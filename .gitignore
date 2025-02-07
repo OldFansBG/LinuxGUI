@@ -1,6 +1,8 @@
 /build/
 /backup/
 /.history/
+/python/
+/scripts/
 /iso/
 /.lh/
 /tools/
@@ -9,3 +11,5 @@ tempCodeRunnerFile.bat
 Debugviewpp.exe
 dp-zadanie.pdf
 DiplomenProekt.docx
+*.zip
+*.exe

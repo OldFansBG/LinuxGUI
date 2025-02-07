@@ -4,7 +4,6 @@ setlocal
 :: Add MSYS2 to PATH
 set PATH=C:\msys64\mingw64\bin;%PATH%
 
-
 cd build
 
 :: Configure with CMake
@@ -21,7 +20,15 @@ if %ERRORLEVEL% EQU 0 (
     echo Build completed successfully!
     echo Copying required DLLs...
     
-    :: List of required DLLs with error checking
+    :: Copy Python 3.10 DLL from local directory
+    if exist "I:\Files\Desktop\LinuxGUI\python\python310.dll" (
+        copy "I:\Files\Desktop\LinuxGUI\python\python310.dll" . > nul && echo Copied python310.dll successfully
+    ) else (
+        echo Error: python310.dll not found in local directory!
+        exit /b 1
+    )
+
+    :: Copy standard DLLs from MSYS2
     for %%F in (
         "libstdc++-6.dll"
         "libgcc_s_seh-1.dll"
@@ -49,6 +56,14 @@ if %ERRORLEVEL% EQU 0 (
         ) else (
             echo Warning: Could not find %%~F
         )
+    )
+    
+    :: Copy Python standard library from local directory
+    if exist "I:\Files\Desktop\LinuxGUI\python\Lib" (
+        xcopy /E /I /Y "I:\Files\Desktop\LinuxGUI\python\Lib" "Lib" > nul && echo Copied Python standard library
+    ) else (
+        echo Error: Python standard library not found!
+        exit /b 1
     )
     
     echo.

@@ -1,0 +1,2 @@
+// resources.rc
+101 RCDATA "scripts/docker_operations.py"

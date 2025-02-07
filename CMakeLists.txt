@@ -64,6 +64,24 @@ set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "disable yaml tests")
 set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "disable yaml tools")
 FetchContent_MakeAvailable(yaml-cpp)
 
+# ---------------------------------------------------------------
+# Python 3.10 Configuration (Local Embedded Version)
+# ---------------------------------------------------------------
+set(Python_ROOT_DIR "I:/Files/Desktop/LinuxGUI/python")  # Your local Python 3.10
+find_package(Python 3.10 REQUIRED COMPONENTS Development)
+
+# Add Python include and library paths
+include_directories(
+    ${Python_INCLUDE_DIRS}
+    ${Python_ROOT_DIR}/include
+)
+link_directories(${Python_LIBRARY_DIRS})
+
+# Copy Python files from local directory
+file(COPY "${Python_ROOT_DIR}/python310.dll" DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+file(COPY "${Python_ROOT_DIR}/python310.zip" DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+file(COPY "${Python_ROOT_DIR}/Lib" DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+
 # Source files
 set(SOURCES
    main.cpp
@@ -114,6 +132,11 @@ set(SCRIPT_FILES
    copy_iso.bat
 )
 
+# Resource files
+set(RESOURCE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources.rc"
+)
+
 # Platform-specific configurations
 if(WIN32)
    set(PLATFORM_LIBS
@@ -130,7 +153,7 @@ if(WIN32)
 endif()
 
 # Create executable
-add_executable(iso_analyzer WIN32 ${SOURCES} ${HEADERS})
+add_executable(iso_analyzer WIN32 ${SOURCES} ${HEADERS} ${RESOURCE_FILES})
 
 # Include directories
 target_include_directories(iso_analyzer 
@@ -140,6 +163,7 @@ target_include_directories(iso_analyzer
        ${CMAKE_CURRENT_SOURCE_DIR}/src/theme
        ${libarchive_SOURCE_DIR}/libarchive
        ${libarchive_BINARY_DIR}
+       ${Python_INCLUDE_DIRS}
 )
 
 # Link libraries
@@ -151,6 +175,7 @@ target_link_libraries(iso_analyzer
        yaml-cpp
        ${PLATFORM_LIBS}
        CURL::libcurl  # Link libcurl
+       ${Python_LIBRARIES}  # Link Python
 )
 
 # Windows-specific settings
@@ -183,6 +208,10 @@ foreach(SCRIPT ${SCRIPT_FILES})
        )
    endif()
 endforeach()
+
+# Copy Python script
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/scripts/docker_operations.py
+              ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/docker_operations.py COPYONLY)
 
 # Copy resource files
 file(GLOB RESOURCE_FILES
