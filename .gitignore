@@ -6,6 +6,7 @@
 /iso/
 /.lh/
 /tools/
+/build1/
 *.7z
 tempCodeRunnerFile.bat
 Debugviewpp.exe

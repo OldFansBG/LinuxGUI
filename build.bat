@@ -20,11 +20,11 @@ if %ERRORLEVEL% EQU 0 (
     echo Build completed successfully!
     echo Copying required DLLs...
     
-    :: Copy Python 3.10 DLL from local directory
-    if exist "I:\Files\Desktop\LinuxGUI\python\python310.dll" (
-        copy "I:\Files\Desktop\LinuxGUI\python\python310.dll" . > nul && echo Copied python310.dll successfully
+    :: Copy Python 3.9 DLL from Anaconda environment
+    if exist "I:\ProgramFiles\Anaconda\envs\myenv\python39.dll" (
+        copy "I:\ProgramFiles\Anaconda\envs\myenv\python39.dll" . > nul && echo Copied python39.dll successfully
     ) else (
-        echo Error: python310.dll not found in local directory!
+        echo Error: python39.dll not found in Anaconda environment!
         exit /b 1
     )
 
@@ -58,11 +58,11 @@ if %ERRORLEVEL% EQU 0 (
         )
     )
     
-    :: Copy Python standard library from local directory
-    if exist "I:\Files\Desktop\LinuxGUI\python\Lib" (
-        xcopy /E /I /Y "I:\Files\Desktop\LinuxGUI\python\Lib" "Lib" > nul && echo Copied Python standard library
+    :: Copy Python standard library from Anaconda environment
+    if exist "I:\ProgramFiles\Anaconda\envs\myenv\Lib" (
+        xcopy /E /I /Y "I:\ProgramFiles\Anaconda\envs\myenv\Lib" "Lib" > nul && echo Copied Python standard library
     ) else (
-        echo Error: Python standard library not found!
+        echo Error: Python standard library not found in Anaconda environment!
         exit /b 1
     )
     

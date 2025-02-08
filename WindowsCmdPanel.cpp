@@ -10,7 +10,6 @@
 
 #ifdef _WIN32
     #include <Python.h>
-    #include <Python.h>
 #endif
 
 wxBEGIN_EVENT_TABLE(WindowsCmdPanel, wxPanel)
@@ -28,6 +27,9 @@ WindowsCmdPanel::WindowsCmdPanel(wxWindow* parent)
         logInitialized = true;
         wxLogMessage("Logging initialized in WindowsCmdPanel");
     }
+
+    // Start the initialization sequence
+    CreateCmdWindow(); // Start the timer and initialization
 }
 
 // Destructor
@@ -46,15 +48,6 @@ WindowsCmdPanel::~WindowsCmdPanel() {
     }
 
     CleanupTimer();
-}
-
-// Set ISO path
-void WindowsCmdPanel::SetISOPath(const wxString& path) {
-    wxLogMessage("Setting ISO path: %s", path);
-    m_isoPath = path;
-    if (!m_isoPath.IsEmpty()) {
-        CreateCmdWindow();
-    }
 }
 
 // Handle window resize
@@ -106,71 +99,92 @@ void WindowsCmdPanel::CreateCmdWindow() {
 
 // Initialize Python environment
 void WindowsCmdPanel::InitializePythonEnvironment() {
-    #ifdef _WIN32
-        wxLogMessage("Initializing Python environment");
-        Py_SetPythonHome(L"I:\\Files\\Desktop\\LinuxGUI\\python");
+#ifdef _WIN32
+    wxLogMessage("Initializing Python environment");
+    try {
+        if (Py_IsInitialized()) {
+            wxLogMessage("Python already initialized");
+            return;
+        }
+
+        // Set Python home and environment variables
+        std::wstring pythonHome = L"I:\\ProgramFiles\\Anaconda\\envs\\myenv";
+        Py_SetPythonHome(pythonHome.c_str());
+        _wputenv_s(L"PYTHONHOME", pythonHome.c_str());
+        _wputenv_s(L"PYTHONPATH", (pythonHome + L"\\Lib;" + pythonHome + L"\\DLLs").c_str());
+
+        // Initialize Python
         Py_Initialize();
-        PyEval_InitThreads(); // Initialize and acquire GIL
-        PyRun_SimpleString("import sys\nsys.path.append('')");
-        
-        // Release the GIL after initialization
-        PyThreadState* mainState = PyEval_SaveThread();
-    #endif
+        if (!Py_IsInitialized()) {
+            wxLogError("Failed to initialize Python");
+            return;
+        }
+
+        // Initialize GIL
+        PyEval_InitThreads();
+        PyThreadState* state = PyEval_SaveThread(); // Release GIL
+
+        wxLogMessage("Python initialized");
+    }
+    catch (...) {
+        wxLogError("Exception during Python init");
+    }
+#endif
 }
 
 // Execute Python code
 bool WindowsCmdPanel::ExecutePythonCode(const char* code) {
-    #ifdef _WIN32
-        wxLogMessage("Executing Python code");
-        
-        // Acquire the GIL
-        PyGILState_STATE gstate = PyGILState_Ensure();
-    
-        PyObject* mainModule = PyImport_AddModule("__main__");
-        if (!mainModule) {
-            wxLogError("Failed to get Python main module");
-            PyGILState_Release(gstate); // Release GIL before returning
-            return false;
-        }
-    
-        PyObject* globalDict = PyModule_GetDict(mainModule);
-        PyObject* result = PyRun_String(code, Py_file_input, globalDict, globalDict);
-    
-        if (!result) {
-            HandlePythonError();
-            PyGILState_Release(gstate);
-            return false;
-        }
-    
-        Py_XDECREF(result);
-        PyGILState_Release(gstate); // Release the GIL
-        return true;
-    #else
+#ifdef _WIN32
+    wxLogMessage("Executing Python code");
+
+    // Acquire the GIL
+    PyGILState_STATE gstate = PyGILState_Ensure();
+
+    PyObject* mainModule = PyImport_AddModule("__main__");
+    if (!mainModule) {
+        wxLogError("Failed to get Python main module");
+        PyGILState_Release(gstate); // Release GIL before returning
         return false;
-    #endif
     }
+
+    PyObject* globalDict = PyModule_GetDict(mainModule);
+    PyObject* result = PyRun_String(code, Py_file_input, globalDict, globalDict);
+
+    if (!result) {
+        HandlePythonError();
+        PyGILState_Release(gstate);
+        return false;
+    }
+
+    Py_XDECREF(result);
+    PyGILState_Release(gstate); // Release the GIL
+    return true;
+#else
+    return false;
+#endif
+}
 
 // Handle Python errors
 void WindowsCmdPanel::HandlePythonError() {
-    #ifdef _WIN32
-        if (PyErr_Occurred()) {
-            wxLogError("Python error occurred");
-            PyObject *type, *value, *traceback;
-            PyErr_Fetch(&type, &value, &traceback);
-            PyErr_NormalizeException(&type, &value, &traceback);
-            
-            // Convert error to string
-            PyObject* str = PyObject_Str(value);
-            const char* errorMsg = PyUnicode_AsUTF8(str);
-            wxLogError("Python Error: %s", errorMsg);
-            
-            // Cleanup
-            Py_XDECREF(str);
-            Py_XDECREF(type);
-            Py_XDECREF(value);
-            Py_XDECREF(traceback);
-        }
-    #endif
+#ifdef _WIN32
+    if (PyErr_Occurred()) {
+        wxLogError("Python error occurred");
+        PyObject *type, *value, *traceback;
+        PyErr_Fetch(&type, &value, &traceback);
+        PyErr_NormalizeException(&type, &value, &traceback);
+
+        // Convert error to string
+        PyObject* str = PyObject_Str(value);
+        const char* errorMsg = PyUnicode_AsUTF8(str);
+        wxLogError("Python Error: %s", errorMsg);
+
+        // Cleanup
+        Py_XDECREF(str);
+        Py_XDECREF(type);
+        Py_XDECREF(value);
+        Py_XDECREF(traceback);
+    }
+#endif
 }
 
 // Run embedded Python code
@@ -178,35 +192,42 @@ void WindowsCmdPanel::RunEmbeddedPythonCode() {
 #ifdef _WIN32
     wxLogMessage("Running embedded Python code");
 
+    if (!Py_IsInitialized()) {
+        wxLogMessage("Initializing Python environment before running code");
+        InitializePythonEnvironment();
+    }
+
     const char* pythonCode = R"(
-        import docker
-        import sys
-        
-        try:
-            client = docker.from_env()
-            # Verify Docker connection
-            client.ping()
-            container = client.containers.run(
-                "ubuntu:latest",
-                command="sleep infinity",
-                name="my_unique_container",
-                detach=True,
-                privileged=True
-            )
-            print(f"[PYTHON] Container created: {container.id}")
-        except Exception as e:
-            print(f"[PYTHON ERROR] {str(e)}")
-            sys.exit(1)
-        )";
+import docker
+import sys
+import traceback
+
+try:
+    client = docker.from_env()
+    # Verify Docker connection
+    client.ping()
+    container = client.containers.run(
+        "ubuntu:latest",
+        command="sleep infinity",
+        name="my_unique_container",
+        detach=True,
+        privileged=True
+    )
+    print(f"[PYTHON] Container created: {container.id}")
+except Exception as e:
+    print(f"[PYTHON ERROR] {str(e)}")
+    print("[PYTHON ERROR] Traceback:")
+    traceback.print_exc()
+    sys.exit(1)
+    )";
 
     if (!ExecutePythonCode(pythonCode)) {
         wxLogError("Failed to execute Python code");
     }
-
-    // Py_Finalize(); // COMMENT OUT OR REMOVE THIS LINE
 #endif
 }
 
+// Continue initialization
 // Continue initialization
 void WindowsCmdPanel::ContinueInitialization() {
     wxLogMessage("Continuing initialization step %d", m_initStep);
@@ -215,10 +236,15 @@ void WindowsCmdPanel::ContinueInitialization() {
         case 0: { // Step 0: Run embedded Python code
             wxLogMessage("Step 0: Running embedded Python code");
             RunEmbeddedPythonCode();
-            m_initStep++;
+            m_initStep++; // Move to next step
             break;
         }
-        // Add other steps as needed
+        case 1: { // Step 1: Finalize initialization
+            wxLogMessage("Step 1: Initialization complete");
+            CleanupTimer(); // Stop the timer
+            break;
+        }
+        // Add more steps if needed
     }
 }
 
@@ -229,60 +255,5 @@ void WindowsCmdPanel::CleanupTimer() {
         m_initTimer->Stop();
         delete m_initTimer;
         m_initTimer = nullptr;
-    }
-}
-
-// Check if ISO exists in container
-bool WindowsCmdPanel::CheckISOExistsInContainer(const wxString& containerId) {
-    wxString checkCmd = wxString::Format("docker exec %s [ -f /base.iso ] && echo 'exists'", containerId);
-    wxArrayString output, errors;
-    if (wxExecute(checkCmd, output, errors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) == 0) {
-        for (const auto& line : output) {
-            if (line.Contains("exists")) {
-                wxLogMessage("base.iso found in container.");
-                return true;
-            }
-        }
-    }
-    wxLogError("base.iso not found in container.");
-    return false;
-}
-
-// Get file size as a string
-wxString WindowsCmdPanel::GetFileSizeString(const wxString& filePath) {
-    wxULongLong size = wxFileName::GetSize(filePath);
-
-    if (size == wxInvalidSize) {
-        return "Unknown size";
-    }
-
-    const double KB = 1024;
-    const double MB = KB * 1024;
-    const double GB = MB * 1024;
-
-    if (size.ToDouble() >= GB) {
-        return wxString::Format("%.2f GB", size.ToDouble() / GB);
-    } else if (size.ToDouble() >= MB) {
-        return wxString::Format("%.2f MB", size.ToDouble() / MB);
-    } else if (size.ToDouble() >= KB) {
-        return wxString::Format("%.2f KB", size.ToDouble() / KB);
-    } else {
-        return wxString::Format("%llu bytes", size.GetValue());
-    }
-}
-
-// Show completion dialog
-void WindowsCmdPanel::ShowCompletionDialog(const wxString& isoPath) {
-    wxString msg = wxString::Format(
-        "Custom ISO created at:\n%s\n\n"
-        "Size: %s\n\n"
-        "Would you like to open the containing folder?",
-        isoPath, GetFileSizeString(isoPath)
-    );
-
-    if (wxMessageBox(msg, "ISO Creation Complete", 
-                    wxYES_NO | wxICON_INFORMATION) == wxYES) {
-        wxString explorerCmd = wxString::Format("explorer.exe /select,\"%s\"", isoPath);
-        wxExecute(explorerCmd);
     }
 }

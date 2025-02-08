@@ -1,6 +1,4 @@
-#ifndef WINDOWSCMDPANEL_H
-#define WINDOWSCMDPANEL_H
-
+#pragma once
 #include <wx/wx.h>
 #include <wx/process.h>
 #include "DockerTransfer.h"
@@ -8,7 +6,8 @@
 #include "CustomEvents.h"
 
 #ifdef _WIN32
-    #include <windows.h>
+    #include <Windows.h>
+    #define PY_SSIZE_T_CLEAN
     #include <Python.h>
 #endif
 
@@ -18,30 +17,22 @@ class WindowsCmdPanel : public wxPanel {
 public:
     WindowsCmdPanel(wxWindow* parent);
     virtual ~WindowsCmdPanel();
-    void SetISOPath(const wxString& path);
     void ContinueInitialization();
-    wxString GetFileSizeString(const wxString& filePath);
-    void ShowCompletionDialog(const wxString& isoPath);
 
 private:
     void CreateCmdWindow();
     void OnSize(wxSizeEvent& event);
     void CleanupTimer();
-    bool CheckISOExistsInContainer(const wxString& containerId);
     void InitializePythonEnvironment();
     void RunEmbeddedPythonCode();
     bool ExecutePythonCode(const char* code);
     void HandlePythonError();
 
-#ifdef _WIN32
-    HWND m_hwndCmd;
-#endif
-
     wxString m_isoPath;
-    wxString m_containerId;
-    bool m_step6Completed;
+    HWND m_hwndCmd;
     InitTimer* m_initTimer;
     int m_initStep;
+    bool m_step6Completed;
 
     wxDECLARE_EVENT_TABLE();
 };
@@ -53,5 +44,3 @@ public:
 private:
     WindowsCmdPanel* m_panel;
 };
-
-#endif // WINDOWSCMDPANEL_H

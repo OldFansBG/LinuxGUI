@@ -25,11 +25,6 @@ private:
     void CreateControls();
     void OnClose(wxCloseEvent& event);
     void OnNext(wxCommandEvent& event);
-    bool RetryFailedOperation(const wxString& operation, int maxAttempts = 3);
-    bool ExecuteOperation(const wxString& operation);
-    bool RunScript(const wxString& containerId, const wxString& script);
-    bool CopyISOFromContainer(const wxString& containerId, const wxString& destPath);
-    void LogToFile(const wxString& logPath, const wxString& message);
     void OnTabChanged(wxCommandEvent& event);
 
     OSDetector m_osDetector;
