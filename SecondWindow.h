@@ -14,7 +14,7 @@
 #include "WindowsCmdPanel.h"
 #include "LinuxTerminalPanel.h"
 #include "ContainerManager.h"
-#include "SQLTab.h"  // Include the new SQLTab header
+#include "SQLTab.h"
 
 class SecondWindow : public wxFrame {
 public:
@@ -26,6 +26,7 @@ private:
     void OnClose(wxCloseEvent& event);
     void OnNext(wxCommandEvent& event);
     void OnTabChanged(wxCommandEvent& event);
+    void OnPythonWorkComplete(wxCommandEvent& event);  // Add event handler
 
     OSDetector m_osDetector;
     WindowsCmdPanel* m_cmdPanel;
@@ -33,14 +34,15 @@ private:
     wxString m_isoPath;
     wxPanel* m_mainPanel;
     wxPanel* m_terminalTab;
-    SQLTab* m_sqlTab;  // Use SQLTab instead of wxPanel
+    SQLTab* m_sqlTab;
     wxSizer* m_terminalSizer;
     wxString m_containerId;
 
     enum {
         ID_TERMINAL_TAB = wxID_HIGHEST + 1,
         ID_SQL_TAB,
-        ID_NEXT_BUTTON
+        ID_NEXT_BUTTON,
+        ID_PYTHON_WORK_COMPLETE  // Add event ID
     };
 
     DECLARE_EVENT_TABLE()

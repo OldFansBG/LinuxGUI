@@ -14,6 +14,8 @@
 
 wxBEGIN_EVENT_TABLE(WindowsCmdPanel, wxPanel)
     EVT_SIZE(WindowsCmdPanel::OnSize)
+    EVT_COMMAND(ID_PYTHON_WORK_COMPLETE, wxEVT_COMMAND_TEXT_UPDATED, WindowsCmdPanel::OnPythonWorkComplete)
+    EVT_COMMAND(ID_PYTHON_WORK_PROGRESS, wxEVT_COMMAND_TEXT_UPDATED, WindowsCmdPanel::OnPythonWorkProgress)
 wxEND_EVENT_TABLE()
 
 // Constructor
@@ -21,7 +23,8 @@ WindowsCmdPanel::WindowsCmdPanel(wxWindow* parent)
     : wxPanel(parent), 
       m_initTimer(nullptr), 
       m_initStep(0),
-      m_initializationComplete(false) {
+      m_initializationComplete(false),
+      m_workerThread(nullptr) {  // Initialize worker thread to nullptr
     // Initialize logging
     static bool logInitialized = false;
     if (!logInitialized) {
@@ -43,6 +46,11 @@ WindowsCmdPanel::~WindowsCmdPanel() {
     }
 
     CleanupTimer();
+
+    // Clean up worker thread if running
+    if (m_workerThread && m_workerThread->IsRunning()) {
+        m_workerThread->Delete();
+    }
 }
 
 // Handle window resize
@@ -95,24 +103,14 @@ void WindowsCmdPanel::InitializePythonEnvironment() {
             return;
         }
 
-        // Set Python home and environment variables
-        std::wstring pythonHome = L"I:\\ProgramFiles\\Anaconda\\envs\\myenv";
-        Py_SetPythonHome(pythonHome.c_str());
-        _wputenv_s(L"PYTHONHOME", pythonHome.c_str());
-        _wputenv_s(L"PYTHONPATH", (pythonHome + L"\\Lib;" + pythonHome + L"\\DLLs").c_str());
-
-        // Initialize Python
-        Py_Initialize();
-        if (!Py_IsInitialized()) {
-            wxLogError("Failed to initialize Python");
-            return;
-        }
-
-        // Initialize GIL
+        // Initialize Python with thread support
+        Py_InitializeEx(0);  // Use 0 to avoid signal handlers
         PyEval_InitThreads();
-        PyThreadState* state = PyEval_SaveThread(); // Release GIL
 
-        wxLogMessage("Python initialized");
+        // Release the GIL for the main thread
+        PyThreadState* state = PyEval_SaveThread();
+
+        wxLogMessage("Python initialized with thread support");
     }
     catch (...) {
         wxLogError("Exception during Python init");
@@ -338,13 +336,50 @@ def main():
 if __name__ == "__main__":
     main()
 )PYCODE";
-
-    if (!ExecutePythonCode(pythonCode)) {
-        wxLogError("Failed to execute Python code");
-        wxMessageBox("Python operations failed. Check logs for details.", 
-                    "Critical Error", wxICON_ERROR);
-    }
+    // Start the worker thread
+    m_workerThread = new PythonWorkerThread(this, pythonCode);
+    m_workerThread->Run();
 #endif
+}
+
+// Handle Python work completion
+void WindowsCmdPanel::OnPythonWorkComplete(wxCommandEvent& event) {
+    bool success = event.GetInt() == 1;
+    if (success) {
+        wxLogMessage("Python script executed successfully.");
+    } else {
+        wxLogError("Python script failed.");
+    }
+}
+
+// Handle Python work progress (optional)
+void WindowsCmdPanel::OnPythonWorkProgress(wxCommandEvent& event) {
+    wxString msg = event.GetString();
+    wxLogMessage("Progress: %s", msg);
+}
+
+// Thread constructor
+PythonWorkerThread::PythonWorkerThread(WindowsCmdPanel* panel, const char* code)
+    : wxThread(wxTHREAD_DETACHED), m_panel(panel), m_code(code) {}
+
+// Thread execution logic
+wxThread::ExitCode PythonWorkerThread::Entry() {
+#ifdef _WIN32
+    // Acquire the Python GIL
+    PyGILState_STATE gstate = PyGILState_Ensure();
+
+    // Execute Python code
+    bool success = m_panel->ExecutePythonCode(m_code);
+
+    // Release the GIL
+    PyGILState_Release(gstate);
+
+    // Notify UI of completion
+    wxCommandEvent* event = new wxCommandEvent(wxEVT_COMMAND_TEXT_UPDATED, ID_PYTHON_WORK_COMPLETE);
+    event->SetInt(success ? 1 : 0);
+    wxQueueEvent(m_panel, event);
+#endif
+    return (ExitCode)0;
 }
 
 // Continue initialization

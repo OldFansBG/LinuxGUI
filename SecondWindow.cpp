@@ -5,26 +5,24 @@ wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)
     EVT_BUTTON(ID_NEXT_BUTTON, SecondWindow::OnNext)
     EVT_BUTTON(ID_TERMINAL_TAB, SecondWindow::OnTabChanged)
     EVT_BUTTON(ID_SQL_TAB, SecondWindow::OnTabChanged)
+    EVT_COMMAND(ID_PYTHON_WORK_COMPLETE, wxEVT_COMMAND_TEXT_UPDATED, SecondWindow::OnPythonWorkComplete)
 wxEND_EVENT_TABLE()
 
 SecondWindow::SecondWindow(wxWindow* parent, const wxString& title, const wxString& isoPath)
     : wxFrame(parent, wxID_ANY, title, wxDefaultPosition, wxSize(800, 650)),
       m_isoPath(isoPath) {
-    // Use ContainerManager to get container ID
     m_containerId = ContainerManager::Get().GetCurrentContainerId();
-
     CreateControls();
     Centre();
     SetBackgroundColour(wxColour(40, 44, 52));
 }
 
 SecondWindow::~SecondWindow() {
-    // Cleanup if we haven't already
     if (!m_containerId.IsEmpty()) {
         ContainerManager::Get().CleanupContainer(m_containerId);
     }
 
-    if (m_cmdPanel) { // Safely delete WindowsCmdPanel
+    if (m_cmdPanel) {
         delete m_cmdPanel;
         m_cmdPanel = nullptr;
     }
@@ -78,7 +76,7 @@ void SecondWindow::CreateControls() {
     tabPanel->SetSizer(tabSizer);
 
     m_terminalTab = new wxPanel(m_mainPanel);
-    m_sqlTab = new SQLTab(m_mainPanel);  // Use SQLTab instead of wxPanel
+    m_sqlTab = new SQLTab(m_mainPanel);
 
     m_terminalSizer = new wxBoxSizer(wxVERTICAL);
 
@@ -122,7 +120,6 @@ void SecondWindow::CreateControls() {
 }
 
 void SecondWindow::OnClose(wxCloseEvent& event) {
-    // Container cleanup will now be handled by ContainerManager
     if (!m_containerId.IsEmpty()) {
         ContainerManager::Get().CleanupContainer(m_containerId);
     }
@@ -134,42 +131,50 @@ void SecondWindow::OnClose(wxCloseEvent& event) {
 }
 
 void SecondWindow::OnNext(wxCommandEvent& event) {
-    wxLogMessage("Next button clicked: Executing create_iso.sh");
+    wxLogMessage("Next button clicked: Starting ISO creation");
 
-    // Ensure the CMD panel is initialized (Windows-specific)
-    if (!m_cmdPanel) {
-        wxLogError("WindowsCmdPanel not initialized.");
-        return;
-    }
+    // Disable button during execution
+    wxButton* nextButton = wxDynamicCast(FindWindow(ID_NEXT_BUTTON), wxButton);
+    if (nextButton) nextButton->Disable();
 
-    // Python code to exit chroot and execute create_iso.sh
-    const char* pythonCode = R"(
+    // Python code to execute create_iso.sh
+    const char* pythonCode = R"PYCODE(
 import docker
 import sys
 
 try:
-    # 1. Exit chroot (if needed) and run create_iso.sh
     client = docker.from_env()
     container = client.containers.get("my_unique_container")
-
-    # Execute create_iso.sh directly (runs in a new shell, outside chroot)
+    
+    # Exit chroot (if needed) and run create_iso.sh
     exit_code, output = container.exec_run("/create_iso.sh")
     print(f"[CREATE_ISO] Exit Code: {exit_code}\nOutput: {output.decode()}")
-
-    # Handle errors
+    
     if exit_code != 0:
         sys.exit(1)
 except Exception as e:
     print(f"[ERROR] {str(e)}")
     sys.exit(1)
-)";
+)PYCODE";
 
-    // Execute the Python code
-    if (m_cmdPanel->ExecutePythonCode(pythonCode)) {
-        wxLogMessage("create_iso.sh executed successfully.");
-    } else {
-        wxLogError("Failed to execute create_iso.sh.");
-        wxMessageBox("Failed to create ISO. Check logs.", "Error", wxICON_ERROR);
+    // Start the worker thread
+    if (m_cmdPanel) {
+        m_cmdPanel->m_workerThread = new PythonWorkerThread(m_cmdPanel, pythonCode);
+        m_cmdPanel->m_workerThread->Run();
+    }
+}
+
+void SecondWindow::OnPythonWorkComplete(wxCommandEvent& event) {
+    bool success = event.GetInt() == 1;
+    wxButton* nextButton = wxDynamicCast(FindWindow(ID_NEXT_BUTTON), wxButton);
+    
+    if (nextButton) {
+        nextButton->Enable();  // Re-enable the button
+        if (success) {
+            wxMessageBox("ISO creation completed successfully!", "Success", wxICON_INFORMATION);
+        } else {
+            wxMessageBox("ISO creation failed. Check logs for details.", "Error", wxICON_ERROR);
+        }
     }
 }
 
