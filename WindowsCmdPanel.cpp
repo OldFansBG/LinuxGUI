@@ -18,8 +18,10 @@ wxEND_EVENT_TABLE()
 
 // Constructor
 WindowsCmdPanel::WindowsCmdPanel(wxWindow* parent)
-    : wxPanel(parent), m_hwndCmd(nullptr), m_initTimer(nullptr),
-      m_initStep(0), m_step6Completed(false) {
+    : wxPanel(parent), 
+      m_initTimer(nullptr), 
+      m_initStep(0),
+      m_initializationComplete(false) {
     // Initialize logging
     static bool logInitialized = false;
     if (!logInitialized) {
@@ -29,18 +31,11 @@ WindowsCmdPanel::WindowsCmdPanel(wxWindow* parent)
     }
 
     // Start the initialization sequence
-    CreateCmdWindow(); // Start the timer and initialization
+    CreateCmdWindow();
 }
 
 // Destructor
 WindowsCmdPanel::~WindowsCmdPanel() {
-#ifdef _WIN32
-    if (m_hwndCmd) {
-        wxLogMessage("Closing CMD window");
-        ::SendMessage(m_hwndCmd, WM_CLOSE, 0, 0);
-    }
-#endif
-
     wxString containerId = ContainerManager::Get().GetCurrentContainerId();
     if (!containerId.IsEmpty()) {
         wxLogMessage("Cleaning up container: %s", containerId);
@@ -52,17 +47,10 @@ WindowsCmdPanel::~WindowsCmdPanel() {
 
 // Handle window resize
 void WindowsCmdPanel::OnSize(wxSizeEvent& event) {
-#ifdef _WIN32
-    if (m_hwndCmd) {
-        wxSize size = GetClientSize();
-        wxLogMessage("Resizing CMD window to %dx%d", size.GetWidth(), size.GetHeight());
-        ::MoveWindow(m_hwndCmd, 0, 0, size.GetWidth(), size.GetHeight(), TRUE);
-    }
-#endif
     event.Skip();
 }
 
-// Create CMD window
+// Create CMD window (now just starts the initialization sequence)
 void WindowsCmdPanel::CreateCmdWindow() {
 #ifdef _WIN32
     wxLogMessage("Starting CreateCmdWindow");
@@ -176,6 +164,18 @@ void WindowsCmdPanel::HandlePythonError() {
         // Convert error to string
         PyObject* str = PyObject_Str(value);
         const char* errorMsg = PyUnicode_AsUTF8(str);
+
+        // Handle progress updates
+        if (strstr(errorMsg, "COPY_PROGRESS:") != nullptr) {
+            int progress = atoi(errorMsg + 14);
+            wxLogMessage("ISO Copy Progress: %d%%", progress);
+            Py_XDECREF(str);
+            Py_XDECREF(type);
+            Py_XDECREF(value);
+            Py_XDECREF(traceback);
+            return;
+        }
+
         wxLogError("Python Error: %s", errorMsg);
 
         // Cleanup
@@ -197,63 +197,265 @@ void WindowsCmdPanel::RunEmbeddedPythonCode() {
         InitializePythonEnvironment();
     }
 
-    const char* pythonCode = R"(
+        const char* pythonCode = R"PYCODE(
 import docker
-import sys
+import os
+import time
 import traceback
+import sys
+import tarfile
+import io
 
-try:
-    client = docker.from_env()
-    # Verify Docker connection
-    client.ping()
-    container = client.containers.run(
-        "ubuntu:latest",
-        command="sleep infinity",
-        name="my_unique_container",
-        detach=True,
-        privileged=True
-    )
-    print(f"[PYTHON] Container created: {container.id}")
-except Exception as e:
-    print(f"[PYTHON ERROR] {str(e)}")
-    print("[PYTHON ERROR] Traceback:")
-    traceback.print_exc()
-    sys.exit(1)
-    )";
+def copy_iso_to_container(container, host_path, container_dest_path):
+    """Copy ISO file into container using a tar archive."""
+    try:
+        print(f"[PYTHON] Copying ISO: {os.path.basename(host_path)}")
+        
+        # Verify file exists before copying
+        if not os.path.exists(host_path):
+            raise FileNotFoundError(f"ISO file not found: {host_path}")
+        
+        # Create an in-memory tar archive containing the ISO file
+        tarstream = io.BytesIO()
+        with tarfile.open(fileobj=tarstream, mode="w") as tar:
+            # Place the file in the tar archive with the desired destination filename
+            tar.add(host_path, arcname=os.path.basename(container_dest_path))
+        tarstream.seek(0)
+        
+        # Put the archive into the container.
+        # The destination must be an existing directory. Here, we extract into the container's root ("/")
+        dest_dir = os.path.dirname(container_dest_path) or "/"
+        container.put_archive(dest_dir, tarstream)
+        print("[PYTHON] ISO copy completed")
+    except Exception as e:
+        print(f"[COPY ERROR] {str(e)}")
+        raise
+
+def main():
+    try:
+        print("[PYTHON] Attempting to import docker module")
+        from docker import APIClient
+        
+        # 1. Initialize Docker client
+        print("[PYTHON] Initializing Docker client")
+        try:
+            client = docker.from_env()
+            client.ping()
+        except docker.errors.DockerException as de:
+            print(f"[DOCKER ERROR] Docker connection failed: {str(de)}")
+            print("Verify Docker Desktop is running and accessible")
+            raise
+        
+        print("[PYTHON] Connected to Docker daemon")
+
+        # 2. Create container with conflict handling
+        print("[PYTHON] Creating container...")
+        try:
+            container = client.containers.run(
+                "ubuntu:latest",
+                command="sleep infinity",
+                name="my_unique_container",
+                detach=True,
+                privileged=True,
+                remove=True
+            )
+        except docker.errors.APIError as ae:
+            if "Conflict" in str(ae):
+                print("[WARNING] Container already exists, removing...")
+                old_container = client.containers.get("my_unique_container")
+                old_container.remove(force=True)
+                container = client.containers.run(
+                    "ubuntu:latest",
+                    command="sleep infinity",
+                    name="my_unique_container",
+                    detach=True,
+                    privileged=True
+                )
+            else:
+                raise
+
+        print(f"[PYTHON] Container created: {container.id}")
+
+        # 3. Copy ISO file (UPDATE THIS PATH)
+        iso_path = r"I:\Files\Downloads\linuxmint-22-cinnamon-64bit.iso"  # updated iso path
+        copy_iso_to_container(container, iso_path, "/base.iso")
+
+        # 4. Verify ISO copy
+        exit_code, output = container.exec_run("stat -c%s /base.iso")
+        host_size = os.path.getsize(iso_path)
+        container_size = int(output.decode().strip())
+        
+        if host_size != container_size:
+            raise RuntimeError(f"ISO copy mismatch! Host: {host_size} Container: {container_size}")
+        print("[PYTHON] ISO verification passed")
+
+        # 5. Copy scripts (UPDATE THIS PATH)
+        scripts = ["setup_output.sh", "setup_chroot.sh", "create_iso.sh"]
+        base_dir = r"I:\Files\Desktop\LinuxGUI"  # updated directory containing the scripts
+        
+        for script in scripts:
+            host_path = os.path.join(base_dir, script)
+            if not os.path.exists(host_path):
+                raise FileNotFoundError(f"Script file not found: {host_path}")
+
+            # Create an in-memory tar archive for the script
+            tarstream = io.BytesIO()
+            with tarfile.open(fileobj=tarstream, mode="w") as tar:
+                tar.add(host_path, arcname=script)
+            tarstream.seek(0)
+            container.put_archive("/", tarstream)
+            print(f"[PYTHON] Copied {script} to container")
+
+        # 6. Set permissions
+        exit_code, output = container.exec_run("chmod +x /setup_output.sh /setup_chroot.sh /create_iso.sh")
+        if exit_code != 0:
+            raise RuntimeError(f"Failed to set permissions: {output.decode()}")
+
+        # 7. Create directories
+        for path in ["/mnt/iso", "/output"]:
+            exit_code, output = container.exec_run(f"mkdir -p {path}")
+            if exit_code != 0:
+                raise RuntimeError(f"Failed to create {path}: {output.decode()}")
+
+        # 8. Execute setup_output.sh
+        exit_code, output = container.exec_run("/setup_output.sh")
+        if exit_code != 0:
+            raise RuntimeError(f"setup_output.sh failed: {output.decode()}")
+
+        # 9. Execute setup_chroot.sh
+        print("[PYTHON] Entering chroot environment...")
+        exit_code, output = container.exec_run("/setup_chroot.sh", stream=True)
+        for line in output:
+            print(line.decode().strip())
+            if "Ready" in line.decode():
+                break
+
+    except Exception as e:
+        print(f"[FATAL ERROR] {str(e)}")
+        traceback.print_exc()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+)PYCODE";
 
     if (!ExecutePythonCode(pythonCode)) {
         wxLogError("Failed to execute Python code");
+        wxMessageBox("Python operations failed. Check logs for details.", 
+                    "Critical Error", wxICON_ERROR);
     }
 #endif
 }
 
 // Continue initialization
-// Continue initialization
 void WindowsCmdPanel::ContinueInitialization() {
     wxLogMessage("Continuing initialization step %d", m_initStep);
 
     switch (m_initStep) {
-        case 0: { // Step 0: Run embedded Python code
+        case 0: { // Run Python operations
             wxLogMessage("Step 0: Running embedded Python code");
             RunEmbeddedPythonCode();
-            m_initStep++; // Move to next step
+            m_initStep++;
+            m_initTimer->StartOnce(3000); // Wait 3s before next step
             break;
         }
-        case 1: { // Step 1: Finalize initialization
-            wxLogMessage("Step 1: Initialization complete");
-            CleanupTimer(); // Stop the timer
+        case 1: { // Create CMD window after Python completes
+            wxLogMessage("Step 1: Creating chroot terminal");
+            
+            #ifdef _WIN32
+            // Command to attach to container's chroot environment
+            std::wstring cmd = L"docker exec -it my_unique_container /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash\"";
+            
+            STARTUPINFOW si = { sizeof(si) };
+            PROCESS_INFORMATION pi;
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+
+            if (CreateProcessW(NULL, const_cast<wchar_t*>(cmd.c_str()),
+                NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) {
+                
+                // Wait for console window to be created
+                Sleep(2000);
+                
+                // Find and embed the new CMD window
+                HWND hwndCmd = FindWindowExW(NULL, NULL, L"ConsoleWindowClass", NULL);
+                if (hwndCmd) {
+                    // Window styling
+                    LONG style = GetWindowLong(hwndCmd, GWL_STYLE);
+                    style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+                    SetWindowLong(hwndCmd, GWL_STYLE, style);
+
+                    // Embedding logic
+                    ::SetParent(hwndCmd, (HWND)GetHWND());
+                    ::ShowWindow(hwndCmd, SW_SHOW);
+                    ::SetWindowPos(hwndCmd, NULL, 0, 0, 
+                                 GetClientSize().GetWidth(), GetClientSize().GetHeight(),
+                                 SWP_FRAMECHANGED);
+                    wxLogMessage("CMD window embedded successfully");
+                }
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+            #endif
+
+            CleanupTimer();
             break;
         }
-        // Add more steps if needed
+    }
+}
+
+// Get file size as a string
+wxString WindowsCmdPanel::GetFileSizeString(const wxString& filePath) {
+    wxULongLong size = wxFileName::GetSize(filePath);
+
+    if (size == wxInvalidSize) {
+        return "Unknown size";
+    }
+
+    const double KB = 1024;
+    const double MB = KB * 1024;
+    const double GB = MB * 1024;
+
+    if (size.ToDouble() >= GB) {
+        return wxString::Format("%.2f GB", size.ToDouble() / GB);
+    } else if (size.ToDouble() >= MB) {
+        return wxString::Format("%.2f MB", size.ToDouble() / MB);
+    } else if (size.ToDouble() >= KB) {
+        return wxString::Format("%.2f KB", size.ToDouble() / KB);
+    } else {
+        return wxString::Format("%llu bytes", size.GetValue());
+    }
+}
+
+// Show completion dialog
+void WindowsCmdPanel::ShowCompletionDialog(const wxString& isoPath) {
+    wxString msg = wxString::Format(
+        "Custom ISO created at:\n%s\n\n"
+        "Size: %s\n\n"
+        "Would you like to open the containing folder?",
+        isoPath, GetFileSizeString(isoPath)
+    );
+
+    if (wxMessageBox(msg, "ISO Creation Complete", 
+                    wxYES_NO | wxICON_INFORMATION) == wxYES) {
+        wxString explorerCmd = wxString::Format("explorer.exe /select,\"%s\"", isoPath);
+        wxExecute(explorerCmd);
     }
 }
 
 // Cleanup timer
 void WindowsCmdPanel::CleanupTimer() {
     if (m_initTimer) {
-        wxLogMessage("Cleaning up initialization timer");
+        wxLogMessage("Stopping initialization timer");
         m_initTimer->Stop();
         delete m_initTimer;
         m_initTimer = nullptr;
     }
+}
+
+// InitTimer implementation
+InitTimer::InitTimer(WindowsCmdPanel* panel) : m_panel(panel) {}
+
+void InitTimer::Notify() {
+    m_panel->ContinueInitialization();
 }
