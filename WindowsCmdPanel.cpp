@@ -197,7 +197,7 @@ void WindowsCmdPanel::RunEmbeddedPythonCode() {
         InitializePythonEnvironment();
     }
 
-        const char* pythonCode = R"PYCODE(
+    const char* pythonCode = R"PYCODE(
 import docker
 import os
 import time
@@ -216,7 +216,7 @@ def copy_iso_to_container(container, host_path, container_dest_path):
             raise FileNotFoundError(f"ISO file not found: {host_path}")
         
         # Create an in-memory tar archive containing the ISO file
-        tarstream = io.BytesIO()
+        tarstream = io.BytesIO();
         with tarfile.open(fileobj=tarstream, mode="w") as tar:
             # Place the file in the tar archive with the desired destination filename
             tar.add(host_path, arcname=os.path.basename(container_dest_path))
@@ -299,7 +299,7 @@ def main():
                 raise FileNotFoundError(f"Script file not found: {host_path}")
 
             # Create an in-memory tar archive for the script
-            tarstream = io.BytesIO()
+            tarstream = io.BytesIO();
             with tarfile.open(fileobj=tarstream, mode="w") as tar:
                 tar.add(host_path, arcname=script)
             tarstream.seek(0)

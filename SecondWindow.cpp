@@ -134,8 +134,43 @@ void SecondWindow::OnClose(wxCloseEvent& event) {
 }
 
 void SecondWindow::OnNext(wxCommandEvent& event) {
-    // Initialize the button without any functionality
-    wxLogMessage("Next button clicked (no functionality)");
+    wxLogMessage("Next button clicked: Executing create_iso.sh");
+
+    // Ensure the CMD panel is initialized (Windows-specific)
+    if (!m_cmdPanel) {
+        wxLogError("WindowsCmdPanel not initialized.");
+        return;
+    }
+
+    // Python code to exit chroot and execute create_iso.sh
+    const char* pythonCode = R"(
+import docker
+import sys
+
+try:
+    # 1. Exit chroot (if needed) and run create_iso.sh
+    client = docker.from_env()
+    container = client.containers.get("my_unique_container")
+
+    # Execute create_iso.sh directly (runs in a new shell, outside chroot)
+    exit_code, output = container.exec_run("/create_iso.sh")
+    print(f"[CREATE_ISO] Exit Code: {exit_code}\nOutput: {output.decode()}")
+
+    # Handle errors
+    if exit_code != 0:
+        sys.exit(1)
+except Exception as e:
+    print(f"[ERROR] {str(e)}")
+    sys.exit(1)
+)";
+
+    // Execute the Python code
+    if (m_cmdPanel->ExecutePythonCode(pythonCode)) {
+        wxLogMessage("create_iso.sh executed successfully.");
+    } else {
+        wxLogError("Failed to execute create_iso.sh.");
+        wxMessageBox("Failed to create ISO. Check logs.", "Error", wxICON_ERROR);
+    }
 }
 
 void SecondWindow::OnTabChanged(wxCommandEvent& event) {

@@ -19,6 +19,7 @@ public:
     virtual ~WindowsCmdPanel();
     
     void ContinueInitialization();
+    bool ExecutePythonCode(const char* code);  // Made public for external access
 
 private:
     // Core functionality methods
@@ -29,10 +30,9 @@ private:
     // Python/Docker operations
     void InitializePythonEnvironment();
     void RunEmbeddedPythonCode();
-    bool ExecutePythonCode(const char* code);
     void HandlePythonError();
-    bool m_initializationComplete;  // Add this line
-    
+    bool m_initializationComplete;
+
     // UI/Feedback methods
     wxString GetFileSizeString(const wxString& filePath);
     void ShowCompletionDialog(const wxString& isoPath);
@@ -46,10 +46,10 @@ private:
 };
 
 class InitTimer : public wxTimer {
-   public:
-       explicit InitTimer(WindowsCmdPanel* panel);  // Declaration only
-       void Notify() override;
-       
-   private:
-       WindowsCmdPanel* m_panel;
-   };
+public:
+    explicit InitTimer(WindowsCmdPanel* panel);
+    void Notify() override;
+    
+private:
+    WindowsCmdPanel* m_panel;
+};
