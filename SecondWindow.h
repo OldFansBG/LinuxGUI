@@ -3,13 +3,6 @@
 
 #include <wx/wx.h>
 #include <wx/statline.h>
-#include <wx/notebook.h>
-#include <wx/dir.h>
-#include <wx/filename.h>
-#include <wx/wfstream.h>
-#include <wx/progdlg.h>
-#include <wx/stdpaths.h>
-#include <vector>
 #include "OSDetector.h"
 #include "WindowsCmdPanel.h"
 #include "LinuxTerminalPanel.h"
@@ -26,23 +19,22 @@ private:
     void OnClose(wxCloseEvent& event);
     void OnNext(wxCommandEvent& event);
     void OnTabChanged(wxCommandEvent& event);
-    void OnPythonWorkComplete(wxCommandEvent& event);  // Add event handler
+    void OnPythonWorkComplete(wxCommandEvent& event);
 
-    OSDetector m_osDetector;
-    WindowsCmdPanel* m_cmdPanel;
-    LinuxTerminalPanel* m_terminalPanel;
     wxString m_isoPath;
+    wxString m_containerId;
     wxPanel* m_mainPanel;
     wxPanel* m_terminalTab;
     SQLTab* m_sqlTab;
-    wxSizer* m_terminalSizer;
-    wxString m_containerId;
+    WindowsCmdPanel* m_cmdPanel;
+    LinuxTerminalPanel* m_terminalPanel;
+    OSDetector m_osDetector;
 
     enum {
         ID_TERMINAL_TAB = wxID_HIGHEST + 1,
         ID_SQL_TAB,
         ID_NEXT_BUTTON,
-        ID_PYTHON_WORK_COMPLETE  // Add event ID
+        ID_PYTHON_WORK_COMPLETE
     };
 
     DECLARE_EVENT_TABLE()
