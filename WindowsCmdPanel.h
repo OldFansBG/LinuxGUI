@@ -24,8 +24,8 @@ public:
     void StartPythonWorkerThread(const char* code);
 
 private:
-    friend class PythonWorkerThread;
-    
+    friend class InitTimer; // Declare InitTimer as a friend
+
     void CreateCmdWindow();
     void OnSize(wxSizeEvent& event);
     void CleanupTimer();

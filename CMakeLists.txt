@@ -93,7 +93,6 @@ set(SOURCES
    ISOReader.cpp
    OSDetector.cpp
    SecondWindow.cpp
-   WindowsCmdPanel.cpp
    LinuxTerminalPanel.cpp
    SettingsDialog.cpp
    ISOExtractor.cpp
@@ -106,6 +105,7 @@ set(SOURCES
    SQLTab.cpp
    FlatpakStore.cpp
    DesktopTab.cpp
+   PythonWorkerThread.cpp
 )
 
 # Header files
@@ -116,7 +116,6 @@ set(HEADERS
    ISOReader.h
    OSDetector.h
    SecondWindow.h
-   WindowsCmdPanel.h
    LinuxTerminalPanel.h
    SettingsDialog.h
    ISOExtractor.h
@@ -124,6 +123,7 @@ set(HEADERS
    MyButton.h
    gear_icon.h
    ContainerManager.h
+   PythonWorkerThread.h
 )
 
 # Scripts and resources to copy

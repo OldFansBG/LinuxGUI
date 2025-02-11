@@ -15,3 +15,5 @@ DiplomenProekt.docx
 *.zip
 *.exe
 docker_iso_builder.py
+pt.cpp
+tesr.py

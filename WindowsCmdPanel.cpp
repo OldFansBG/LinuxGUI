@@ -1,44 +1,45 @@
 #include "WindowsCmdPanel.h"
-#include "ContainerManager.h"
-#include <wx/file.h>
+#include <wx/log.h>
+#include <wx/msgdlg.h>
 #include <wx/filename.h>
 #include <wx/stdpaths.h>
-#include <wx/msgdlg.h>
-#include <wx/log.h>
 #include <fstream>
 #include <sstream>
 
 #ifdef _WIN32
     #include <Python.h>
+    #include <windows.h>
 #endif
 
 wxBEGIN_EVENT_TABLE(WindowsCmdPanel, wxPanel)
     EVT_SIZE(WindowsCmdPanel::OnSize)
-    EVT_COMMAND(ID_PYTHON_WORK_COMPLETE, wxEVT_COMMAND_TEXT_UPDATED, WindowsCmdPanel::OnPythonWorkComplete)
+    EVT_COMMAND(WindowsCmdPanel::ID_PYTHON_WORK_COMPLETE, wxEVT_COMMAND_TEXT_UPDATED, WindowsCmdPanel::OnPythonWorkComplete)
 wxEND_EVENT_TABLE()
 
 WindowsCmdPanel::WindowsCmdPanel(wxWindow* parent)
     : wxPanel(parent), 
-      m_initTimer(nullptr), 
-      m_initStep(0),
       m_initializationComplete(false),
+      m_initTimer(nullptr),
+      m_initStep(0),
       m_workerThread(nullptr),
       m_hwndCmd(nullptr),
-      m_dwProcessId(0) {
-    static bool logInitialized = false;
-    if (!logInitialized) {
-        wxLog::SetActiveTarget(new wxLogStderr());
-        logInitialized = true;
-    }
+      m_dwProcessId(0) 
+{
     CreateCmdWindow();
 }
 
 WindowsCmdPanel::~WindowsCmdPanel() {
-    wxString containerId = ContainerManager::Get().GetCurrentContainerId();
-    if (!containerId.IsEmpty()) {
-        ContainerManager::Get().CleanupContainer(containerId);
-    }
     CleanupTimer();
+    if (m_workerThread) {
+        m_workerThread->Delete();
+    }
+    if (m_dwProcessId != 0) {
+        HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, m_dwProcessId);
+        if (hProcess) {
+            TerminateProcess(hProcess, 1);
+            CloseHandle(hProcess);
+        }
+    }
 }
 
 void WindowsCmdPanel::OnSize(wxSizeEvent& event) {
@@ -52,26 +53,60 @@ void WindowsCmdPanel::OnSize(wxSizeEvent& event) {
 
 void WindowsCmdPanel::CreateCmdWindow() {
 #ifdef _WIN32
-    BOOL isAdmin = FALSE;
-    PSID adminGroup = NULL;
-    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
-
-    if (AllocateAndInitializeSid(&ntAuthority, 2,
-                                SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS,
-                                0, 0, 0, 0, 0, 0, &adminGroup)) {
-        CheckTokenMembership(NULL, adminGroup, &isAdmin);
-        FreeSid(adminGroup);
-    }
-
-    if (!isAdmin) {
-        wxMessageBox("This application requires administrator privileges.", "Admin Rights Required", wxICON_ERROR | wxOK);
-        return;
-    }
-
     m_initStep = 0;
     m_initTimer = new InitTimer(this);
     m_initTimer->Start(100);
 #endif
+}
+
+void WindowsCmdPanel::ContinueInitialization() {
+    static int attempts = 0;
+    const int maxAttempts = 50;
+
+    switch (m_initStep) {
+        case 0: {
+            RunEmbeddedPythonCode();
+            m_initTimer->Stop();
+            break;
+        }
+        case 1: {
+            if (attempts++ >= maxAttempts) {
+                wxLogError("Timeout waiting for console window");
+                CleanupTimer();
+                return;
+            }
+
+            EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL CALLBACK {
+                auto self = reinterpret_cast<WindowsCmdPanel*>(lParam);
+                DWORD processId = 0;
+                GetWindowThreadProcessId(hwnd, &processId);
+                
+                if (processId == self->m_dwProcessId) {
+                    wchar_t className[256];
+                    GetClassNameW(hwnd, className, 256);
+                    if (wcscmp(className, L"ConsoleWindowClass") == 0) {
+                        self->m_hwndCmd = hwnd;
+                        return FALSE;
+                    }
+                }
+                return TRUE;
+            }, reinterpret_cast<LPARAM>(this));
+
+            if (m_hwndCmd) {
+                attempts = 0;
+                LONG style = GetWindowLongW(m_hwndCmd, GWL_STYLE);
+                style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+                SetWindowLongW(m_hwndCmd, GWL_STYLE, style);
+                ::SetParent(m_hwndCmd, reinterpret_cast<HWND>(GetHWND()));
+                ::ShowWindow(m_hwndCmd, SW_SHOW);
+                ::SetWindowPos(m_hwndCmd, nullptr, 0, 0, 
+                             GetClientSize().GetWidth(), GetClientSize().GetHeight(),
+                             SWP_FRAMECHANGED | SWP_NOZORDER);
+                CleanupTimer();
+            }
+            break;
+        }
+    }
 }
 
 void WindowsCmdPanel::InitializePythonEnvironment() {
@@ -259,109 +294,19 @@ def main():
 
 if __name__ == "__main__":
     main()
-)PYCODE";
+    )PYCODE";
 
     StartPythonWorkerThread(pythonCode);
 #endif
 }
 
-void WindowsCmdPanel::ContinueInitialization() {
-    wxLogMessage("ContinueInitialization() - Step %d", m_initStep);
-    
-    switch (m_initStep) {
-        case 0: {
-            wxLogMessage("Starting Python worker thread");
-            RunEmbeddedPythonCode();
-            break;
-        }
-        case 1: {
-            wxLogMessage("Python completed, proceeding to CMD window creation");
-            EmbedCmdWindow();
-            CleanupTimer();
-            break;
-        }
-    }
-}
-
-void WindowsCmdPanel::EmbedCmdWindow() {
-#ifdef _WIN32
-    wxLogMessage("EmbedCmdWindow() - Creating Docker process");
-    
-    std::wstring cmd = L"docker exec -it my_unique_container /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash\"";
-    
-    STARTUPINFOW si = { sizeof(si) };
-    PROCESS_INFORMATION pi = { 0 };
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-
-    if (!CreateProcessW(nullptr, cmd.data(),
-        nullptr, nullptr, FALSE, 
-        CREATE_NEW_CONSOLE | CREATE_NEW_PROCESS_GROUP,
-        nullptr, nullptr, &si, &pi)) {
-        wxLogError("CreateProcess failed (%lu)", GetLastError());
-        return;
-    }
-
-    m_dwProcessId = pi.dwProcessId;
-    wxLogMessage("Process created PID: %lu", m_dwProcessId);
-
-    const int maxAttempts = 10;
-    int attempts = 0;
-    while (attempts++ < maxAttempts && !m_hwndCmd) {
-        wxLogMessage("Waiting for window creation (attempt %d/%d)", attempts, maxAttempts);
-        EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL CALLBACK {
-            auto self = reinterpret_cast<WindowsCmdPanel*>(lParam);
-            DWORD processId = 0;
-            GetWindowThreadProcessId(hwnd, &processId);
-            
-            if (processId == self->m_dwProcessId) {
-                wchar_t className[256];
-                GetClassNameW(hwnd, className, 256);
-                if (wcscmp(className, L"ConsoleWindowClass") == 0) {
-                    self->m_hwndCmd = hwnd;
-                    wxLogMessage("Found target window: %p", hwnd);
-                    return FALSE;
-                }
-            }
-            return TRUE;
-        }, reinterpret_cast<LPARAM>(this));
-
-        if (!m_hwndCmd) Sleep(500);
-    }
-
-    if (m_hwndCmd) {
-        wxLogMessage("Embedding window %p", m_hwndCmd);
-        LONG style = GetWindowLongW(m_hwndCmd, GWL_STYLE);
-        style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
-        SetWindowLongW(m_hwndCmd, GWL_STYLE, style);
-        
-        ::SetParent(m_hwndCmd, reinterpret_cast<HWND>(GetHWND()));
-        ::ShowWindow(m_hwndCmd, SW_SHOW);
-        ::SetWindowPos(m_hwndCmd, nullptr, 0, 0, 
-                     GetClientSize().GetWidth(), GetClientSize().GetHeight(),
-                     SWP_FRAMECHANGED | SWP_NOZORDER);
-        
-        wxLogMessage("Window embedded successfully");
-    } else {
-        wxLogError("Failed to find console window for PID %lu", m_dwProcessId);
-    }
-
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-#endif
-}
-
 void WindowsCmdPanel::OnPythonWorkComplete(wxCommandEvent& event) {
-    wxLogMessage("OnPythonWorkComplete() - Status: %d", event.GetInt());
-    
-    if (event.GetInt() == 1) {
-        wxLogMessage("All scripts executed successfully");
-        m_initStep = 1;
-        m_initTimer->StartOnce(100);
+    bool success = event.GetInt() == 1;
+    if (success) {
+        m_initStep = 1; // Proceed to embed console window
+        m_initTimer->Start(200); // Check every 200ms
     } else {
-        wxMessageBox("Critical error during script execution. Check logs.", 
-                    "Initialization Failed", wxICON_ERROR);
-        CleanupTimer();
+        wxMessageBox("Python script failed!", "Error", wxICON_ERROR);
     }
 }
 
@@ -383,54 +328,43 @@ void WindowsCmdPanel::CleanupTimer() {
     }
 }
 
+// Timer Implementation
 InitTimer::InitTimer(WindowsCmdPanel* panel) : m_panel(panel) {}
 
 void InitTimer::Notify() {
     m_panel->ContinueInitialization();
 }
 
+// Worker Thread Implementation
 PythonWorkerThread::PythonWorkerThread(WindowsCmdPanel* panel, const char* code)
     : wxThread(wxTHREAD_DETACHED), m_panel(panel), m_code(code) {}
 
 wxThread::ExitCode PythonWorkerThread::Entry() {
 #ifdef _WIN32
-    wxLogMessage("PythonWorkerThread::Entry() - Starting");
     bool success = false;
-    
+    PyGILState_STATE gstate = PyGILState_Ensure();
+
     try {
         if (!Py_IsInitialized()) {
-            wxLogMessage("Initializing Python environment in thread");
             m_panel->InitializePythonEnvironment();
         }
-
-        wxLogMessage("Acquiring GIL");
-        PyGILState_STATE gstate = PyGILState_Ensure();
-        
-        wxLogMessage("Executing Python code");
         success = m_panel->ExecutePythonCode(m_code);
-        
-        wxLogMessage("Releasing GIL");
-        PyGILState_Release(gstate);
-        
-        if (success) {
-            wxLogMessage("Python execution completed successfully");
-        } else {
-            wxLogError("Python execution failed");
-        }
-    } 
-    catch (...) {
-        wxLogError("Exception in Python worker thread");
+    } catch (...) {
+        wxLogError("Python thread exception");
         success = false;
     }
 
-    wxCommandEvent* event = new wxCommandEvent(wxEVT_COMMAND_TEXT_UPDATED, 
-                                             WindowsCmdPanel::ID_PYTHON_WORK_COMPLETE);
+    PyGILState_Release(gstate);
+
+    wxCommandEvent* event = new wxCommandEvent(
+        wxEVT_COMMAND_TEXT_UPDATED, 
+        WindowsCmdPanel::ID_PYTHON_WORK_COMPLETE
+    );
     event->SetInt(success ? 1 : 0);
     wxQueueEvent(m_panel, event);
-    
-    wxLogMessage("PythonWorkerThread exiting");
-    return (ExitCode)0;
+
+    return (wxThread::ExitCode)0;
 #else
-    return (ExitCode)1;
+    return (wxThread::ExitCode)1;
 #endif
 }
