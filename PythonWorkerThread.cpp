@@ -6,32 +6,31 @@
 #include <string>
 
 PythonWorkerThread::PythonWorkerThread(SecondWindow* handler, const wxString& isoPath)
-    : wxThread(wxTHREAD_JOINABLE), // Use JOINABLE threads
+    : wxThread(wxTHREAD_JOINABLE),
       m_handler(handler),
-      m_isoPath(isoPath) {}
+      m_isoPath(isoPath) {
+}
 
 PythonWorkerThread::~PythonWorkerThread() {
     // DO NOT CALL Py_FinalizeEx() here
     // Python should be finalized in the main thread, not in the worker thread
 }
 
-void PythonWorkerThread::SendLogUpdate(const wxString& message) {
-    if (m_handler) { // Ensure the handler is valid
-        wxCommandEvent event(PYTHON_LOG_UPDATE);
-        event.SetString(message);
-        wxQueueEvent(m_handler, event.Clone()); // Thread-safe event posting
-    }
-}
-
 wxThread::ExitCode PythonWorkerThread::Entry() {
-    PyGILState_STATE gstate = PyGILState_Ensure(); // Acquire GIL
+    PyGILState_STATE gstate = PyGILState_Ensure();
+    
     try {
         std::cout << "[DEBUG] Thread started." << std::endl;
 
-        // Initialize Python (ensure it's already initialized in the main thread)
-        if (!Py_IsInitialized()) {
-            throw std::runtime_error("Python is not initialized. Ensure Py_InitializeEx() is called in the main thread.");
+        // Import required Python modules
+        PyObject* dockerModule = PyImport_ImportModule("docker");
+        if (!dockerModule) {
+            SendLogUpdate("Failed to import docker module");
+            HandlePythonError();
+            PyGILState_Release(gstate);
+            return (ExitCode)1;
         }
+        Py_DECREF(dockerModule);
 
         // Execute Python code
         bool success = ExecutePythonCode(GeneratePythonCode());
@@ -40,23 +39,35 @@ wxThread::ExitCode PythonWorkerThread::Entry() {
         // Send completion event
         wxCommandEvent event(PYTHON_TASK_COMPLETED);
         event.SetInt(success ? 1 : 0);
-        wxQueueEvent(m_handler, event.Clone());
+        if (m_handler) {
+            wxQueueEvent(m_handler, event.Clone());
+        }
 
     } catch (const std::exception& e) {
         SendLogUpdate(wxString::Format("Error: %s", e.what()));
+        
+        wxCommandEvent event(PYTHON_TASK_COMPLETED);
+        event.SetInt(0);
+        event.SetString(e.what());
+        if (m_handler) {
+            wxQueueEvent(m_handler, event.Clone());
+        }
     }
 
-    PyGILState_Release(gstate); // Release GIL
+    PyGILState_Release(gstate);
     return (ExitCode)0;
 }
 
-void PythonWorkerThread::InitializePython() {
-    // Ensure the GIL is acquired (no need to initialize Python here)
-    PyEval_InitThreads(); // Enable thread support
+void PythonWorkerThread::SendLogUpdate(const wxString& message) {
+    if (m_handler) {
+        wxCommandEvent event(PYTHON_LOG_UPDATE);
+        event.SetString(message);
+        wxQueueEvent(m_handler, event.Clone());
+    }
 }
 
 bool PythonWorkerThread::ExecutePythonCode(const char* code) {
-    PyGILState_STATE gstate = PyGILState_Ensure(); // Acquire the GIL
+    PyGILState_STATE gstate = PyGILState_Ensure();
     bool success = false;
 
     try {
@@ -74,18 +85,18 @@ bool PythonWorkerThread::ExecutePythonCode(const char* code) {
         // Execute the Python code
         PyObject* result = PyRun_String(code, Py_file_input, globalDict, globalDict);
         if (!result) {
-            HandlePythonError(); // Handle Python errors
+            HandlePythonError();
             throw std::runtime_error("Failed to execute Python code.");
         }
 
         success = true;
-        Py_XDECREF(result); // Clean up the result object
+        Py_XDECREF(result);
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         success = false;
     }
 
-    PyGILState_Release(gstate); // Release the GIL
+    PyGILState_Release(gstate);
     return success;
 }
 
@@ -95,7 +106,6 @@ void PythonWorkerThread::HandlePythonError() {
         PyErr_Fetch(&type, &value, &traceback);
         PyErr_NormalizeException(&type, &value, &traceback);
 
-        // Import the traceback module to format the error
         PyObject* tbModule = PyImport_ImportModule("traceback");
         if (tbModule) {
             PyObject* formatFunc = PyObject_GetAttrString(tbModule, "format_exception");
@@ -105,6 +115,7 @@ void PythonWorkerThread::HandlePythonError() {
                     PyObject* tbStr = PyUnicode_Join(PyUnicode_FromString(""), tbList);
                     if (tbStr) {
                         const char* fullError = PyUnicode_AsUTF8(tbStr);
+                        SendLogUpdate(wxString(fullError));
                         std::cerr << "Python Error Details:\n" << fullError << std::endl;
                         Py_XDECREF(tbStr);
                     }
@@ -122,9 +133,7 @@ void PythonWorkerThread::HandlePythonError() {
 }
 
 const char* PythonWorkerThread::GeneratePythonCode() {
-    // Replace iso_path with m_isoPath
-    std::string generatedCode; // Remove 'static' to avoid thread-safety issues
-    generatedCode = wxString::Format(R"(
+    m_generatedCode = wxString::Format(R"(
 import docker
 import os
 import time
@@ -203,7 +212,7 @@ def main():
             with tarfile.open(fileobj=tarstream, mode="w") as tar:
                 tar.add(host_path, arcname=script)
             tarstream.seek(0)
-            container.put_archive("/", tarstream);
+            container.put_archive("/", tarstream)
 
         print("[PROGRESS] 50%% - Setting permissions")
         exit_code, output = container.exec_run("chmod +x /setup_output.sh /setup_chroot.sh /create_iso.sh")
@@ -241,7 +250,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-    )", "I:\\Files\\Desktop\\LinuxGUI", m_isoPath).ToStdString();
+)", "I:\\Files\\Desktop\\LinuxGUI", m_isoPath).ToStdString();
 
-    return generatedCode.c_str();
+    return m_generatedCode.c_str();
 }

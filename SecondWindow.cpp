@@ -17,34 +17,59 @@ SecondWindow::SecondWindow(wxWindow* parent, const wxString& title, const wxStri
       m_isoPath(isoPath),
       m_workerThread(nullptr),
       m_threadRunning(false) {
+    
+    // Initialize Python before creating the worker thread
+    Py_InitializeEx(0);  // Initialize without signal handlers
+    PyEval_InitThreads(); // Initialize and acquire the GIL
+    PyEval_SaveThread();  // Release the GIL
+
     m_containerId = ContainerManager::Get().GetCurrentContainerId();
     CreateControls();
     Centre();
     SetBackgroundColour(wxColour(40, 44, 52));
 
-    // Start the Python script
-    m_workerThread = new PythonWorkerThread(this, m_isoPath);
-    if (m_workerThread->Run() == wxTHREAD_NO_ERROR) {
-        m_threadRunning = true;
-    } else {
-        wxMessageBox("Failed to start Python task!", "Error", wxICON_ERROR);
-        delete m_workerThread;
-        m_workerThread = nullptr;
+    // Create and start the Python worker thread
+    StartPythonThread();
+}
+
+
+void SecondWindow::StartPythonThread() {
+    if (m_workerThread == nullptr) {
+        m_workerThread = new PythonWorkerThread(this, m_isoPath);
+        if (m_workerThread->Run() == wxTHREAD_NO_ERROR) {
+            m_threadRunning = true;
+        } else {
+            wxMessageBox("Failed to start Python task!", "Error", wxICON_ERROR);
+            delete m_workerThread;
+            m_workerThread = nullptr;
+        }
     }
 }
 
 SecondWindow::~SecondWindow() {
-    // Safely stop the thread
-    if (m_workerThread && m_threadRunning) {
-        if (m_workerThread->Delete() != wxTHREAD_NO_ERROR) {
-            m_workerThread->Wait(); // Wait for thread to finish
-        }
-        delete m_workerThread;
-        m_workerThread = nullptr;
-    }
-
+    CleanupThread();
+    
     if (!m_containerId.IsEmpty()) {
         ContainerManager::Get().CleanupContainer(m_containerId);
+    }
+
+    // Finalize Python in the main thread
+    PyGILState_STATE gstate = PyGILState_Ensure();
+    Py_FinalizeEx();
+    PyGILState_Release(gstate);
+}
+
+void SecondWindow::CleanupThread() {
+    if (m_workerThread && m_threadRunning) {
+        m_threadRunning = false;
+        
+        // Signal the thread to stop and wait for it
+        if (m_workerThread->Delete() != wxTHREAD_NO_ERROR) {
+            m_workerThread->Wait();
+        }
+        
+        delete m_workerThread;
+        m_workerThread = nullptr;
     }
 }
 
@@ -140,19 +165,16 @@ void SecondWindow::CreateControls() {
 }
 
 void SecondWindow::OnClose(wxCloseEvent& event) {
-    // Ensure the thread is stopped before closing
-    if (m_workerThread && m_threadRunning) {
-        if (m_workerThread->Delete() != wxTHREAD_NO_ERROR) {
-            m_workerThread->Wait();
-        }
-        delete m_workerThread;
-        m_workerThread = nullptr;
-    }
+    CleanupThread();
 
     if (!m_containerId.IsEmpty()) {
         ContainerManager::Get().CleanupContainer(m_containerId);
     }
-    if (GetParent()) GetParent()->Show();
+    
+    if (GetParent()) {
+        GetParent()->Show();
+    }
+    
     Destroy();
 }
 
@@ -196,7 +218,7 @@ void SecondWindow::OnTabChanged(wxCommandEvent& event) {
 }
 
 void SecondWindow::OnPythonTaskCompleted(wxCommandEvent& event) {
-    m_threadRunning = false; // Mark thread as completed
+    m_threadRunning = false;
     bool success = event.GetInt() != 0;
     wxString errorMsg = event.GetString();
 
@@ -208,6 +230,8 @@ void SecondWindow::OnPythonTaskCompleted(wxCommandEvent& event) {
 }
 
 void SecondWindow::OnPythonLogUpdate(wxCommandEvent& event) {
-    wxString logMessage = event.GetString();
-    m_logTextCtrl->AppendText(logMessage + "\n");
+    if (m_logTextCtrl) {
+        wxString logMessage = event.GetString();
+        m_logTextCtrl->AppendText(logMessage + "\n");
+    }
 }

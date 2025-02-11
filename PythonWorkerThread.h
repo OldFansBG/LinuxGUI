@@ -1,12 +1,12 @@
+
 #ifndef PYTHONWORKERTHREAD_H
 #define PYTHONWORKERTHREAD_H
 
+#include <wx/wx.h>
 #include <wx/thread.h>
-#include <wx/event.h>
-#include <wx/string.h>
-#include "CustomEvents.h" // Include the custom events header
+#include <string>
 
-// Forward declaration of SecondWindow to avoid circular dependency
+// Forward declarations
 class SecondWindow;
 
 class PythonWorkerThread : public wxThread {
@@ -18,15 +18,20 @@ protected:
     virtual ExitCode Entry() override;
 
 private:
-    SecondWindow* m_handler; // Pointer to the main window for event posting
-    wxString m_isoPath;      // Path to the ISO file
-
-    // Python-related methods
-    void InitializePython();
+    // Python Related Methods
     bool ExecutePythonCode(const char* code);
-    void HandlePythonError();
     const char* GeneratePythonCode();
-    void SendLogUpdate(const wxString& message); // Send log updates to the GUI
+    void HandlePythonError();
+    void SendLogUpdate(const wxString& message);
+
+    // Member Variables
+    SecondWindow* m_handler;
+    wxString m_isoPath;
+    std::string m_generatedCode;  // Store the generated code
 };
+
+// Custom Event Declarations (if not already in CustomEvents.h)
+wxDECLARE_EVENT(PYTHON_TASK_COMPLETED, wxCommandEvent);
+wxDECLARE_EVENT(PYTHON_LOG_UPDATE, wxCommandEvent);
 
 #endif // PYTHONWORKERTHREAD_H
