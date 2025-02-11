@@ -133,7 +133,7 @@ void PythonWorkerThread::HandlePythonError() {
 }
 
 const char* PythonWorkerThread::GeneratePythonCode() {
-    m_generatedCode = wxString::Format(R"(
+    m_generatedCode = wxString::Format(R"PYCODE(
 import docker
 import os
 import time
@@ -250,7 +250,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-)", "I:\\Files\\Desktop\\LinuxGUI", m_isoPath).ToStdString();
+)PYCODE", "I:\\Files\\Desktop\\LinuxGUI", m_isoPath).ToStdString();
 
     return m_generatedCode.c_str();
 }
