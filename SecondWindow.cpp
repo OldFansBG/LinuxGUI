@@ -1,7 +1,33 @@
 #include "SecondWindow.h"
-#include <wx/utils.h>  // For wxExecute
-#include <wx/statline.h>
+#include <wx/utils.h>    // For wxExecute
+#include <wx/statline.h> // For wxStaticLine
+#include <wx/process.h>  // For wxProcess
 
+//---------------------------------------------------------------------
+// Custom wxProcess subclass to detect when the Python executable terminates.
+class PythonProcess : public wxProcess {
+public:
+    PythonProcess(wxFrame* parent)
+        : wxProcess(parent)
+    {
+        // If auto-delete is available, use it.
+#ifdef wxPROCESS_AUTO_DELETE
+        SetExtraStyle(wxPROCESS_AUTO_DELETE);
+#endif
+    }
+
+    // This method is called automatically when the process terminates.
+    virtual void OnTerminate(int pid, int status) override {
+        wxMessageBox("Python executable has completed.", 
+                     "Process Completed", 
+                     wxOK | wxICON_INFORMATION);
+#ifndef wxPROCESS_AUTO_DELETE
+        // If auto-delete is not available, delete this process object manually.
+        delete this;
+#endif
+    }
+};
+//---------------------------------------------------------------------
 
 wxDEFINE_EVENT(PYTHON_TASK_COMPLETED, wxCommandEvent);
 wxDEFINE_EVENT(PYTHON_LOG_UPDATE, wxCommandEvent);
@@ -16,8 +42,8 @@ wxEND_EVENT_TABLE()
 SecondWindow::SecondWindow(wxWindow* parent, const wxString& title, const wxString& isoPath)
     : wxFrame(parent, wxID_ANY, title, wxDefaultPosition, wxSize(800, 650)),
       m_isoPath(isoPath),
-      m_threadRunning(false) {
-    
+      m_threadRunning(false)
+{
     m_containerId = ContainerManager::Get().GetCurrentContainerId();
     CreateControls();
     Centre();
@@ -28,17 +54,20 @@ SecondWindow::SecondWindow(wxWindow* parent, const wxString& title, const wxStri
 }
 
 void SecondWindow::StartPythonExecutable() {
-    wxString pythonExePath = "I:\\Files\\Desktop\\LinuxGUI\\dist\\tesr.exe";
+    wxString pythonExePath = "I:\\Files\\Desktop\\LinuxGUI\\dist\\script.exe";
 
-    // Use wxEXEC_HIDE_CONSOLE to hide the console window
-    long pid = wxExecute(pythonExePath, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE);
+    // Create a new PythonProcess instance to handle termination events.
+    PythonProcess* proc = new PythonProcess(this);
+
+    // Start the executable asynchronously and hide its console window.
+    long pid = wxExecute(pythonExePath, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);
     if (pid == 0) {
         wxMessageBox("Failed to start Python executable!", "Error", wxICON_ERROR);
+        delete proc;
     } else {
         m_threadRunning = true;
     }
 }
-
 
 SecondWindow::~SecondWindow() {
     CleanupThread();
@@ -50,7 +79,7 @@ SecondWindow::~SecondWindow() {
 
 void SecondWindow::CleanupThread() {
     if (m_threadRunning) {
-        // Here you could implement process termination if needed
+        // If needed, implement process termination logic here.
         m_threadRunning = false;
     }
 }
@@ -82,7 +111,6 @@ void SecondWindow::CreateControls() {
 
     wxStaticLine* separator = new wxStaticLine(tabPanel, wxID_ANY, 
         wxDefaultPosition, wxDefaultSize, wxLI_VERTICAL);
-    separator->SetBackgroundColour(wxColour(64, 64, 64));
 
     wxButton* sqlButton = new wxButton(tabPanel, ID_SQL_TAB, "SQL", 
         wxDefaultPosition, wxSize(100, 40), wxBORDER_NONE);
