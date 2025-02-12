@@ -105,7 +105,6 @@ set(SOURCES
    SQLTab.cpp
    FlatpakStore.cpp
    DesktopTab.cpp
-   PythonWorkerThread.cpp
 )
 
 # Header files
@@ -123,7 +122,6 @@ set(HEADERS
    MyButton.h
    gear_icon.h
    ContainerManager.h
-   PythonWorkerThread.h
 )
 
 # Scripts and resources to copy

@@ -17,12 +17,19 @@ PythonWorkerThread::~PythonWorkerThread() {
 }
 
 wxThread::ExitCode PythonWorkerThread::Entry() {
+    // ========================================================================
+    // 1. Acquire the Global Interpreter Lock (GIL)
+    // ========================================================================
     PyGILState_STATE gstate = PyGILState_Ensure();
-    
-    try {
-        std::cout << "[DEBUG] Thread started." << std::endl;
 
-        // Import required Python modules
+    try {
+        // Debug: Verify Python environment
+        PyRun_SimpleString("import sys; print('sys.path:', sys.path)");
+        PyRun_SimpleString("import _socket; print('_socket module loaded')");
+
+        // ====================================================================
+        // 2. Import Docker Module
+        // ====================================================================
         PyObject* dockerModule = PyImport_ImportModule("docker");
         if (!dockerModule) {
             SendLogUpdate("Failed to import docker module");
@@ -32,11 +39,16 @@ wxThread::ExitCode PythonWorkerThread::Entry() {
         }
         Py_DECREF(dockerModule);
 
-        // Execute Python code
-        bool success = ExecutePythonCode(GeneratePythonCode());
+        // ====================================================================
+        // 3. Generate and Execute Python Code
+        // ====================================================================
+        const char* pythonCode = GeneratePythonCode();
+        bool success = ExecutePythonCode(pythonCode);
         SendLogUpdate(success ? "Python task completed successfully." : "Python task failed.");
 
-        // Send completion event
+        // ====================================================================
+        // 4. Send Completion Event
+        // ====================================================================
         wxCommandEvent event(PYTHON_TASK_COMPLETED);
         event.SetInt(success ? 1 : 0);
         if (m_handler) {
@@ -54,6 +66,9 @@ wxThread::ExitCode PythonWorkerThread::Entry() {
         }
     }
 
+    // ========================================================================
+    // 5. Release the Global Interpreter Lock (GIL)
+    // ========================================================================
     PyGILState_Release(gstate);
     return (ExitCode)0;
 }
@@ -133,7 +148,8 @@ void PythonWorkerThread::HandlePythonError() {
 }
 
 const char* PythonWorkerThread::GeneratePythonCode() {
-    m_generatedCode = wxString::Format(R"PYCODE(
+    m_generatedCode = wxString::Format(
+        R"PYCODE(
 import docker
 import os
 import time
@@ -250,7 +266,10 @@ def main():
 
 if __name__ == "__main__":
     main()
-)PYCODE", "I:\\Files\\Desktop\\LinuxGUI", m_isoPath).ToStdString();
+        )PYCODE",
+        "I:\\Files\\Desktop\\LinuxGUI", // Base directory
+        m_isoPath // ISO path
+    ).ToStdString();
 
     return m_generatedCode.c_str();
 }

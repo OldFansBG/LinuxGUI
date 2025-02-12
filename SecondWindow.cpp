@@ -1,4 +1,7 @@
 #include "SecondWindow.h"
+#include <wx/utils.h>  // For wxExecute
+#include <wx/statline.h>
+
 
 wxDEFINE_EVENT(PYTHON_TASK_COMPLETED, wxCommandEvent);
 wxDEFINE_EVENT(PYTHON_LOG_UPDATE, wxCommandEvent);
@@ -8,43 +11,34 @@ wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)
     EVT_BUTTON(ID_TERMINAL_TAB, SecondWindow::OnTabChanged)
     EVT_BUTTON(ID_SQL_TAB, SecondWindow::OnTabChanged)
     EVT_BUTTON(ID_NEXT_BUTTON, SecondWindow::OnNext)
-    EVT_COMMAND(wxID_ANY, PYTHON_TASK_COMPLETED, SecondWindow::OnPythonTaskCompleted)
-    EVT_COMMAND(wxID_ANY, PYTHON_LOG_UPDATE, SecondWindow::OnPythonLogUpdate)
 wxEND_EVENT_TABLE()
 
 SecondWindow::SecondWindow(wxWindow* parent, const wxString& title, const wxString& isoPath)
     : wxFrame(parent, wxID_ANY, title, wxDefaultPosition, wxSize(800, 650)),
       m_isoPath(isoPath),
-      m_workerThread(nullptr),
       m_threadRunning(false) {
     
-    // Initialize Python before creating the worker thread
-    Py_InitializeEx(0);  // Initialize without signal handlers
-    PyEval_InitThreads(); // Initialize and acquire the GIL
-    PyEval_SaveThread();  // Release the GIL
-
     m_containerId = ContainerManager::Get().GetCurrentContainerId();
     CreateControls();
     Centre();
     SetBackgroundColour(wxColour(40, 44, 52));
 
-    // Create and start the Python worker thread
-    StartPythonThread();
+    // Start the external Python executable
+    StartPythonExecutable();
 }
 
+void SecondWindow::StartPythonExecutable() {
+    wxString pythonExePath = "I:\\Files\\Desktop\\LinuxGUI\\dist\\tesr.exe";
 
-void SecondWindow::StartPythonThread() {
-    if (m_workerThread == nullptr) {
-        m_workerThread = new PythonWorkerThread(this, m_isoPath);
-        if (m_workerThread->Run() == wxTHREAD_NO_ERROR) {
-            m_threadRunning = true;
-        } else {
-            wxMessageBox("Failed to start Python task!", "Error", wxICON_ERROR);
-            delete m_workerThread;
-            m_workerThread = nullptr;
-        }
+    // Use wxEXEC_HIDE_CONSOLE to hide the console window
+    long pid = wxExecute(pythonExePath, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE);
+    if (pid == 0) {
+        wxMessageBox("Failed to start Python executable!", "Error", wxICON_ERROR);
+    } else {
+        m_threadRunning = true;
     }
 }
+
 
 SecondWindow::~SecondWindow() {
     CleanupThread();
@@ -52,24 +46,12 @@ SecondWindow::~SecondWindow() {
     if (!m_containerId.IsEmpty()) {
         ContainerManager::Get().CleanupContainer(m_containerId);
     }
-
-    // Finalize Python in the main thread
-    PyGILState_STATE gstate = PyGILState_Ensure();
-    Py_FinalizeEx();
-    PyGILState_Release(gstate);
 }
 
 void SecondWindow::CleanupThread() {
-    if (m_workerThread && m_threadRunning) {
+    if (m_threadRunning) {
+        // Here you could implement process termination if needed
         m_threadRunning = false;
-        
-        // Signal the thread to stop and wait for it
-        if (m_workerThread->Delete() != wxTHREAD_NO_ERROR) {
-            m_workerThread->Wait();
-        }
-        
-        delete m_workerThread;
-        m_workerThread = nullptr;
     }
 }
 
@@ -182,7 +164,6 @@ void SecondWindow::OnNext(wxCommandEvent& event) {
     wxButton* nextButton = wxDynamicCast(FindWindow(ID_NEXT_BUTTON), wxButton);
     if (nextButton) nextButton->Disable();
 
-    // Add your custom logic here for the "Next" button
     wxMessageBox("Next button clicked!", "Info", wxICON_INFORMATION);
 
     if (nextButton) nextButton->Enable();
@@ -192,46 +173,9 @@ void SecondWindow::OnTabChanged(wxCommandEvent& event) {
     if (event.GetId() == ID_TERMINAL_TAB) {
         m_terminalTab->Show();
         m_sqlTab->Hide();
-
-        wxButton* terminalButton = wxDynamicCast(FindWindow(ID_TERMINAL_TAB), wxButton);
-        wxButton* sqlButton = wxDynamicCast(FindWindow(ID_SQL_TAB), wxButton);
-        if (terminalButton && sqlButton) {
-            terminalButton->SetBackgroundColour(wxColour(44, 49, 58));
-            terminalButton->SetForegroundColour(*wxWHITE);
-            sqlButton->SetBackgroundColour(wxColour(30, 30, 30));
-            sqlButton->SetForegroundColour(wxColour(128, 128, 128));
-        }
     } else {
         m_terminalTab->Hide();
         m_sqlTab->Show();
-
-        wxButton* terminalButton = wxDynamicCast(FindWindow(ID_TERMINAL_TAB), wxButton);
-        wxButton* sqlButton = wxDynamicCast(FindWindow(ID_SQL_TAB), wxButton);
-        if (terminalButton && sqlButton) {
-            terminalButton->SetBackgroundColour(wxColour(30, 30, 30));
-            terminalButton->SetForegroundColour(wxColour(128, 128, 128));
-            sqlButton->SetBackgroundColour(wxColour(44, 49, 58));
-            sqlButton->SetForegroundColour(*wxWHITE);
-        }
     }
     m_mainPanel->Layout();
-}
-
-void SecondWindow::OnPythonTaskCompleted(wxCommandEvent& event) {
-    m_threadRunning = false;
-    bool success = event.GetInt() != 0;
-    wxString errorMsg = event.GetString();
-
-    if (success) {
-        wxMessageBox("Python task completed successfully!", "Success", wxOK | wxICON_INFORMATION);
-    } else {
-        wxMessageBox("Error: " + errorMsg, "Failure", wxOK | wxICON_ERROR);
-    }
-}
-
-void SecondWindow::OnPythonLogUpdate(wxCommandEvent& event) {
-    if (m_logTextCtrl) {
-        wxString logMessage = event.GetString();
-        m_logTextCtrl->AppendText(logMessage + "\n");
-    }
 }
