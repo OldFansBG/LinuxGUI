@@ -105,8 +105,6 @@ set(SOURCES
    SecondWindow.cpp
    LinuxTerminalPanel.cpp
    SettingsDialog.cpp
-   ISOExtractor.cpp
-   DockerTransfer.cpp
    gear_icon.cpp
    ThemeConfig.cpp
    ContainerManager.cpp
@@ -128,8 +126,6 @@ set(HEADERS
    SecondWindow.h
    LinuxTerminalPanel.h
    SettingsDialog.h
-   ISOExtractor.h
-   DockerTransfer.h
    MyButton.h
    gear_icon.h
    ContainerManager.h
@@ -144,10 +140,6 @@ set(SCRIPT_FILES
    copy_iso.bat
 )
 
-# Resource files
-set(RESOURCE_FILES
-    "${CMAKE_CURRENT_SOURCE_DIR}/resources.rc"
-)
 
 # Platform-specific configurations
 if(WIN32)

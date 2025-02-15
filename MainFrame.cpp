@@ -322,9 +322,11 @@ void MainFrame::OnNextButton(wxCommandEvent& event) {
         return;
     }
 
+    // Search for SquashFS files in the ISO
     wxArrayString squashfsFiles;
     if (!SearchSquashFS(m_isoPathCtrl->GetValue(), squashfsFiles)) {
-        wxMessageBox("No SquashFS/SFS files found in the ISO.", "Error", wxOK | wxICON_ERROR);
+        wxMessageBox("No SquashFS/SFS files found in the ISO.\nThe ISO might not be a Linux distribution or might be corrupted.",
+                    "Error", wxOK | wxICON_ERROR);
         return;
     }
 
@@ -345,15 +347,10 @@ void MainFrame::OnNextButton(wxCommandEvent& event) {
 }
 
 void MainFrame::OnCancel(wxCommandEvent& event) {
-    if (m_currentExtractor) {
-        m_currentExtractor->RequestStop();
+    wxWindowList& windows = wxTopLevelWindows;
+    for (wxWindowList::iterator it = windows.begin(); it != windows.end(); ++it) {
+        (*it)->Close(true);
     }
-    m_progressGauge->SetValue(0);
-    m_statusText->SetLabel("Extraction cancelled");
-    SetStatusText("Operation cancelled");
-    
-    FindWindow(ID_NEXT)->Enable(true);
-    FindWindow(ID_CANCEL)->Enable(false);
 }
 
 void MainFrame::OnSettings(wxCommandEvent& event) {

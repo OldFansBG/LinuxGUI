@@ -54,7 +54,7 @@ SecondWindow::SecondWindow(wxWindow* parent, const wxString& title, const wxStri
 }
 
 void SecondWindow::StartPythonExecutable() {
-    wxString pythonExePath = "I:\\Files\\Desktop\\LinuxGUI\\dist\\script.exe";
+    wxString pythonExePath = "script.exe";
 
     // Create a new PythonProcess instance to handle termination events.
     PythonProcess* proc = new PythonProcess(this);

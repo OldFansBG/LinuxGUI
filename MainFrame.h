@@ -10,7 +10,6 @@
 #include "MyButton.h"
 #include "CustomTitleBar.h"
 #include "CustomStatusBar.h"
-#include "ISOExtractor.h"
 #include "SecondWindow.h"
 #include "WindowIDs.h"
 #include "SettingsManager.h"
@@ -72,7 +71,6 @@ private:
    CustomTitleBar* m_titleBar;
    CustomStatusBar* m_statusBar;
    YAML::Node m_config;
-   ISOExtractor* m_currentExtractor;
 
    // Settings manager
    SettingsManager m_settingsManager;

@@ -1,27 +1,28 @@
 #include "SettingsManager.h"
 #include <wx/file.h>
 #include <wx/log.h>
+#include <wx/filename.h>  // Needed for wxFileName
+
+// In SettingsManager.cpp
 
 bool SettingsManager::SaveSettings(const AppSettings& settings, const wxString& configPath) {
     rapidjson::Document doc = SettingsToJson(settings);
     
     rapidjson::StringBuffer buffer;
-    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);  // Now valid
+    writer.SetIndent(' ', 4);
     doc.Accept(writer);
 
     wxFile file(configPath, wxFile::write);
-    if (!file.IsOpened()) {
-        wxLogError("Failed to open settings file: %s", configPath);
-        return false;
-    }
+    if (!file.IsOpened()) return false;
     
-    if (!file.Write(buffer.GetString(), buffer.GetSize())) {
-        wxLogError("Failed to write settings to: %s", configPath);
-        return false;
-    }
-    
-    wxLogMessage("Settings saved to: %s", configPath);
-    return true;
+    return file.Write(buffer.GetString(), buffer.GetSize());
+}
+
+// Add to SettingsManager.cpp
+SettingsManager::SettingsManager() {
+    // Constructor can be empty if no initialization is needed
+    // Or add initialization logic here if required
 }
 
 bool SettingsManager::LoadSettings(AppSettings& settings, const wxString& configPath) {
@@ -49,12 +50,38 @@ rapidjson::Document SettingsManager::SettingsToJson(const AppSettings& settings)
     doc.SetObject();
     auto& allocator = doc.GetAllocator();
 
+    // Save ISO path
     doc.AddMember("iso_path", 
         rapidjson::Value(settings.isoPath.ToUTF8().data(), allocator), 
         allocator);
+
+    // Save working directory (last folder name only)
+    wxString workDir = settings.workDir;
+    wxString workDirName;
+
+    if (!workDir.IsEmpty()) {
+        // Ensure the path ends with a separator to force directory parsing
+        if (!workDir.EndsWith(wxFileName::GetPathSeparator())) {
+            workDir += wxFileName::GetPathSeparator();
+        }
+        
+        wxFileName fn(workDir);
+        fn.Normalize(wxPATH_NORM_LONG | wxPATH_NORM_DOTS);  // Normalize the path
+
+        const wxArrayString& dirs = fn.GetDirs();
+        if (!dirs.IsEmpty()) {
+            workDirName = dirs.Last();  // Get the last folder (e.g., "MyProject")
+        } else {
+            // Handle root paths like "C:\" or "/"
+            workDirName = fn.GetFullName();  // Returns "C:" for "C:\"
+        }
+    }
+
     doc.AddMember("work_dir", 
-        rapidjson::Value(settings.workDir.ToUTF8().data(), allocator), 
+        rapidjson::Value(workDirName.ToUTF8().data(), allocator), 
         allocator);
+
+    // Save other fields
     doc.AddMember("project_name", 
         rapidjson::Value(settings.projectName.ToUTF8().data(), allocator), 
         allocator);
