@@ -19,7 +19,7 @@ BEGIN_EVENT_TABLE(MainFrame, wxFrame)
    EVT_BUTTON(ID_BROWSE_ISO, MainFrame::OnBrowseISO)
    EVT_BUTTON(ID_BROWSE_WORKDIR, MainFrame::OnBrowseWorkDir)
    EVT_BUTTON(ID_DETECT, MainFrame::OnDetect)
-   EVT_BUTTON(ID_EXTRACT, MainFrame::OnExtract)
+   EVT_BUTTON(ID_NEXT, MainFrame::OnNextButton)  // Changed from ID_EXTRACT
    EVT_BUTTON(ID_CANCEL, MainFrame::OnCancel)
    EVT_BUTTON(ID_SETTINGS, MainFrame::OnSettings)
 END_EVENT_TABLE()
@@ -115,6 +115,7 @@ void MainFrame::SetStatusText(const wxString& text)
         m_statusBar->SetStatusText(text);
     }
 }
+
 wxPanel* MainFrame::CreateLogoPanel(wxWindow* parent) {
     wxPanel* panel = new wxPanel(parent);
     wxStaticBoxSizer* sizer = new wxStaticBoxSizer(wxVERTICAL, panel, "");
@@ -175,6 +176,7 @@ wxPanel* MainFrame::CreateDetectionPanel(wxWindow* parent) {
     panel->SetSizer(sizer);
     return panel;
 }
+
 wxPanel* MainFrame::CreateProjectPanel(wxWindow* parent) {
     wxPanel* panel = new wxPanel(parent);
     wxStaticBoxSizer* sizer = new wxStaticBoxSizer(wxVERTICAL, panel, "");
@@ -236,12 +238,12 @@ wxPanel* MainFrame::CreateProgressPanel(wxWindow* parent) {
     wxBoxSizer* buttonSizer = new wxBoxSizer(wxHORIZONTAL);
     buttonSizer->AddStretchSpacer();
     
-    wxButton* extractButton = new wxButton(contentPanel, ID_EXTRACT, "Extract", 
-                                         wxDefaultPosition, wxSize(-1, 25), wxBORDER_NONE);
+    wxButton* nextButton = new wxButton(contentPanel, ID_NEXT, "Next",  // Changed from "Extract"
+                                      wxDefaultPosition, wxSize(-1, 25), wxBORDER_NONE);
     wxButton* cancelButton = new wxButton(contentPanel, ID_CANCEL, "Cancel", 
                                         wxDefaultPosition, wxSize(-1, 25), wxBORDER_NONE);
     
-    buttonSizer->Add(extractButton, 0, wxRIGHT, 5);
+    buttonSizer->Add(nextButton, 0, wxRIGHT, 5);
     buttonSizer->Add(cancelButton, 0);
     
     contentSizer->Add(buttonSizer, 0, wxEXPAND | wxALL, 5);
@@ -270,6 +272,7 @@ void MainFrame::OpenSecondWindow() {
     this->Hide();
     secondWindow->Show(true);
 }
+
 void MainFrame::OnBrowseISO(wxCommandEvent& event) {
     wxFileDialog openFileDialog(this, "Open ISO file", "", "",
                               "ISO files (*.iso)|*.iso",
@@ -290,49 +293,24 @@ void MainFrame::OnBrowseWorkDir(wxCommandEvent& event) {
         return;
     m_workDirCtrl->SetValue(dirDialog.GetPath());
 }
-//! With extraction 
-// void MainFrame::OnExtract(wxCommandEvent& event) {
-//     if (m_workDirCtrl->IsEmpty() || m_isoPathCtrl->IsEmpty()) {
-//         wxMessageBox("Please select both ISO file and working directory.", 
-//                     "Error", wxOK | wxICON_ERROR);
-//         return;
-//     }
 
-//     if (m_projectNameCtrl->IsEmpty()) {
-//         wxMessageBox("Please enter a project name.", "Error", wxOK | wxICON_ERROR);
-//         return;
-//     }
+void MainFrame::OnNextButton(wxCommandEvent& event) {
+    // First save settings
+    AppSettings settings;
+    settings.isoPath = m_isoPathCtrl->GetValue();
+    settings.workDir = m_workDirCtrl->GetValue();
+    settings.projectName = m_projectNameCtrl->GetValue();
+    settings.version = m_versionCtrl->GetValue();
+    settings.detectedDistro = m_distroCtrl->GetValue();
 
-//     wxString projectPath = wxFileName(m_workDirCtrl->GetValue(), 
-//                                     m_projectNameCtrl->GetValue()).GetFullPath();
-//     if (!wxFileName::Mkdir(projectPath, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL)) {
-//         wxMessageBox("Failed to create project directory.", 
-//                     "Error", wxOK | wxICON_ERROR);
-//         return;
-//     }
+    wxString configPath = m_workDirCtrl->GetValue() + wxFILE_SEP_PATH + "settings.json";
+    
+    if (!m_settingsManager.SaveSettings(settings, configPath)) {
+        wxMessageBox("Failed to save settings!", "Error", wxOK | wxICON_ERROR);
+        return;  // Stop if save fails
+    }
 
-//     m_currentExtractor = new ISOExtractor(
-//         m_isoPathCtrl->GetValue(), 
-//         projectPath,
-//         [this](int progress, const wxString& status) {
-//             CallAfter(&MainFrame::UpdateExtractionProgress, progress, status);
-//         }
-//     );
-
-//     if (m_currentExtractor->Run() != wxTHREAD_NO_ERROR) {
-//         wxMessageBox("Failed to start extraction thread.", 
-//                     "Error", wxOK | wxICON_ERROR);
-//         delete m_currentExtractor;
-//         m_currentExtractor = nullptr;
-//         return;
-//     }
-
-//     m_currentISOPath = m_isoPathCtrl->GetValue();
-//     FindWindow(ID_EXTRACT)->Enable(false);
-//     FindWindow(ID_CANCEL)->Enable(true);
-// }
-
-void MainFrame::OnExtract(wxCommandEvent& event) {
+    // Then perform original extraction logic
     if (m_workDirCtrl->IsEmpty() || m_isoPathCtrl->IsEmpty()) {
         wxMessageBox("Please select both ISO file and working directory.", 
                     "Error", wxOK | wxICON_ERROR);
@@ -344,11 +322,9 @@ void MainFrame::OnExtract(wxCommandEvent& event) {
         return;
     }
 
-    // Search for SquashFS files in the ISO
     wxArrayString squashfsFiles;
     if (!SearchSquashFS(m_isoPathCtrl->GetValue(), squashfsFiles)) {
-        wxMessageBox("No SquashFS or SFS files found in the ISO.\nThe ISO might not be a Linux distribution or might be corrupted.",
-                    "Error", wxOK | wxICON_ERROR);
+        wxMessageBox("No SquashFS/SFS files found in the ISO.", "Error", wxOK | wxICON_ERROR);
         return;
     }
 
@@ -376,7 +352,7 @@ void MainFrame::OnCancel(wxCommandEvent& event) {
     m_statusText->SetLabel("Extraction cancelled");
     SetStatusText("Operation cancelled");
     
-    FindWindow(ID_EXTRACT)->Enable(true);
+    FindWindow(ID_NEXT)->Enable(true);
     FindWindow(ID_CANCEL)->Enable(false);
 }
 
@@ -399,7 +375,7 @@ void MainFrame::UpdateExtractionProgress(int progress, const wxString& status) {
     m_statusText->SetLabel(status);
     
     if (progress == 100) {
-        FindWindow(ID_EXTRACT)->Enable(true);
+        FindWindow(ID_NEXT)->Enable(true);
         FindWindow(ID_CANCEL)->Enable(false);
         SetStatusText("Extraction completed successfully");
         
@@ -407,10 +383,11 @@ void MainFrame::UpdateExtractionProgress(int progress, const wxString& status) {
         this->Hide();
         secondWindow->Show(true);
     } else if (progress == 0) {
-        FindWindow(ID_EXTRACT)->Enable(true);
+        FindWindow(ID_NEXT)->Enable(true);
         FindWindow(ID_CANCEL)->Enable(false);
     }
 }
+
 bool MainFrame::LoadConfig() {
     try {
         std::filesystem::path exePath = std::filesystem::current_path() / "config.yaml";
@@ -432,6 +409,7 @@ bool MainFrame::LoadConfig() {
         return false;
     }
 }
+
 bool MainFrame::SearchSquashFS(const wxString& isoPath, wxArrayString& foundFiles) {
     try {
         ISOReader reader(isoPath.ToStdString());
@@ -462,6 +440,7 @@ bool MainFrame::SearchSquashFS(const wxString& isoPath, wxArrayString& foundFile
         return false;
     }
 }
+
 void MainFrame::OnDetect(wxCommandEvent& event) {
     wxString isoPath = m_isoPathCtrl->GetValue();
     if (isoPath.IsEmpty()) {
@@ -508,6 +487,7 @@ void MainFrame::OnDetect(wxCommandEvent& event) {
         m_projectNameCtrl->SetValue(distribution);
     }
 }
+
 bool MainFrame::SearchReleaseFile(const wxString& isoPath, wxString& releaseContent) {
     try {
         ISOReader reader(isoPath.ToStdString());

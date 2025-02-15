@@ -7,7 +7,8 @@ enum {
     ID_DETECT,
     ID_EXTRACT,
     ID_CANCEL,
-    ID_SETTINGS
+    ID_SETTINGS,
+    ID_NEXT  // Added for the "Next" button
 };
 
 #endif // WINDOW_IDS_H

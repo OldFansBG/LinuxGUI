@@ -64,13 +64,23 @@ set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "disable yaml tests")
 set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "disable yaml tools")
 FetchContent_MakeAvailable(yaml-cpp)
 
+# RapidJSON Configuration (Using system-installed version from MSYS2)
+find_path(RAPIDJSON_INCLUDE_DIR NAMES rapidjson/document.h
+  PATHS "C:/msys64/mingw64/include"
+  NO_DEFAULT_PATH
+)
+
+if(NOT RAPIDJSON_INCLUDE_DIR)
+  message(FATAL_ERROR "RapidJSON not found! Install it with: pacman -S mingw-w64-x86_64-rapidjson")
+endif()
+
 # ---------------------------------------------------------------
 # Python 3.9 Configuration (Anaconda Environment)
 # ---------------------------------------------------------------
 # Force CMake to use the correct Python version
 set(Python_FIND_REGISTRY NEVER)  # Ignore Windows registry
 set(Python_FIND_STRATEGY LOCATION)  # Prioritize explicit paths
-set(Python_ROOT_DIR "I:/ProgramFiles/Anaconda/envs/myenv")  # Conda environment path
+set(Python_ROOT_DIR "C:/Users/PC/anaconda3/envs/myenv")  # Conda environment path
 find_package(Python 3.9 EXACT REQUIRED COMPONENTS Development)  # Match your Python version
 
 # Add Python include and library paths
@@ -105,6 +115,7 @@ set(SOURCES
    SQLTab.cpp
    FlatpakStore.cpp
    DesktopTab.cpp
+   SettingsManager.cpp
 )
 
 # Header files
@@ -122,6 +133,7 @@ set(HEADERS
    MyButton.h
    gear_icon.h
    ContainerManager.h
+   SettingsManager.h
 )
 
 # Scripts and resources to copy
@@ -164,6 +176,7 @@ target_include_directories(iso_analyzer
        ${libarchive_SOURCE_DIR}/libarchive
        ${libarchive_BINARY_DIR}
        ${Python_INCLUDE_DIRS}
+       ${RAPIDJSON_INCLUDE_DIR}  # Use system-installed RapidJSON
 )
 
 # Link libraries

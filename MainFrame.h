@@ -13,6 +13,7 @@
 #include "ISOExtractor.h"
 #include "SecondWindow.h"
 #include "WindowIDs.h"
+#include "SettingsManager.h"
 
 #ifdef __WXMSW__
   #include <dwmapi.h>
@@ -28,7 +29,8 @@
 class MainFrame : public wxFrame {
 public:
    MainFrame(const wxString& title);
-   ~MainFrame();  // Add destructor declaration
+   ~MainFrame();
+
    void SetStatusText(const wxString& text);
 
 private:
@@ -40,7 +42,7 @@ private:
    void OnBrowseISO(wxCommandEvent& event);
    void OnBrowseWorkDir(wxCommandEvent& event);
    void OnDetect(wxCommandEvent& event);
-   void OnExtract(wxCommandEvent& event);
+   void OnNextButton(wxCommandEvent& event);  // Changed from OnExtract
    void OnCancel(wxCommandEvent& event);
    void OnSettings(wxCommandEvent& event);
    void UpdateExtractionProgress(int progress, const wxString& status);
@@ -71,6 +73,9 @@ private:
    CustomStatusBar* m_statusBar;
    YAML::Node m_config;
    ISOExtractor* m_currentExtractor;
+
+   // Settings manager
+   SettingsManager m_settingsManager;
 
    // Event table declaration
    DECLARE_EVENT_TABLE()
