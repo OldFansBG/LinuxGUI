@@ -105,7 +105,6 @@ set(SOURCES
    SecondWindow.cpp
    LinuxTerminalPanel.cpp
    SettingsDialog.cpp
-   gear_icon.cpp
    ThemeConfig.cpp
    ContainerManager.cpp
    ScriptManager.cpp
@@ -127,7 +126,6 @@ set(HEADERS
    LinuxTerminalPanel.h
    SettingsDialog.h
    MyButton.h
-   gear_icon.h
    ContainerManager.h
    SettingsManager.h
 )

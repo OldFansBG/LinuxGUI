@@ -124,7 +124,7 @@ wxPanel* MainFrame::CreateLogoPanel(wxWindow* parent) {
     wxBoxSizer* headerSizer = new wxBoxSizer(wxHORIZONTAL);
     
     m_settingsButton = new MyButton(headerPanel, ID_SETTINGS, 
-                                  "I:\\Files\\Desktop\\LinuxGUI\\gear.png", 
+                                  "gear.png", 
                                   wxDefaultPosition, wxSize(32, 32));
     m_settingsButton->SetAlwaysShowButton(true);
     
