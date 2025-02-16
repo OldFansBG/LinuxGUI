@@ -4,8 +4,6 @@
 #include <wx/wx.h>
 #include <wx/event.h>
 
-//---------------------------------------------------------------------
-// Define control IDs if not defined elsewhere (e.g., in a resource header)
 enum {
     ID_TERMINAL_TAB = 1001,
     ID_SQL_TAB,
@@ -13,26 +11,17 @@ enum {
     ID_LOG_TEXTCTRL
 };
 
-//---------------------------------------------------------------------
-// Include external dependencies if available.
-// Otherwise, comment these includes and use the forward declarations below.
-#include "SQLTab.h"              // Your SQLTab class header
-#include "LinuxTerminalPanel.h"  // Your LinuxTerminalPanel class header
-#include "OSDetector.h"          // Your OSDetector class header
-#include "ContainerManager.h"    // Your ContainerManager class header
-
-// If you do not have these header files, you can alternatively
-// forward-declare them as shown below:
-// class SQLTab;
-// class LinuxTerminalPanel;
-// class OSDetector;
-// class ContainerManager;
-
-//---------------------------------------------------------------------
+#include "SQLTab.h"
+#include "LinuxTerminalPanel.h"
+#include "OSDetector.h"
+#include "ContainerManager.h"
 
 class SecondWindow : public wxFrame {
 public:
-    SecondWindow(wxWindow* parent, const wxString& title, const wxString& isoPath);
+    SecondWindow(wxWindow* parent, 
+                const wxString& title, 
+                const wxString& isoPath,
+                const wxString& projectDir);  // 4 parameters);
     virtual ~SecondWindow();
 
 private:
@@ -45,10 +34,10 @@ private:
 
     // Data Members
     wxString m_isoPath;
+    wxString m_projectDir;  // Added project directory member
     wxString m_containerId;
     bool m_threadRunning;
 
-    // An instance of OSDetector (if used in your project)
     OSDetector m_osDetector;
 
     // Methods

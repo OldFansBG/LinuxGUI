@@ -268,7 +268,9 @@ void MainFrame::CreateSettingsMenu() {
 }
 
 void MainFrame::OpenSecondWindow() {
-    SecondWindow* secondWindow = new SecondWindow(this, "Terminal", m_isoPathCtrl->GetValue());
+    SecondWindow* secondWindow = new SecondWindow(this, "Terminal", 
+                                                 m_isoPathCtrl->GetValue(), 
+                                                 m_workDirCtrl->GetValue());
     this->Hide();
     secondWindow->Show(true);
 }
@@ -341,7 +343,9 @@ void MainFrame::OnNextButton(wxCommandEvent& event) {
     m_currentISOPath = m_isoPathCtrl->GetValue();
     
     // Open second window
-    SecondWindow* secondWindow = new SecondWindow(this, "Terminal", m_currentISOPath);
+    SecondWindow* secondWindow = new SecondWindow(this, "Terminal", 
+                                                 m_currentISOPath, 
+                                                 m_workDirCtrl->GetValue());
     this->Hide();
     secondWindow->Show(true);
 }
@@ -376,7 +380,9 @@ void MainFrame::UpdateExtractionProgress(int progress, const wxString& status) {
         FindWindow(ID_CANCEL)->Enable(false);
         SetStatusText("Extraction completed successfully");
         
-        SecondWindow* secondWindow = new SecondWindow(this, "Terminal", m_currentISOPath);
+        SecondWindow* secondWindow = new SecondWindow(this, "Terminal", 
+                                                     m_currentISOPath, 
+                                                     m_workDirCtrl->GetValue());
         this->Hide();
         secondWindow->Show(true);
     } else if (progress == 0) {

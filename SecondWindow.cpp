@@ -39,33 +39,49 @@ wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)
     EVT_BUTTON(ID_NEXT_BUTTON, SecondWindow::OnNext)
 wxEND_EVENT_TABLE()
 
-SecondWindow::SecondWindow(wxWindow* parent, const wxString& title, const wxString& isoPath)
+// CORRECT IMPLEMENTATION
+SecondWindow::SecondWindow(wxWindow* parent, 
+        const wxString& title, 
+        const wxString& isoPath,
+        const wxString& projectDir)  // No semicolon here
     : wxFrame(parent, wxID_ANY, title, wxDefaultPosition, wxSize(800, 650)),
-      m_isoPath(isoPath),
-      m_threadRunning(false)
+    m_isoPath(isoPath),
+    m_projectDir(projectDir),
+    m_threadRunning(false)
 {
+    // Constructor body
     m_containerId = ContainerManager::Get().GetCurrentContainerId();
     CreateControls();
     Centre();
     SetBackgroundColour(wxColour(40, 44, 52));
-
-    // Start the external Python executable
     StartPythonExecutable();
 }
 
 void SecondWindow::StartPythonExecutable() {
-    wxString pythonExePath = "script.exe";
+    wxString pythonExePath = "script.exe";  // Path to your Python executable
+    
+    // Get project directory from member variable (added to SecondWindow class)
+    wxString projectDir = m_projectDir;
+    
+    // Format command with arguments
+    wxString command = wxString::Format("\"%s\" --project-dir \"%s\"", 
+                                      pythonExePath, projectDir);
 
-    // Create a new PythonProcess instance to handle termination events.
     PythonProcess* proc = new PythonProcess(this);
 
-    // Start the executable asynchronously and hide its console window.
-    long pid = wxExecute(pythonExePath, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);
+    // Execute with formatted command
+    long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);
+    
     if (pid == 0) {
         wxMessageBox("Failed to start Python executable!", "Error", wxICON_ERROR);
         delete proc;
+        m_logTextCtrl->AppendText("\n[ERROR] Failed to launch script.exe\n");
     } else {
         m_threadRunning = true;
+        m_logTextCtrl->AppendText(wxString::Format(
+            "\n[STATUS] Started processing in project directory: %s\n", 
+            projectDir
+        ));
     }
 }
 
