@@ -1,31 +1,136 @@
 #include "SecondWindow.h"
-#include <wx/utils.h>    // For wxExecute
-#include <wx/statline.h> // For wxStaticLine
-#include <wx/process.h>  // For wxProcess
+#include <wx/utils.h>
+#include <wx/statline.h>
+#include <wx/process.h>
+#include <wx/dcbuffer.h>
+#include <cmath>
+#include <chrono>
 
 //---------------------------------------------------------------------
-// Custom wxProcess subclass to detect when the Python executable terminates.
+// Custom wxProcess subclass for Python executable
 class PythonProcess : public wxProcess {
 public:
-    PythonProcess(wxFrame* parent)
-        : wxProcess(parent)
+    PythonProcess(SecondWindow* parent)  // Changed to accept SecondWindow*
+        : wxProcess(parent),
+          m_parent(parent)  // Store reference to parent window
     {
-        // If auto-delete is available, use it.
 #ifdef wxPROCESS_AUTO_DELETE
         SetExtraStyle(wxPROCESS_AUTO_DELETE);
 #endif
     }
 
-    // This method is called automatically when the process terminates.
     virtual void OnTerminate(int pid, int status) override {
-        wxMessageBox("Python executable has completed.", 
-                     "Process Completed", 
-                     wxOK | wxICON_INFORMATION);
+        // Notify parent to close overlay
+        if (m_parent) {
+            m_parent->CloseOverlay();
+            wxMessageBox("Python executable has completed.",
+                        "Process Completed",
+                        wxOK | wxICON_INFORMATION);
+        }
 #ifndef wxPROCESS_AUTO_DELETE
-        // If auto-delete is not available, delete this process object manually.
         delete this;
 #endif
     }
+
+private:
+    SecondWindow* m_parent;  // Reference to parent window
+};
+//---------------------------------------------------------------------
+
+//---------------------------------------------------------------------
+// OverlayFrame implementation (adjusted for proper layering)
+class OverlayFrame : public wxDialog {
+public:
+    OverlayFrame(wxWindow* parent)
+        : wxDialog(parent, wxID_ANY, "", wxDefaultPosition, wxDefaultSize,
+                   wxNO_BORDER | wxFRAME_FLOAT_ON_PARENT)  // Changed flag
+    {
+        SetBackgroundColour(wxColour(0, 0, 0));
+        SetTransparent(200);
+        SetBackgroundStyle(wxBG_STYLE_PAINT);
+
+        m_parentWindow = parent; // Store parent window
+
+        UpdatePositionAndSize(); // Initial positioning and sizing
+
+        m_animationAngle = 0.0;
+
+        Bind(wxEVT_PAINT, &OverlayFrame::OnPaint, this);
+        Bind(wxEVT_TIMER, &OverlayFrame::OnTimer, this);
+
+        if (parent) {
+            parent->Bind(wxEVT_MOVE, &OverlayFrame::OnParentMoveOrResize, this);
+            parent->Bind(wxEVT_SIZE, &OverlayFrame::OnParentMoveOrResize, this);
+        }
+
+        m_timer.SetOwner(this);
+        m_timer.Start(30);
+        Show(true);
+    }
+
+    ~OverlayFrame() {
+        if (m_parentWindow) {
+            m_parentWindow->Unbind(wxEVT_MOVE, &OverlayFrame::OnParentMoveOrResize, this);
+            m_parentWindow->Unbind(wxEVT_SIZE, &OverlayFrame::OnParentMoveOrResize, this);
+        }
+        m_timer.Stop();
+    }
+
+private:
+    void UpdatePositionAndSize() {
+        if (m_parentWindow) {
+            wxRect clientRect = m_parentWindow->GetClientRect();
+            SetPosition(m_parentWindow->ClientToScreen(clientRect.GetTopLeft()));
+            SetSize(clientRect.GetSize());
+        }
+    }
+
+
+    void OnParentMoveOrResize(wxEvent& event) {
+        UpdatePositionAndSize();
+    }
+
+    void OnPaint(wxPaintEvent& event) {
+        wxAutoBufferedPaintDC dc(this);
+        dc.Clear();
+
+        wxSize size = GetClientSize();
+
+        // Dim background (90% opacity)
+        dc.SetBrush(wxBrush(wxColour(0, 0, 0, 230)));  // Darker overlay
+        dc.SetPen(*wxTRANSPARENT_PEN);
+        dc.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
+
+        // Draw animation
+        DrawLoadingAnimation(dc, size);
+    }
+
+    void DrawLoadingAnimation(wxDC& dc, const wxSize& size) {
+        wxPoint center(size.GetWidth()/2, size.GetHeight()/2);
+        int radius = std::min(size.GetWidth(), size.GetHeight()) / 6;
+        int numPoints = 8;
+        int pointRadius = radius / 4;
+
+        dc.SetBrush(*wxWHITE_BRUSH);
+        dc.SetPen(*wxWHITE_PEN);
+
+        for (int i = 0; i < numPoints; ++i) {
+            double angle = m_animationAngle + (2.0 * M_PI * i / numPoints);
+            int x = center.x + static_cast<int>(radius * cos(angle));
+            int y = center.y + static_cast<int>(radius * sin(angle));
+            dc.DrawCircle(x, y, pointRadius);
+        }
+    }
+
+    void OnTimer(wxTimerEvent& event) {
+        m_animationAngle += 0.1;
+        if (m_animationAngle > 2.0 * M_PI) m_animationAngle -= 2.0 * M_PI;
+        Refresh();
+    }
+
+    double m_animationAngle;
+    wxTimer m_timer;
+    wxWindow* m_parentWindow; // Store parent window pointer
 };
 //---------------------------------------------------------------------
 
@@ -39,57 +144,64 @@ wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)
     EVT_BUTTON(ID_NEXT_BUTTON, SecondWindow::OnNext)
 wxEND_EVENT_TABLE()
 
-// CORRECT IMPLEMENTATION
-SecondWindow::SecondWindow(wxWindow* parent, 
-        const wxString& title, 
+SecondWindow::SecondWindow(wxWindow* parent,
+        const wxString& title,
         const wxString& isoPath,
-        const wxString& projectDir)  // No semicolon here
+        const wxString& projectDir)
     : wxFrame(parent, wxID_ANY, title, wxDefaultPosition, wxSize(800, 650)),
     m_isoPath(isoPath),
     m_projectDir(projectDir),
-    m_threadRunning(false)
+    m_threadRunning(false),
+    m_overlay(nullptr)
 {
-    // Constructor body
     m_containerId = ContainerManager::Get().GetCurrentContainerId();
     CreateControls();
     Centre();
     SetBackgroundColour(wxColour(40, 44, 52));
+
+    // Show main window first before creating overlay
+    Show(true);
+    m_overlay = new OverlayFrame(this);
+
     StartPythonExecutable();
-}
-
-void SecondWindow::StartPythonExecutable() {
-    wxString pythonExePath = "script.exe";  // Path to your Python executable
-    
-    // Get project directory from member variable (added to SecondWindow class)
-    wxString projectDir = m_projectDir;
-    
-    // Format command with arguments
-    wxString command = wxString::Format("\"%s\" --project-dir \"%s\"", 
-                                      pythonExePath, projectDir);
-
-    PythonProcess* proc = new PythonProcess(this);
-
-    // Execute with formatted command
-    long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);
-    
-    if (pid == 0) {
-        wxMessageBox("Failed to start Python executable!", "Error", wxICON_ERROR);
-        delete proc;
-        m_logTextCtrl->AppendText("\n[ERROR] Failed to launch script.exe\n");
-    } else {
-        m_threadRunning = true;
-        m_logTextCtrl->AppendText(wxString::Format(
-            "\n[STATUS] Started processing in project directory: %s\n", 
-            projectDir
-        ));
-    }
 }
 
 SecondWindow::~SecondWindow() {
     CleanupThread();
-    
     if (!m_containerId.IsEmpty()) {
         ContainerManager::Get().CleanupContainer(m_containerId);
+    }
+}
+
+void SecondWindow::CloseOverlay() {
+    if (m_overlay) {
+        m_overlay->Destroy();
+        m_overlay = nullptr;
+    }
+}
+
+void SecondWindow::StartPythonExecutable() {
+    wxString pythonExePath = "script.exe";
+    wxString projectDir = m_projectDir;
+
+    wxString command = wxString::Format("\"%s\" --project-dir \"%s\"",
+                                      pythonExePath, projectDir);
+
+    PythonProcess* proc = new PythonProcess(this);  // Pass SecondWindow* to process
+
+    long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);
+
+    if (pid == 0) {
+        wxMessageBox("Failed to start Python executable!", "Error", wxICON_ERROR);
+        delete proc;
+        m_logTextCtrl->AppendText("\n[ERROR] Failed to launch script.exe\n");
+        CloseOverlay();  // Close overlay on failure
+    } else {
+        m_threadRunning = true;
+        m_logTextCtrl->AppendText(wxString::Format(
+            "\n[STATUS] Started processing in project directory: %s\n",
+            projectDir
+        ));
     }
 }
 
@@ -120,15 +232,15 @@ void SecondWindow::CreateControls() {
     wxBoxSizer* tabSizer = new wxBoxSizer(wxHORIZONTAL);
     wxBoxSizer* centeredTabSizer = new wxBoxSizer(wxHORIZONTAL);
 
-    wxButton* terminalButton = new wxButton(tabPanel, ID_TERMINAL_TAB, "TERMINAL", 
+    wxButton* terminalButton = new wxButton(tabPanel, ID_TERMINAL_TAB, "TERMINAL",
         wxDefaultPosition, wxSize(100, 40), wxBORDER_NONE);
     terminalButton->SetBackgroundColour(wxColour(44, 49, 58));
     terminalButton->SetForegroundColour(*wxWHITE);
 
-    wxStaticLine* separator = new wxStaticLine(tabPanel, wxID_ANY, 
+    wxStaticLine* separator = new wxStaticLine(tabPanel, wxID_ANY,
         wxDefaultPosition, wxDefaultSize, wxLI_VERTICAL);
 
-    wxButton* sqlButton = new wxButton(tabPanel, ID_SQL_TAB, "SQL", 
+    wxButton* sqlButton = new wxButton(tabPanel, ID_SQL_TAB, "SQL",
         wxDefaultPosition, wxSize(100, 40), wxBORDER_NONE);
     sqlButton->SetBackgroundColour(wxColour(30, 30, 30));
     sqlButton->SetForegroundColour(wxColour(128, 128, 128));
@@ -157,7 +269,7 @@ void SecondWindow::CreateControls() {
     }
 
     // Add a log text control
-    m_logTextCtrl = new wxTextCtrl(m_terminalTab, ID_LOG_TEXTCTRL, wxEmptyString, 
+    m_logTextCtrl = new wxTextCtrl(m_terminalTab, ID_LOG_TEXTCTRL, wxEmptyString,
         wxDefaultPosition, wxSize(680, 150), wxTE_MULTILINE | wxTE_READONLY);
     m_logTextCtrl->SetBackgroundColour(wxColour(30, 30, 30));
     m_logTextCtrl->SetForegroundColour(wxColour(229, 229, 229));
@@ -171,7 +283,7 @@ void SecondWindow::CreateControls() {
     buttonPanel->SetBackgroundColour(wxColour(30, 30, 30));
     wxBoxSizer* buttonSizer = new wxBoxSizer(wxHORIZONTAL);
 
-    wxButton* nextButton = new wxButton(buttonPanel, ID_NEXT_BUTTON, "Next", 
+    wxButton* nextButton = new wxButton(buttonPanel, ID_NEXT_BUTTON, "Next",
         wxDefaultPosition, wxSize(120, 35));
     nextButton->SetBackgroundColour(wxColour(189, 147, 249));
     nextButton->SetForegroundColour(*wxWHITE);
@@ -196,11 +308,11 @@ void SecondWindow::OnClose(wxCloseEvent& event) {
     if (!m_containerId.IsEmpty()) {
         ContainerManager::Get().CleanupContainer(m_containerId);
     }
-    
+
     if (GetParent()) {
         GetParent()->Show();
     }
-    
+
     Destroy();
 }
 
@@ -217,9 +329,29 @@ void SecondWindow::OnTabChanged(wxCommandEvent& event) {
     if (event.GetId() == ID_TERMINAL_TAB) {
         m_terminalTab->Show();
         m_sqlTab->Hide();
-    } else {
+        wxButton* terminalButton = wxDynamicCast(FindWindow(ID_TERMINAL_TAB), wxButton);
+        wxButton* sqlButton = wxDynamicCast(FindWindow(ID_SQL_TAB), wxButton);
+        if (terminalButton) {
+            terminalButton->SetBackgroundColour(wxColour(44, 49, 58));
+            terminalButton->SetForegroundColour(*wxWHITE);
+        }
+        if (sqlButton) {
+            sqlButton->SetBackgroundColour(wxColour(30, 30, 30));
+            sqlButton->SetForegroundColour(wxColour(128, 128, 128));
+        }
+    } else if (event.GetId() == ID_SQL_TAB) {
         m_terminalTab->Hide();
         m_sqlTab->Show();
+        wxButton* terminalButton = wxDynamicCast(FindWindow(ID_TERMINAL_TAB), wxButton);
+        wxButton* sqlButton = wxDynamicCast(FindWindow(ID_SQL_TAB), wxButton);
+        if (terminalButton) {
+            terminalButton->SetBackgroundColour(wxColour(30, 30, 30));
+            terminalButton->SetForegroundColour(wxColour(128, 128, 128));
+        }
+        if (sqlButton) {
+            sqlButton->SetBackgroundColour(wxColour(44, 49, 58));
+            sqlButton->SetForegroundColour(*wxWHITE);
+        }
     }
     m_mainPanel->Layout();
 }

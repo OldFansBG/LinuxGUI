@@ -16,13 +16,18 @@ enum {
 #include "OSDetector.h"
 #include "ContainerManager.h"
 
+// Forward declaration for OverlayFrame
+class OverlayFrame;
+
 class SecondWindow : public wxFrame {
 public:
     SecondWindow(wxWindow* parent, 
                 const wxString& title, 
                 const wxString& isoPath,
-                const wxString& projectDir);  // 4 parameters);
+                const wxString& projectDir);
     virtual ~SecondWindow();
+
+    void CloseOverlay();  // Method to close the overlay
 
 private:
     // UI Elements
@@ -34,9 +39,12 @@ private:
 
     // Data Members
     wxString m_isoPath;
-    wxString m_projectDir;  // Added project directory member
+    wxString m_projectDir;
     wxString m_containerId;
     bool m_threadRunning;
+
+    // Overlay
+    OverlayFrame* m_overlay;
 
     OSDetector m_osDetector;
 
