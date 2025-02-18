@@ -1,3 +1,4 @@
+// SecondWindow.h
 #ifndef SECONDWINDOW_H
 #define SECONDWINDOW_H
 
@@ -33,7 +34,7 @@ private:
     // UI Elements
     wxPanel* m_mainPanel;
     wxPanel* m_terminalTab;
-    wxPanel* m_sqlTab;
+    SQLTab* m_sqlTab;
     wxTextCtrl* m_logTextCtrl;
     LinuxTerminalPanel* m_terminalPanel;
 

@@ -1,3 +1,5 @@
+
+// SecondWindow.cpp
 #include "SecondWindow.h"
 #include <wx/utils.h>
 #include <wx/statline.h>
@@ -5,14 +7,19 @@
 #include <wx/dcbuffer.h>
 #include <cmath>
 #include <chrono>
-
+#ifdef __WXMSW__
+#include <windows.h>
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
 //---------------------------------------------------------------------
 // Custom wxProcess subclass for Python executable
 class PythonProcess : public wxProcess {
 public:
-    PythonProcess(SecondWindow* parent)  // Changed to accept SecondWindow*
+    PythonProcess(SecondWindow* parent)
         : wxProcess(parent),
-          m_parent(parent)  // Store reference to parent window
+          m_parent(parent)
     {
 #ifdef wxPROCESS_AUTO_DELETE
         SetExtraStyle(wxPROCESS_AUTO_DELETE);
@@ -20,7 +27,6 @@ public:
     }
 
     virtual void OnTerminate(int pid, int status) override {
-        // Notify parent to close overlay
         if (m_parent) {
             m_parent->CloseOverlay();
             wxMessageBox("Python executable has completed.",
@@ -33,25 +39,25 @@ public:
     }
 
 private:
-    SecondWindow* m_parent;  // Reference to parent window
+    SecondWindow* m_parent;
 };
 //---------------------------------------------------------------------
 
 //---------------------------------------------------------------------
-// OverlayFrame implementation (adjusted for proper layering)
+// OverlayFrame implementation
 class OverlayFrame : public wxDialog {
 public:
     OverlayFrame(wxWindow* parent)
         : wxDialog(parent, wxID_ANY, "", wxDefaultPosition, wxDefaultSize,
-                   wxNO_BORDER | wxFRAME_FLOAT_ON_PARENT)  // Changed flag
+                   wxNO_BORDER | wxFRAME_FLOAT_ON_PARENT)
     {
         SetBackgroundColour(wxColour(0, 0, 0));
         SetTransparent(200);
         SetBackgroundStyle(wxBG_STYLE_PAINT);
 
-        m_parentWindow = parent; // Store parent window
+        m_parentWindow = parent;
 
-        UpdatePositionAndSize(); // Initial positioning and sizing
+        UpdatePositionAndSize();
 
         m_animationAngle = 0.0;
 
@@ -85,7 +91,6 @@ private:
         }
     }
 
-
     void OnParentMoveOrResize(wxEvent& event) {
         UpdatePositionAndSize();
     }
@@ -97,11 +102,10 @@ private:
         wxSize size = GetClientSize();
 
         // Dim background (90% opacity)
-        dc.SetBrush(wxBrush(wxColour(0, 0, 0, 230)));  // Darker overlay
+        dc.SetBrush(wxBrush(wxColour(0, 0, 0, 230)));
         dc.SetPen(*wxTRANSPARENT_PEN);
         dc.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
 
-        // Draw animation
         DrawLoadingAnimation(dc, size);
     }
 
@@ -130,7 +134,7 @@ private:
 
     double m_animationAngle;
     wxTimer m_timer;
-    wxWindow* m_parentWindow; // Store parent window pointer
+    wxWindow* m_parentWindow;
 };
 //---------------------------------------------------------------------
 
@@ -148,18 +152,27 @@ SecondWindow::SecondWindow(wxWindow* parent,
         const wxString& title,
         const wxString& isoPath,
         const wxString& projectDir)
-    : wxFrame(parent, wxID_ANY, title, wxDefaultPosition, wxSize(800, 650)),
+    : wxFrame(parent, wxID_ANY, title, 
+            wxDefaultPosition, wxSize(800, 650),
+            wxDEFAULT_FRAME_STYLE | wxSYSTEM_MENU | wxCAPTION | 
+            wxCLOSE_BOX | wxCLIP_CHILDREN | wxMINIMIZE_BOX | 
+            wxMAXIMIZE_BOX | wxRESIZE_BORDER | wxFRAME_NO_TASKBAR), // Updated style flags
     m_isoPath(isoPath),
     m_projectDir(projectDir),
     m_threadRunning(false),
     m_overlay(nullptr)
 {
+    // Enable dark mode title bar
+    #ifdef __WXMSW__
+    BOOL value = TRUE;
+    DwmSetWindowAttribute(GetHandle(), DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
+    #endif
+
     m_containerId = ContainerManager::Get().GetCurrentContainerId();
     CreateControls();
     Centre();
     SetBackgroundColour(wxColour(40, 44, 52));
 
-    // Show main window first before creating overlay
     Show(true);
     m_overlay = new OverlayFrame(this);
 
@@ -187,7 +200,7 @@ void SecondWindow::StartPythonExecutable() {
     wxString command = wxString::Format("\"%s\" --project-dir \"%s\"",
                                       pythonExePath, projectDir);
 
-    PythonProcess* proc = new PythonProcess(this);  // Pass SecondWindow* to process
+    PythonProcess* proc = new PythonProcess(this);
 
     long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);
 
@@ -195,7 +208,7 @@ void SecondWindow::StartPythonExecutable() {
         wxMessageBox("Failed to start Python executable!", "Error", wxICON_ERROR);
         delete proc;
         m_logTextCtrl->AppendText("\n[ERROR] Failed to launch script.exe\n");
-        CloseOverlay();  // Close overlay on failure
+        CloseOverlay();
     } else {
         m_threadRunning = true;
         m_logTextCtrl->AppendText(wxString::Format(
@@ -207,7 +220,6 @@ void SecondWindow::StartPythonExecutable() {
 
 void SecondWindow::CleanupThread() {
     if (m_threadRunning) {
-        // If needed, implement process termination logic here.
         m_threadRunning = false;
     }
 }
@@ -215,16 +227,6 @@ void SecondWindow::CleanupThread() {
 void SecondWindow::CreateControls() {
     m_mainPanel = new wxPanel(this);
     wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
-
-    // Title Bar
-    wxPanel* titleBar = new wxPanel(m_mainPanel);
-    titleBar->SetBackgroundColour(wxColour(26, 26, 26));
-    wxBoxSizer* titleSizer = new wxBoxSizer(wxHORIZONTAL);
-    wxStaticText* titleText = new wxStaticText(titleBar, wxID_ANY, "Terminal");
-    titleText->SetForegroundColour(wxColour(229, 229, 229));
-    titleSizer->Add(titleText, 0, wxALL | wxALIGN_CENTER_VERTICAL, 10);
-    titleBar->SetSizer(titleSizer);
-    mainSizer->Add(titleBar, 0, wxEXPAND);
 
     // Tab Bar
     wxPanel* tabPanel = new wxPanel(m_mainPanel);
@@ -268,7 +270,6 @@ void SecondWindow::CreateControls() {
         terminalSizer->Add(m_terminalPanel, 1, wxEXPAND | wxALL, 5);
     }
 
-    // Add a log text control
     m_logTextCtrl = new wxTextCtrl(m_terminalTab, ID_LOG_TEXTCTRL, wxEmptyString,
         wxDefaultPosition, wxSize(680, 150), wxTE_MULTILINE | wxTE_READONLY);
     m_logTextCtrl->SetBackgroundColour(wxColour(30, 30, 30));
