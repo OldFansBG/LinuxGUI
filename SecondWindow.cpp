@@ -156,7 +156,7 @@ SecondWindow::SecondWindow(wxWindow* parent,
             wxDefaultPosition, wxSize(800, 650),
             wxDEFAULT_FRAME_STYLE | wxSYSTEM_MENU | wxCAPTION | 
             wxCLOSE_BOX | wxCLIP_CHILDREN | wxMINIMIZE_BOX | 
-            wxMAXIMIZE_BOX | wxRESIZE_BORDER | wxFRAME_NO_TASKBAR), // Updated style flags
+            wxMAXIMIZE_BOX | wxRESIZE_BORDER), // Updated style flags
     m_isoPath(isoPath),
     m_projectDir(projectDir),
     m_threadRunning(false),
@@ -196,9 +196,11 @@ void SecondWindow::CloseOverlay() {
 void SecondWindow::StartPythonExecutable() {
     wxString pythonExePath = "script.exe";
     wxString projectDir = m_projectDir;
+    wxString isoPath = m_isoPath; // Add this line to get the ISO path
 
-    wxString command = wxString::Format("\"%s\" --project-dir \"%s\"",
-                                      pythonExePath, projectDir);
+    // Include --iso-path in the command
+    wxString command = wxString::Format("\"%s\" --project-dir \"%s\" --iso-path \"%s\"",
+                                      pythonExePath, projectDir, isoPath); // Updated
 
     PythonProcess* proc = new PythonProcess(this);
 

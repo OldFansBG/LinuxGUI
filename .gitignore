@@ -17,3 +17,6 @@ DiplomenProekt.docx
 docker_iso_builder.py
 pt.cpp
 tesr.py
+*.py
+*.spec
+*.spec
