@@ -135,7 +135,6 @@ set(SCRIPT_FILES
    setup_output.sh
    setup_chroot.sh
    create_iso.sh
-   copy_iso.bat
 )
 
 

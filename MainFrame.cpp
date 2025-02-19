@@ -301,7 +301,12 @@ void MainFrame::OnNextButton(wxCommandEvent& event) {
     AppSettings settings;
     settings.isoPath = m_isoPathCtrl->GetValue();
     settings.workDir = m_workDirCtrl->GetValue();
-    settings.projectName = m_projectNameCtrl->GetValue();
+    
+    // Remove spaces from the project name before saving
+    wxString projectName = m_projectNameCtrl->GetValue();
+    projectName.Replace(" ", ""); // Replace spaces with empty string
+    settings.projectName = projectName;
+    
     settings.version = m_versionCtrl->GetValue();
     settings.detectedDistro = m_distroCtrl->GetValue();
 
