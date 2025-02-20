@@ -2,10 +2,10 @@
 /backup/
 /.history/
 /python/
-/scripts/
 /iso/
 /.lh/
 /tools/
+/scripts/
 /build1/
 *.7z
 tempCodeRunnerFile.bat
@@ -17,6 +17,6 @@ DiplomenProekt.docx
 docker_iso_builder.py
 pt.cpp
 tesr.py
-*.py
 *.spec
 *.spec
+test.py
