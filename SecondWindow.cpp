@@ -1,4 +1,3 @@
-
 // SecondWindow.cpp
 #include "SecondWindow.h"
 #include <wx/utils.h>
@@ -13,6 +12,7 @@
 #pragma comment(lib, "dwmapi.lib")
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
+
 //---------------------------------------------------------------------
 // Custom wxProcess subclass for Python executable
 class PythonProcess : public wxProcess {
@@ -146,6 +146,9 @@ wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)
     EVT_BUTTON(ID_TERMINAL_TAB, SecondWindow::OnTabChanged)
     EVT_BUTTON(ID_SQL_TAB, SecondWindow::OnTabChanged)
     EVT_BUTTON(ID_NEXT_BUTTON, SecondWindow::OnNext)
+#ifdef __WXMSW__
+    EVT_TIMER(wxID_ANY, SecondWindow::OnWinTerminalTimer)
+#endif
 wxEND_EVENT_TABLE()
 
 SecondWindow::SecondWindow(wxWindow* parent,
@@ -161,6 +164,10 @@ SecondWindow::SecondWindow(wxWindow* parent,
     m_projectDir(projectDir),
     m_threadRunning(false),
     m_overlay(nullptr)
+#ifdef __WXMSW__
+    , m_winTerminalTimer(nullptr),
+    m_winTerminalStep(0)
+#endif
 {
     // Enable dark mode title bar
     #ifdef __WXMSW__
@@ -184,6 +191,12 @@ SecondWindow::~SecondWindow() {
     if (!m_containerId.IsEmpty()) {
         ContainerManager::Get().CleanupContainer(m_containerId);
     }
+#ifdef __WXMSW__
+    if (m_winTerminalTimer) {
+        m_winTerminalTimer->Stop();
+        delete m_winTerminalTimer;
+    }
+#endif
 }
 
 void SecondWindow::CloseOverlay() {
@@ -271,6 +284,18 @@ void SecondWindow::CreateControls() {
         m_terminalPanel->SetMinSize(wxSize(680, 400));
         terminalSizer->Add(m_terminalPanel, 1, wxEXPAND | wxALL, 5);
     }
+#ifdef __WXMSW__
+    else {
+        wxPanel* winTerminalPanel = new wxPanel(m_terminalTab, wxID_ANY, wxDefaultPosition, wxSize(680, 400));
+        winTerminalPanel->SetBackgroundColour(wxColour(30, 30, 30));
+        terminalSizer->Add(winTerminalPanel, 1, wxEXPAND | wxALL, 5);
+
+        m_winTerminalStep = 0;
+        m_winTerminalTimer = new wxTimer(this);
+        Bind(wxEVT_TIMER, &SecondWindow::OnWinTerminalTimer, this, m_winTerminalTimer->GetId());
+        m_winTerminalTimer->Start(500); // Start the timer after 500ms
+    }
+#endif
 
     m_logTextCtrl = new wxTextCtrl(m_terminalTab, ID_LOG_TEXTCTRL, wxEmptyString,
         wxDefaultPosition, wxSize(680, 150), wxTE_MULTILINE | wxTE_READONLY);
@@ -358,3 +383,44 @@ void SecondWindow::OnTabChanged(wxCommandEvent& event) {
     }
     m_mainPanel->Layout();
 }
+
+#ifdef __WXMSW__
+void SecondWindow::OnWinTerminalTimer(wxTimerEvent& event) {
+    m_winTerminalTimer->Stop();
+
+    wxPanel* winTerminalPanel = dynamic_cast<wxPanel*>(m_terminalTab->GetChildren().Item(0)->GetData());
+    if (!winTerminalPanel) return;
+
+    std::wstring cmd = L"cmd.exe /k title EMBEDDED_CMD";
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION pi;
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+
+    if (CreateProcessW(NULL, const_cast<wchar_t*>(cmd.c_str()),
+        NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) {
+        
+        Sleep(500);
+        HWND hwndCmd = FindWindowW(L"ConsoleWindowClass", L"EMBEDDED_CMD");
+        if (hwndCmd) {
+            LONG_PTR style = GetWindowLongPtrW(hwndCmd, GWL_STYLE);
+            style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+            SetWindowLongPtrW(hwndCmd, GWL_STYLE, style);
+
+            // Fixed line with global namespace operator
+            ::SetParent(hwndCmd, (HWND)winTerminalPanel->GetHWND());
+
+            ::SetWindowPos(hwndCmd, NULL, 0, 0,
+                winTerminalPanel->GetClientSize().GetWidth(),
+                winTerminalPanel->GetClientSize().GetHeight(),
+                SWP_NOZORDER | SWP_FRAMECHANGED);
+            
+            ::ShowWindow(hwndCmd, SW_SHOW);
+        }
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    } else {
+        wxLogError("Failed to start CMD process");
+    }
+}
+#endif

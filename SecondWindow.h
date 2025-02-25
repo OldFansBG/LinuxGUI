@@ -17,7 +17,10 @@ enum {
 #include "OSDetector.h"
 #include "ContainerManager.h"
 
-// Forward declaration for OverlayFrame
+#ifdef _WIN32
+#include <wx/timer.h>
+#endif
+
 class OverlayFrame;
 
 class SecondWindow : public wxFrame {
@@ -28,33 +31,33 @@ public:
                 const wxString& projectDir);
     virtual ~SecondWindow();
 
-    void CloseOverlay();  // Method to close the overlay
+    void CloseOverlay();
 
 private:
-    // UI Elements
     wxPanel* m_mainPanel;
     wxPanel* m_terminalTab;
     SQLTab* m_sqlTab;
     wxTextCtrl* m_logTextCtrl;
     LinuxTerminalPanel* m_terminalPanel;
 
-    // Data Members
     wxString m_isoPath;
     wxString m_projectDir;
     wxString m_containerId;
     bool m_threadRunning;
 
-    // Overlay
     OverlayFrame* m_overlay;
-
     OSDetector m_osDetector;
 
-    // Methods
+#ifdef _WIN32
+    wxTimer* m_winTerminalTimer;
+    int m_winTerminalStep;
+    void OnWinTerminalTimer(wxTimerEvent& event); // Declare the timer handler
+#endif
+
     void CreateControls();
     void StartPythonExecutable();
     void CleanupThread();
 
-    // Event Handlers
     void OnClose(wxCloseEvent& event);
     void OnNext(wxCommandEvent& event);
     void OnTabChanged(wxCommandEvent& event);
