@@ -209,11 +209,11 @@ void SecondWindow::CloseOverlay() {
 void SecondWindow::StartPythonExecutable() {
     wxString pythonExePath = "script.exe";
     wxString projectDir = m_projectDir;
-    wxString isoPath = m_isoPath; // Add this line to get the ISO path
+    wxString isoPath = m_isoPath;
 
     // Include --iso-path in the command
     wxString command = wxString::Format("\"%s\" --project-dir \"%s\" --iso-path \"%s\"",
-                                      pythonExePath, projectDir, isoPath); // Updated
+                                      pythonExePath, projectDir, isoPath);
 
     PythonProcess* proc = new PythonProcess(this);
 
@@ -222,14 +222,9 @@ void SecondWindow::StartPythonExecutable() {
     if (pid == 0) {
         wxMessageBox("Failed to start Python executable!", "Error", wxICON_ERROR);
         delete proc;
-        m_logTextCtrl->AppendText("\n[ERROR] Failed to launch script.exe\n");
         CloseOverlay();
     } else {
         m_threadRunning = true;
-        m_logTextCtrl->AppendText(wxString::Format(
-            "\n[STATUS] Started processing in project directory: %s\n",
-            projectDir
-        ));
     }
 }
 
@@ -296,12 +291,6 @@ void SecondWindow::CreateControls() {
         m_winTerminalTimer->Start(500); // Start the timer after 500ms
     }
 #endif
-
-    m_logTextCtrl = new wxTextCtrl(m_terminalTab, ID_LOG_TEXTCTRL, wxEmptyString,
-        wxDefaultPosition, wxSize(680, 150), wxTE_MULTILINE | wxTE_READONLY);
-    m_logTextCtrl->SetBackgroundColour(wxColour(30, 30, 30));
-    m_logTextCtrl->SetForegroundColour(wxColour(229, 229, 229));
-    terminalSizer->Add(m_logTextCtrl, 0, wxEXPAND | wxALL, 5);
 
     m_terminalTab->SetSizer(terminalSizer);
     m_sqlTab->Hide();

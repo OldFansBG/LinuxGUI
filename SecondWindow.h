@@ -8,8 +8,7 @@
 enum {
     ID_TERMINAL_TAB = 1001,
     ID_SQL_TAB,
-    ID_NEXT_BUTTON,
-    ID_LOG_TEXTCTRL
+    ID_NEXT_BUTTON
 };
 
 #include "SQLTab.h"
@@ -37,7 +36,6 @@ private:
     wxPanel* m_mainPanel;
     wxPanel* m_terminalTab;
     SQLTab* m_sqlTab;
-    wxTextCtrl* m_logTextCtrl;
     LinuxTerminalPanel* m_terminalPanel;
 
     wxString m_isoPath;
