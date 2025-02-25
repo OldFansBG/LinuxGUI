@@ -56,29 +56,30 @@ def sanitize_container_name(name):
     return sanitized[:64]
 
 def create_setup_scripts(project_dir):
-    """Create necessary shell scripts with proper permissions."""
+    """Create necessary shell scripts with proper permissions and Unix line endings."""
     try:
         logging.info("Creating setup scripts in: %s", project_dir)
         
         # setup_output.sh content
-        setup_output_content = """#!/bin/bash 
+        setup_output_content = """#!/bin/bash
 
 # Create working directory if it doesn't exist 
 mkdir -p ~/custom_iso
 
 # Update package lists and install necessary tools 
 apt-get update
-apt-get install -y squashfs-tools xorriso isolinux sudo syslinux-utils genisoimage"""
+apt-get install -y squashfs-tools xorriso isolinux syslinux-utils genisoimage
+"""
 
-        # setup_chroot.sh content
+        # setup_chroot.sh content (removed sudo and enforced Unix line endings)
         setup_chroot_content = """#!/bin/bash
 
 # Log the start of the script
 echo "Starting setup_chroot.sh..."
 
 # Mount the ISO file
-sudo mkdir -p /mnt/iso
-sudo mount -o loop base.iso /mnt/iso
+mkdir -p /mnt/iso
+mount -o loop base.iso /mnt/iso
 
 # Copy ISO contents to working directory
 cp -av /mnt/iso/* ~/custom_iso/
@@ -150,18 +151,89 @@ if [ -n "$1" ]; then
 else
     # Start an interactive shell
     exec chroot squashfs-root /bin/bash
-fi"""
+fi
+"""
 
-        # create_iso.sh content (placeholder - you'll need to provide the actual content)
+        # create_iso.sh content (removed sudo from umount commands)
         create_iso_content = """#!/bin/bash
-echo "Creating ISO..."
-# Add your ISO creation logic here
+
+# Log the start of the script
+echo "Starting create_iso.sh..."
+
+# Remove the sentinel file if it exists (to avoid false positives)
+rm -f ~/custom_iso/creation_complete
+
+# Change to the working directory
+WORKDIR=~/custom_iso
+echo "Changing to the working directory: $WORKDIR"
+cd "$WORKDIR" || { echo "Failed to change to $WORKDIR"; exit 1; }
+
+# Step 1: Unmount chroot environment
+echo "Unmounting chroot environment..."
+for mountpoint in proc sys dev/pts dev output; do
+    umount "squashfs-root/$mountpoint" || echo "Failed to unmount /$mountpoint"
+done
+
+# Step 2: Rebuild squashfs filesystem
+echo "Rebuilding squashfs filesystem..."
+if [ -f casper/filesystem.squashfs ]; then
+    rm -f casper/filesystem.squashfs || echo "Failed to remove old squashfs"
+fi
+mksquashfs squashfs-root casper/filesystem.squashfs -comp xz || { echo "Failed to create squashfs"; exit 1; }
+
+# Step 3: Update filesystem.size
+echo "Updating filesystem.size..."
+du -sx --block-size=1 squashfs-root | cut -f1 > casper/filesystem.size || { echo "Failed to update filesystem.size"; exit 1; }
+
+# Step 4: Remove extracted filesystem
+echo "Removing extracted filesystem..."
+rm -rf squashfs-root || { echo "Failed to remove squashfs-root"; exit 1; }
+
+# Step 5: Create the ISO using xorriso
+echo "Creating the ISO using xorriso..."
+xorriso -as mkisofs \\
+    -r -V "Custom Linux Mint" \\
+    -J -l \\
+    -b isolinux/isolinux.bin -c isolinux/boot.cat \\
+    -no-emul-boot -boot-load-size 4 -boot-info-table \\
+    -eltorito-alt-boot \\
+    -e EFI/boot/bootx64.efi -no-emul-boot \\
+    -o custom_linuxmint.iso . || { echo "Failed to create ISO"; exit 1; }
+
+# Step 6: Verify the ISO file
+echo "Verifying the ISO file..."
+if [ ! -f custom_linuxmint.iso ]; then
+    echo "ISO file not found."
+    exit 1
+fi
+
+ISO_SIZE=$(du -h custom_linuxmint.iso | cut -f1)
+echo "ISO file created successfully. Size: $ISO_SIZE"
+
+# Step 7: (Optional) Check ISO hybrid compatibility for legacy BIOS
+if command -v isohybrid >/dev/null 2>&1; then
+    echo "Making the ISO hybrid using isohybrid..."
+    isohybrid --uefi custom_linuxmint.iso || echo "Failed to make ISO hybrid (optional step)."
+else
+    echo "isohybrid command not found, skipping hybridization step."
+fi
+
+# Step 8: Create a sentinel file to indicate completion
+SENTINEL_FILE=~/custom_iso/creation_complete
+touch "$SENTINEL_FILE" || { echo "Failed to create sentinel file"; exit 1; }
+echo "Sentinel file created at: $SENTINEL_FILE"
+
+# Wait for file system sync
+sleep 2
+
+# Log the completion of the script
+echo "create_iso.sh completed successfully."
 """
 
         # Create directory if it doesn't exist
         os.makedirs(project_dir, exist_ok=True)
 
-        # Create and set permissions for each script
+        # Create and set permissions for each script, enforcing Unix LF line endings.
         scripts = {
             "setup_output.sh": setup_output_content,
             "setup_chroot.sh": setup_chroot_content,
@@ -170,8 +242,10 @@ echo "Creating ISO..."
 
         for script_name, content in scripts.items():
             script_path = os.path.join(project_dir, script_name)
-            with open(script_path, 'w') as f:
-                f.write(content)
+            # Replace any CRLF with LF and write with newline='\n'
+            fixed_content = content.replace("\r\n", "\n")
+            with open(script_path, 'w', newline='\n') as f:
+                f.write(fixed_content)
             # Set executable permissions (equivalent to chmod +x)
             os.chmod(script_path, 0o755)
             logging.debug(f"Created and set permissions for {script_name}")
@@ -273,10 +347,11 @@ def main():
         if container.status != "running":
             raise RuntimeError(f"Container failed to start. Status: {container.status}")
 
-        # Save container ID to file
-        with open("container_id.txt", "w") as f:
+        # Save container ID to file in the project directory
+        container_id_path = os.path.join(args.project_dir, "container_id.txt")
+        with open(container_id_path, "w") as f:
             f.write(container.id)
-        logging.info(f"Container ID saved to container_id.txt: {container.id}")
+        logging.info(f"Container ID saved to {container_id_path}: {container.id}")
 
         logging.info("Validating scripts")
         if not validate_scripts(args.project_dir):

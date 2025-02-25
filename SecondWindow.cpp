@@ -4,6 +4,8 @@
 #include <wx/statline.h>
 #include <wx/process.h>
 #include <wx/dcbuffer.h>
+#include <wx/filename.h>
+#include <wx/file.h>
 #include <cmath>
 #include <chrono>
 #ifdef __WXMSW__
@@ -32,6 +34,38 @@ public:
             wxMessageBox("Python executable has completed.",
                         "Process Completed",
                         wxOK | wxICON_INFORMATION);
+        }
+#ifndef wxPROCESS_AUTO_DELETE
+        delete this;
+#endif
+    }
+
+private:
+    SecondWindow* m_parent;
+};
+//---------------------------------------------------------------------
+
+//---------------------------------------------------------------------
+// Custom wxProcess subclass for Docker exec command
+class DockerExecProcess : public wxProcess {
+public:
+    DockerExecProcess(SecondWindow* parent)
+        : wxProcess(parent),
+          m_parent(parent)
+    {
+#ifdef wxPROCESS_AUTO_DELETE
+        SetExtraStyle(wxPROCESS_AUTO_DELETE);
+#endif
+    }
+
+    virtual void OnTerminate(int pid, int status) override {
+        if (m_parent) {
+            m_parent->CloseOverlay();
+            if (status == 0) {
+                wxMessageBox("ISO created successfully!", "Success", wxOK | wxICON_INFORMATION);
+            } else {
+                wxMessageBox("ISO creation failed. Check logs for details.", "Error", wxICON_ERROR);
+            }
         }
 #ifndef wxPROCESS_AUTO_DELETE
         delete this;
@@ -330,9 +364,36 @@ void SecondWindow::OnNext(wxCommandEvent& event) {
     wxButton* nextButton = wxDynamicCast(FindWindow(ID_NEXT_BUTTON), wxButton);
     if (nextButton) nextButton->Disable();
 
-    wxMessageBox("Next button clicked!", "Info", wxICON_INFORMATION);
+    // Read container ID from container_id.txt
+    wxString containerId;
+    wxString containerIdPath = wxFileName(m_projectDir, "container_id.txt").GetFullPath();
+    wxFile file;
+    if (file.Open(containerIdPath)) {
+        file.ReadAll(&containerId);
+        containerId.Trim();
+    } else {
+        wxMessageBox("Container ID not found!", "Error", wxICON_ERROR);
+        if (nextButton) nextButton->Enable();
+        return;
+    }
 
-    if (nextButton) nextButton->Enable();
+    // Show processing overlay
+    if (m_overlay) {
+        m_overlay->Destroy();
+    }
+    m_overlay = new OverlayFrame(this);
+
+    // Execute docker exec command
+    wxString command = wxString::Format("docker exec %s /create_iso.sh", containerId);
+    DockerExecProcess* proc = new DockerExecProcess(this);
+    long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);
+
+    if (pid == 0) {
+        wxMessageBox("Failed to start ISO creation process!", "Error", wxICON_ERROR);
+        delete proc;
+        CloseOverlay();
+        if (nextButton) nextButton->Enable();
+    }
 }
 
 void SecondWindow::OnTabChanged(wxCommandEvent& event) {
