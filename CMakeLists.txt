@@ -113,6 +113,7 @@ set(SOURCES
    FlatpakStore.cpp
    DesktopTab.cpp
    SettingsManager.cpp
+   WinTerminalManager.cpp
 )
 
 # Header files

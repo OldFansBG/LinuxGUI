@@ -146,9 +146,6 @@ wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)
     EVT_BUTTON(ID_TERMINAL_TAB, SecondWindow::OnTabChanged)
     EVT_BUTTON(ID_SQL_TAB, SecondWindow::OnTabChanged)
     EVT_BUTTON(ID_NEXT_BUTTON, SecondWindow::OnNext)
-#ifdef __WXMSW__
-    EVT_TIMER(wxID_ANY, SecondWindow::OnWinTerminalTimer)
-#endif
 wxEND_EVENT_TABLE()
 
 SecondWindow::SecondWindow(wxWindow* parent,
@@ -159,14 +156,13 @@ SecondWindow::SecondWindow(wxWindow* parent,
             wxDefaultPosition, wxSize(800, 650),
             wxDEFAULT_FRAME_STYLE | wxSYSTEM_MENU | wxCAPTION | 
             wxCLOSE_BOX | wxCLIP_CHILDREN | wxMINIMIZE_BOX | 
-            wxMAXIMIZE_BOX | wxRESIZE_BORDER), // Updated style flags
+            wxMAXIMIZE_BOX | wxRESIZE_BORDER),
     m_isoPath(isoPath),
     m_projectDir(projectDir),
     m_threadRunning(false),
     m_overlay(nullptr)
 #ifdef __WXMSW__
-    , m_winTerminalTimer(nullptr),
-    m_winTerminalStep(0)
+    , m_winTerminalManager(nullptr)
 #endif
 {
     // Enable dark mode title bar
@@ -192,10 +188,7 @@ SecondWindow::~SecondWindow() {
         ContainerManager::Get().CleanupContainer(m_containerId);
     }
 #ifdef __WXMSW__
-    if (m_winTerminalTimer) {
-        m_winTerminalTimer->Stop();
-        delete m_winTerminalTimer;
-    }
+    delete m_winTerminalManager;
 #endif
 }
 
@@ -211,7 +204,6 @@ void SecondWindow::StartPythonExecutable() {
     wxString projectDir = m_projectDir;
     wxString isoPath = m_isoPath;
 
-    // Include --iso-path in the command
     wxString command = wxString::Format("\"%s\" --project-dir \"%s\" --iso-path \"%s\"",
                                       pythonExePath, projectDir, isoPath);
 
@@ -281,14 +273,15 @@ void SecondWindow::CreateControls() {
     }
 #ifdef __WXMSW__
     else {
-        wxPanel* winTerminalPanel = new wxPanel(m_terminalTab, wxID_ANY, wxDefaultPosition, wxSize(680, 400));
+        wxPanel* winTerminalPanel = new wxPanel(m_terminalTab, wxID_ANY, 
+            wxDefaultPosition, wxSize(680, 400));
         winTerminalPanel->SetBackgroundColour(wxColour(30, 30, 30));
         terminalSizer->Add(winTerminalPanel, 1, wxEXPAND | wxALL, 5);
-
-        m_winTerminalStep = 0;
-        m_winTerminalTimer = new wxTimer(this);
-        Bind(wxEVT_TIMER, &SecondWindow::OnWinTerminalTimer, this, m_winTerminalTimer->GetId());
-        m_winTerminalTimer->Start(500); // Start the timer after 500ms
+        
+        m_winTerminalManager = new WinTerminalManager(winTerminalPanel);
+        if (!m_winTerminalManager->Initialize()) {
+            wxLogError("Failed to initialize Windows terminal");
+        }
     }
 #endif
 
@@ -372,44 +365,3 @@ void SecondWindow::OnTabChanged(wxCommandEvent& event) {
     }
     m_mainPanel->Layout();
 }
-
-#ifdef __WXMSW__
-void SecondWindow::OnWinTerminalTimer(wxTimerEvent& event) {
-    m_winTerminalTimer->Stop();
-
-    wxPanel* winTerminalPanel = dynamic_cast<wxPanel*>(m_terminalTab->GetChildren().Item(0)->GetData());
-    if (!winTerminalPanel) return;
-
-    std::wstring cmd = L"cmd.exe /k title EMBEDDED_CMD";
-    STARTUPINFOW si = { sizeof(si) };
-    PROCESS_INFORMATION pi;
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-
-    if (CreateProcessW(NULL, const_cast<wchar_t*>(cmd.c_str()),
-        NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, NULL, &si, &pi)) {
-        
-        Sleep(500);
-        HWND hwndCmd = FindWindowW(L"ConsoleWindowClass", L"EMBEDDED_CMD");
-        if (hwndCmd) {
-            LONG_PTR style = GetWindowLongPtrW(hwndCmd, GWL_STYLE);
-            style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
-            SetWindowLongPtrW(hwndCmd, GWL_STYLE, style);
-
-            // Fixed line with global namespace operator
-            ::SetParent(hwndCmd, (HWND)winTerminalPanel->GetHWND());
-
-            ::SetWindowPos(hwndCmd, NULL, 0, 0,
-                winTerminalPanel->GetClientSize().GetWidth(),
-                winTerminalPanel->GetClientSize().GetHeight(),
-                SWP_NOZORDER | SWP_FRAMECHANGED);
-            
-            ::ShowWindow(hwndCmd, SW_SHOW);
-        }
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-    } else {
-        wxLogError("Failed to start CMD process");
-    }
-}
-#endif

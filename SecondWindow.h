@@ -17,7 +17,7 @@ enum {
 #include "ContainerManager.h"
 
 #ifdef _WIN32
-#include <wx/timer.h>
+#include "WinTerminalManager.h"
 #endif
 
 class OverlayFrame;
@@ -47,9 +47,7 @@ private:
     OSDetector m_osDetector;
 
 #ifdef _WIN32
-    wxTimer* m_winTerminalTimer;
-    int m_winTerminalStep;
-    void OnWinTerminalTimer(wxTimerEvent& event); // Declare the timer handler
+    WinTerminalManager* m_winTerminalManager;
 #endif
 
     void CreateControls();
