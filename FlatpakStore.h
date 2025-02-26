@@ -11,6 +11,12 @@
 #include <wx/mstream.h>
 #include <wx/image.h>
 #include <wx/thread.h>
+#include <wx/stattext.h>
+#include <wx/panel.h>
+#include <wx/gbsizer.h>
+#include <wx/progdlg.h>
+#include <wx/dcbuffer.h>
+#include <wx/graphics.h>
 #include <curl/curl.h>
 #include <rapidjson/document.h>
 #include <rapidjson/error/en.h>
@@ -32,124 +38,81 @@ wxDECLARE_EVENT(wxEVT_SEARCH_COMPLETE, wxCommandEvent);
 wxDECLARE_EVENT(wxEVT_RESULT_READY, wxCommandEvent);
 wxDECLARE_EVENT(wxEVT_IMAGE_READY, wxCommandEvent);
 wxDECLARE_EVENT(wxEVT_UPDATE_PROGRESS, wxCommandEvent);
+wxDECLARE_EVENT(wxEVT_CATEGORY_SELECTED, wxCommandEvent);
 
-// ThreadPool class definition
+// Forward declarations
+class FlatpakStore;
+class SearchThread;
+
+// ThreadPool class declaration (must come first)
 class ThreadPool {
 public:
-    // Constructor: Initializes the thread pool with a given number of threads
-    ThreadPool(size_t threads) : stop(false) {
-        for (size_t i = 0; i < threads; ++i) {
-            workers.emplace_back([this] {
-                while (true) {
-                    std::function<void()> task;
+    ThreadPool(size_t threads);
+    ~ThreadPool();
 
-                    {
-                        // Lock the queue to safely access tasks
-                        std::unique_lock<std::mutex> lock(queueMutex);
-
-                        // Wait until there is a task to execute or the pool is stopped
-                        condition.wait(lock, [this] { return stop || !tasks.empty(); });
-
-                        // If the pool is stopped and no tasks are left, exit the thread
-                        if (stop && tasks.empty()) {
-                            return;
-                        }
-
-                        // Get the next task from the queue
-                        task = std::move(tasks.front());
-                        tasks.pop();
-                    }
-
-                    // Execute the task
-                    task();
-                }
-            });
-        }
-    }
-
-    // Enqueue a new task to be executed by the thread pool
     template<class F>
-    void Enqueue(F&& f) {
-        {
-            // Lock the queue to safely add a new task
-            std::unique_lock<std::mutex> lock(queueMutex);
+    void Enqueue(F&& f);
 
-            // Do not allow new tasks if the pool is stopped
-            if (stop) {
-                throw std::runtime_error("Enqueue on stopped ThreadPool");
-            }
-
-            // Add the task to the queue
-            tasks.emplace(std::forward<F>(f));
-        }
-
-        // Notify one thread that a new task is available
-        condition.notify_one();
-    }
-
-    // Cancel all pending tasks in the queue
-    void CancelAll() {
-        std::unique_lock<std::mutex> lock(queueMutex);
-        while (!tasks.empty()) {
-            tasks.pop();
-        }
-    }
-
-    // Destructor: Stops the thread pool and joins all worker threads
-    ~ThreadPool() {
-        {
-            std::unique_lock<std::mutex> lock(queueMutex);
-            stop = true; // Signal all threads to stop
-        }
-
-        // Notify all threads to wake up and check the stop condition
-        condition.notify_all();
-
-        // Join all worker threads to ensure they finish execution
-        for (std::thread& worker : workers) {
-            worker.join();
-        }
-    }
+    void CancelAll();
 
 private:
-    std::vector<std::thread> workers; // Worker threads
-    std::queue<std::function<void()>> tasks; // Task queue
-    std::mutex queueMutex; // Mutex to protect the task queue
-    std::condition_variable condition; // Condition variable for task notification
-    bool stop; // Flag to stop the thread pool
+    std::vector<std::thread> workers;
+    std::queue<std::function<void()>> tasks;
+    std::mutex queueMutex;
+    std::condition_variable condition;
+    bool stop;
 };
 
-// Main store class
+// CategoryChip class declaration
+class CategoryChip : public wxPanel {
+public:
+    CategoryChip(wxWindow* parent, const wxString& label, int id);
+    virtual ~CategoryChip() {}
+
+    void SetSelected(bool selected);
+    bool IsSelected() const { return m_selected; }
+
+private:
+    wxStaticText* m_label;
+    bool m_selected;
+
+    void OnPaint(wxPaintEvent& event);
+    void OnMouseDown(wxMouseEvent& event);
+
+    DECLARE_EVENT_TABLE()
+};
+
+// FlatpakStore class declaration
 class FlatpakStore : public wxPanel {
 public:
     FlatpakStore(wxWindow* parent);
     virtual ~FlatpakStore();
 
-    // Public methods
     void SetTotalResults(int total) { totalResults = total; }
-    void SetContainerId(const wxString& containerId); // Add this line
+    void SetContainerId(const wxString& containerId);
 
 private:
     // UI elements
-    wxTextCtrl* searchBox;
-    wxButton* searchButton;
-    wxScrolledWindow* resultsPanel;
-    wxBoxSizer* resultsSizer;
-    wxGauge* progressBar;
+    wxTextCtrl* m_searchBox;
+    wxButton* m_searchButton;
+    wxScrolledWindow* m_resultsPanel;
+    wxBoxSizer* m_resultsSizer;
+    wxGridSizer* m_gridSizer;
+    wxGauge* m_progressBar;
+    wxBoxSizer* m_categoriesSizer;
+    wxVector<CategoryChip*> m_categories;
 
     // Search state
-    bool isSearching;
+    bool m_isSearching;
     int totalResults;
-    wxThread* currentSearchThread;
-    std::mutex searchMutex;
-    std::atomic<bool> stopFlag;
-    int searchId;
-
-    // Container ID for chroot environment
-    wxString m_containerId; // Add this line
+    std::mutex m_searchMutex;
+    std::atomic<bool> m_stopFlag;
+    int m_searchId;
+    wxString m_currentCategory;
+    wxString m_containerId;
 
     // Thread pool
-    std::unique_ptr<ThreadPool> threadPool;
+    std::unique_ptr<ThreadPool> m_threadPool;
 
     // Event handlers
     void OnSearch(wxCommandEvent& event);
@@ -157,9 +120,68 @@ private:
     void OnResultReady(wxCommandEvent& event);
     void OnImageReady(wxCommandEvent& event);
     void OnUpdateProgress(wxCommandEvent& event);
-    void OnInstallButtonClicked(wxCommandEvent& event); // Add this line
+    void OnInstallButtonClicked(wxCommandEvent& event);
+    void OnCategorySelected(wxCommandEvent& event);
+
+    // Helper methods
+    void InitializeCategories();
+    void HandleInstallClick(const wxString& appId);
+    void ClearResults();
 
     DECLARE_EVENT_TABLE()
 };
+
+// AppCard class declaration
+class AppCard : public wxPanel {
+public:
+    AppCard(wxWindow* parent, const wxString& name, const wxString& summary, const wxString& appId);
+    virtual ~AppCard();
+
+    void SetIcon(const wxBitmap& bitmap);
+    wxString GetAppId() const { return m_appId; }
+
+private:
+    wxStaticBitmap* m_iconBitmap;
+    wxStaticText* m_nameText;
+    wxStaticText* m_summaryText;
+    wxButton* m_installButton;
+    wxString m_appId;
+
+    void OnPaint(wxPaintEvent& event);
+    void OnMouseEnter(wxMouseEvent& event);
+    void OnMouseLeave(wxMouseEvent& event);
+
+    DECLARE_EVENT_TABLE()
+};
+
+// SearchThread class declaration
+class SearchThread : public wxThread {
+public:
+    SearchThread(FlatpakStore* store, const std::string& query,
+                 const wxString& category, int searchId, std::atomic<bool>& stopFlag)
+        : wxThread(wxTHREAD_DETACHED), m_store(store), m_query(query),
+          m_category(category), m_searchId(searchId), m_stopFlag(stopFlag) {}
+
+protected:
+    virtual ExitCode Entry();
+
+private:
+    FlatpakStore* m_store;
+    std::string m_query;
+    wxString m_category;
+    int m_searchId;
+    std::atomic<bool>& m_stopFlag;
+};
+
+// ThreadPool template method implementation (must be in header)
+template<class F>
+void ThreadPool::Enqueue(F&& f) {
+    {
+        std::unique_lock<std::mutex> lock(queueMutex);
+        if (stop) throw std::runtime_error("Enqueue on stopped ThreadPool");
+        tasks.emplace(std::forward<F>(f));
+    }
+    condition.notify_one();
+}
 
 #endif // FLATPAKSTORE_H
