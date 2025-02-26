@@ -88,3 +88,19 @@ void WinTerminalManager::CleanupProcess() {
         CloseHandle(m_pi.hThread);
     }
 }
+
+// New method to send commands to the terminal
+bool WinTerminalManager::SendCommand(const std::wstring& command) {
+    if (!m_hwndCmd) return false;
+
+    // Simulate typing the command into the terminal
+    for (wchar_t c : command) {
+        ::PostMessageW(m_hwndCmd, WM_CHAR, c, 0);
+    }
+
+    // Simulate pressing Enter
+    ::PostMessageW(m_hwndCmd, WM_KEYDOWN, VK_RETURN, 0);
+    ::PostMessageW(m_hwndCmd, WM_KEYUP, VK_RETURN, 0);
+
+    return true;
+}

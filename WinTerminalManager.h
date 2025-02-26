@@ -8,9 +8,10 @@ class WinTerminalManager : public wxEvtHandler {
 public:
     WinTerminalManager(wxPanel* parentPanel);
     ~WinTerminalManager();
-    
+
     bool Initialize();
-    
+    bool SendCommand(const std::wstring& command); // New method to send commands
+
 private:
     wxPanel* m_parentPanel;
     PROCESS_INFORMATION m_pi;
@@ -20,6 +21,6 @@ private:
     bool FindAndEmbedTerminal();
     void UpdateTerminalSize();
     void OnParentResize(wxSizeEvent& event);
-    
+
     wxDECLARE_EVENT_TABLE();
 };

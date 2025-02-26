@@ -31,9 +31,20 @@ public:
     virtual void OnTerminate(int pid, int status) override {
         if (m_parent) {
             m_parent->CloseOverlay();
-            wxMessageBox("Python executable has completed.",
-                        "Process Completed",
-                        wxOK | wxICON_INFORMATION);
+
+            // Use the public getter to access m_projectDir
+            wxString containerIdPath = wxFileName(m_parent->GetProjectDir(), "container_id.txt").GetFullPath();
+            wxFile file;
+            if (file.Open(containerIdPath)) {
+                wxString containerId;
+                file.ReadAll(&containerId);
+                containerId.Trim();
+
+                // Execute Docker command in the terminal
+                m_parent->ExecuteDockerCommand(containerId);
+            } else {
+                wxMessageBox("Container ID not found!", "Error", wxICON_ERROR);
+            }
         }
 #ifndef wxPROCESS_AUTO_DELETE
         delete this;
@@ -214,6 +225,13 @@ SecondWindow::SecondWindow(wxWindow* parent,
     m_overlay = new OverlayFrame(this);
 
     StartPythonExecutable();
+
+    // Initialize the terminal with a clear command (optional)
+#ifdef __WXMSW__
+    if (m_winTerminalManager) {
+        m_winTerminalManager->SendCommand(L" ");
+    }
+#endif
 }
 
 SecondWindow::~SecondWindow() {
@@ -258,6 +276,20 @@ void SecondWindow::CleanupThread() {
     if (m_threadRunning) {
         m_threadRunning = false;
     }
+}
+
+void SecondWindow::ExecuteDockerCommand(const wxString& containerId) {
+    #ifdef __WXMSW__
+        if (m_winTerminalManager) {
+            // Enter the container FIRST, then run chroot interactively
+            wxString command = wxString::Format(
+                "cls && docker exec -it %s /bin/bash\r\n"
+                "chroot /root/custom_iso/squashfs-root /bin/bash\r\n",
+                containerId
+            );
+            m_winTerminalManager->SendCommand(command.ToStdWstring());
+        }
+    #endif
 }
 
 void SecondWindow::CreateControls() {

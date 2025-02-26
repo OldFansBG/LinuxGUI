@@ -32,6 +32,12 @@ public:
 
     void CloseOverlay();
 
+    // Public getter for m_projectDir
+    wxString GetProjectDir() const { return m_projectDir; }
+
+    // Public method to execute Docker commands
+    void ExecuteDockerCommand(const wxString& containerId);
+
 private:
     wxPanel* m_mainPanel;
     wxPanel* m_terminalTab;
@@ -39,7 +45,7 @@ private:
     LinuxTerminalPanel* m_terminalPanel;
 
     wxString m_isoPath;
-    wxString m_projectDir;
+    wxString m_projectDir; // Private member
     wxString m_containerId;
     bool m_threadRunning;
 
