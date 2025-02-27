@@ -30,6 +30,10 @@ BEGIN_EVENT_TABLE(AppCard, wxPanel)
     EVT_LEAVE_WINDOW(AppCard::OnMouseLeave)
 END_EVENT_TABLE()
 
+BEGIN_EVENT_TABLE(RoundedSearchPanel, wxPanel)
+    EVT_PAINT(RoundedSearchPanel::OnPaint)
+END_EVENT_TABLE()
+
 // Helper Functions
 
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* buffer) {
@@ -143,6 +147,44 @@ std::string fetchRecentlyAddedApps(std::atomic<bool>& stopFlag) {
     return response;
 }
 
+// RoundedSearchPanel Implementation
+RoundedSearchPanel::RoundedSearchPanel(wxWindow* parent, wxWindowID id, const wxPoint& pos, const wxSize& size)
+    : wxPanel(parent, id, pos, size, wxBORDER_NONE)
+{
+    SetBackgroundStyle(wxBG_STYLE_PAINT);
+    // Set the background to match the parent's background to avoid the black corners
+    SetBackgroundColour(parent->GetBackgroundColour());
+}
+
+void RoundedSearchPanel::OnPaint(wxPaintEvent& event)
+{
+    wxAutoBufferedPaintDC dc(this);
+    
+    // First clear the entire background with the parent's color
+    // This ensures no black corners
+    dc.SetBackground(wxBrush(GetBackgroundColour()));
+    dc.Clear();
+    
+    wxGraphicsContext* gc = wxGraphicsContext::Create(dc);
+    
+    if (gc) {
+        wxRect rect = GetClientRect();
+        
+        // Set up the graphics context
+        gc->SetBrush(wxBrush(wxColour(55, 65, 81)));
+        gc->SetPen(*wxTRANSPARENT_PEN);
+        
+        // Enable anti-aliasing for smoother corners
+        gc->SetAntialiasMode(wxANTIALIAS_DEFAULT);
+        
+        // Draw a rounded rectangle
+        // Inset slightly to ensure corners stay within the panel bounds
+        gc->DrawRoundedRectangle(rect.x, rect.y, rect.width, rect.height, 10);
+        
+        delete gc;
+    }
+}
+
 // AppCard Implementation
 
 AppCard::AppCard(wxWindow* parent, const wxString& name, const wxString& summary, const wxString& appId)
@@ -150,7 +192,8 @@ AppCard::AppCard(wxWindow* parent, const wxString& name, const wxString& summary
       m_appId(appId), m_isLoading(true)
 {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
-    SetBackgroundColour(wxColour(55, 65, 81));
+    // Set the background color to match the parent's background
+    SetBackgroundColour(parent->GetBackgroundColour());
     
     wxBoxSizer* mainSizer = new wxBoxSizer(wxHORIZONTAL);
     mainSizer->AddSpacer(12);
@@ -214,18 +257,40 @@ void AppCard::SetIcon(const wxBitmap& bitmap) {
 
 void AppCard::OnPaint(wxPaintEvent& event) {
     wxAutoBufferedPaintDC dc(this);
-    wxRect rect = GetClientRect();
-    dc.SetBrush(wxBrush(GetBackgroundColour()));
-    dc.SetPen(*wxTRANSPARENT_PEN);
-    dc.DrawRoundedRectangle(rect, 10);
+    
+    // Clear background with parent color first to avoid black corners
+    dc.SetBackground(wxBrush(GetParent()->GetBackgroundColour()));
+    dc.Clear();
+    
+    // Use a graphics context for anti-aliased drawing
+    wxGraphicsContext* gc = wxGraphicsContext::Create(dc);
+    if (gc) {
+        wxRect rect = GetClientRect();
+        
+        // Determine the proper background color
+        wxColour bgColor = GetBackgroundColour();
+        
+        // Set up the graphics context for the rounded rectangle
+        gc->SetAntialiasMode(wxANTIALIAS_DEFAULT);
+        gc->SetBrush(wxBrush(bgColor));
+        gc->SetPen(*wxTRANSPARENT_PEN);
+        
+        // Draw the rounded rectangle
+        gc->DrawRoundedRectangle(0, 0, rect.width, rect.height, 10);
+        
+        delete gc;
+    }
 }
 
+
 void AppCard::OnMouseEnter(wxMouseEvent& event) {
+    // Just change the stored background color for the hover state
     SetBackgroundColour(wxColour(65, 75, 91));
     Refresh();
 }
 
 void AppCard::OnMouseLeave(wxMouseEvent& event) {
+    // Just change the stored background color back to normal
     SetBackgroundColour(wxColour(55, 65, 81));
     Refresh();
 }
@@ -364,24 +429,37 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
 
     m_mainSizer = new wxBoxSizer(wxVERTICAL);
 
-    wxPanel* searchPanel = new wxPanel(this, wxID_ANY);
-    searchPanel->SetBackgroundColour(wxColour(40, 44, 52));
+    // Create a rounded search panel
+    RoundedSearchPanel* searchPanel = new RoundedSearchPanel(this, wxID_ANY);
 
     wxBoxSizer* searchSizer = new wxBoxSizer(wxHORIZONTAL);
 
+    // Modern search box with rounded corners
     m_searchBox = new wxTextCtrl(searchPanel, wxID_ANY, "", wxDefaultPosition,
-                                 wxSize(-1, 42), wxTE_PROCESS_ENTER);
+                                 wxSize(-1, 42), wxTE_PROCESS_ENTER | wxBORDER_NONE);
     m_searchBox->SetBackgroundColour(wxColour(55, 65, 81));
     m_searchBox->SetForegroundColour(wxColour(229, 229, 229));
     m_searchBox->SetHint("Search for applications...");
+    
+    // Use a larger font for the search box
+    wxFont searchFont = m_searchBox->GetFont();
+    searchFont.SetPointSize(searchFont.GetPointSize() + 1);
+    m_searchBox->SetFont(searchFont);
 
+    // Modern search button with rounded corners
     m_searchButton = new wxButton(searchPanel, wxID_ANY, "Search",
-                                  wxDefaultPosition, wxSize(100, 42));
+                                  wxDefaultPosition, wxSize(120, 42), wxBORDER_NONE);
     m_searchButton->SetBackgroundColour(wxColour(79, 70, 229));
     m_searchButton->SetForegroundColour(*wxWHITE);
+    
+    // Use a bolder font for the search button
+    wxFont buttonFont = m_searchButton->GetFont();
+    buttonFont.SetWeight(wxFONTWEIGHT_BOLD);
+    m_searchButton->SetFont(buttonFont);
 
-    searchSizer->Add(m_searchBox, 1, wxEXPAND | wxRIGHT, 12);
-    searchSizer->Add(m_searchButton, 0);
+    // Add padding around the elements inside the rounded panel
+    searchSizer->Add(m_searchBox, 1, wxEXPAND | wxALL, 10);
+    searchSizer->Add(m_searchButton, 0, wxALL, 10);
     searchPanel->SetSizer(searchSizer);
 
     m_progressPanel = new wxPanel(this, wxID_ANY);

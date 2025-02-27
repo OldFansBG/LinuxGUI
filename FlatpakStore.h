@@ -39,6 +39,7 @@ class AppCard;
 class FlatpakStore;
 class SearchThread;
 class InitialLoadThread;
+class RoundedSearchPanel;
 
 // Custom event types
 wxDECLARE_EVENT(wxEVT_SEARCH_COMPLETE, wxCommandEvent);
@@ -64,6 +65,19 @@ private:
     std::mutex queueMutex;
     std::condition_variable condition;
     bool stop;
+};
+
+// RoundedSearchPanel class declaration
+class RoundedSearchPanel : public wxPanel {
+public:
+    RoundedSearchPanel(wxWindow* parent, wxWindowID id = wxID_ANY,
+                     const wxPoint& pos = wxDefaultPosition,
+                     const wxSize& size = wxDefaultSize);
+
+private:
+    void OnPaint(wxPaintEvent& event);
+    
+    DECLARE_EVENT_TABLE()
 };
 
 // FlatpakStore class declaration
