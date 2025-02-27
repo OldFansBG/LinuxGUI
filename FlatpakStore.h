@@ -38,11 +38,11 @@ wxDECLARE_EVENT(wxEVT_SEARCH_COMPLETE, wxCommandEvent);
 wxDECLARE_EVENT(wxEVT_RESULT_READY, wxCommandEvent);
 wxDECLARE_EVENT(wxEVT_IMAGE_READY, wxCommandEvent);
 wxDECLARE_EVENT(wxEVT_UPDATE_PROGRESS, wxCommandEvent);
-wxDECLARE_EVENT(wxEVT_CATEGORY_SELECTED, wxCommandEvent);
 
 // Forward declarations
 class FlatpakStore;
 class SearchThread;
+class InitialLoadThread;
 
 // ThreadPool class declaration (must come first)
 class ThreadPool {
@@ -63,25 +63,6 @@ private:
     bool stop;
 };
 
-// CategoryChip class declaration
-class CategoryChip : public wxPanel {
-public:
-    CategoryChip(wxWindow* parent, const wxString& label, int id);
-    virtual ~CategoryChip() {}
-
-    void SetSelected(bool selected);
-    bool IsSelected() const { return m_selected; }
-
-private:
-    wxStaticText* m_label;
-    bool m_selected;
-
-    void OnPaint(wxPaintEvent& event);
-    void OnMouseDown(wxMouseEvent& event);
-
-    DECLARE_EVENT_TABLE()
-};
-
 // FlatpakStore class declaration
 class FlatpakStore : public wxPanel {
 public:
@@ -99,16 +80,14 @@ private:
     wxBoxSizer* m_resultsSizer;
     wxGridSizer* m_gridSizer;
     wxGauge* m_progressBar;
-    wxBoxSizer* m_categoriesSizer;
-    wxVector<CategoryChip*> m_categories;
 
     // Search state
     bool m_isSearching;
+    bool m_isInitialLoading;
     int totalResults;
     std::mutex m_searchMutex;
     std::atomic<bool> m_stopFlag;
     int m_searchId;
-    wxString m_currentCategory;
     wxString m_containerId;
 
     // Thread pool
@@ -121,12 +100,11 @@ private:
     void OnImageReady(wxCommandEvent& event);
     void OnUpdateProgress(wxCommandEvent& event);
     void OnInstallButtonClicked(wxCommandEvent& event);
-    void OnCategorySelected(wxCommandEvent& event);
 
     // Helper methods
-    void InitializeCategories();
     void HandleInstallClick(const wxString& appId);
     void ClearResults();
+    void LoadInitialApps();
 
     DECLARE_EVENT_TABLE()
 };
@@ -157,10 +135,9 @@ private:
 // SearchThread class declaration
 class SearchThread : public wxThread {
 public:
-    SearchThread(FlatpakStore* store, const std::string& query,
-                 const wxString& category, int searchId, std::atomic<bool>& stopFlag)
+    SearchThread(FlatpakStore* store, const std::string& query, int searchId, std::atomic<bool>& stopFlag)
         : wxThread(wxTHREAD_DETACHED), m_store(store), m_query(query),
-          m_category(category), m_searchId(searchId), m_stopFlag(stopFlag) {}
+          m_searchId(searchId), m_stopFlag(stopFlag) {}
 
 protected:
     virtual ExitCode Entry();
@@ -168,8 +145,21 @@ protected:
 private:
     FlatpakStore* m_store;
     std::string m_query;
-    wxString m_category;
     int m_searchId;
+    std::atomic<bool>& m_stopFlag;
+};
+
+// InitialLoadThread class declaration
+class InitialLoadThread : public wxThread {
+public:
+    InitialLoadThread(FlatpakStore* store, std::atomic<bool>& stopFlag)
+        : wxThread(wxTHREAD_DETACHED), m_store(store), m_stopFlag(stopFlag) {}
+
+protected:
+    virtual ExitCode Entry();
+
+private:
+    FlatpakStore* m_store;
     std::atomic<bool>& m_stopFlag;
 };
 

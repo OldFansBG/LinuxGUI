@@ -9,7 +9,6 @@ wxDEFINE_EVENT(wxEVT_SEARCH_COMPLETE, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_RESULT_READY, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_IMAGE_READY, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_UPDATE_PROGRESS, wxCommandEvent);
-wxDEFINE_EVENT(wxEVT_CATEGORY_SELECTED, wxCommandEvent);
 
 // Event tables
 BEGIN_EVENT_TABLE(FlatpakStore, wxPanel)
@@ -19,18 +18,12 @@ BEGIN_EVENT_TABLE(FlatpakStore, wxPanel)
     EVT_COMMAND(wxID_ANY, wxEVT_RESULT_READY, FlatpakStore::OnResultReady)
     EVT_COMMAND(wxID_ANY, wxEVT_IMAGE_READY, FlatpakStore::OnImageReady)
     EVT_COMMAND(wxID_ANY, wxEVT_UPDATE_PROGRESS, FlatpakStore::OnUpdateProgress)
-    EVT_COMMAND(wxID_ANY, wxEVT_CATEGORY_SELECTED, FlatpakStore::OnCategorySelected)
 END_EVENT_TABLE()
 
 BEGIN_EVENT_TABLE(AppCard, wxPanel)
     EVT_PAINT(AppCard::OnPaint)
     EVT_ENTER_WINDOW(AppCard::OnMouseEnter)
     EVT_LEAVE_WINDOW(AppCard::OnMouseLeave)
-END_EVENT_TABLE()
-
-BEGIN_EVENT_TABLE(CategoryChip, wxPanel)
-    EVT_PAINT(CategoryChip::OnPaint)
-    EVT_LEFT_DOWN(CategoryChip::OnMouseDown)
 END_EVENT_TABLE()
 
 // Helper functions
@@ -90,14 +83,13 @@ bool DownloadImage(const std::string& url, std::vector<unsigned char>& buffer, s
     return !buffer.empty();
 }
 
-std::string searchFlathubApps(const std::string& query, const std::string& category, std::atomic<bool>& stopFlag) {
+std::string searchFlathubApps(const std::string& query, std::atomic<bool>& stopFlag) {
     CURL* curl = curl_easy_init();
     if (!curl) return "";
 
     std::string response;
     std::string url = "https://flathub.org/api/v2/search";
-    std::string filters = category.empty() ? "[]" : "[{\"key\":\"category\",\"value\":\"" + category + "\"}]";
-    std::string payload = "{\"query\":\"" + query + "\",\"filters\":" + filters + "}";
+    std::string payload = "{\"query\":\"" + query + "\",\"filters\":[]}";
 
     struct curl_slist* headers = nullptr;
     headers = curl_slist_append(headers, "Content-Type: application/json");
@@ -122,42 +114,27 @@ std::string searchFlathubApps(const std::string& query, const std::string& categ
     return response;
 }
 
-// CategoryChip implementation
-CategoryChip::CategoryChip(wxWindow* parent, const wxString& label, int id)
-    : wxPanel(parent, id, wxDefaultPosition, wxDefaultSize, wxBORDER_NONE),
-      m_selected(false)
-{
-    m_label = new wxStaticText(this, wxID_ANY, label);
-    m_label->SetForegroundColour(wxColour(156, 163, 175));
-    
-    wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
-    sizer->Add(m_label, 0, wxALL | wxALIGN_CENTER_VERTICAL, 8);
-    SetSizer(sizer);
-    
-    SetBackgroundColour(wxColour(55, 65, 81));
-    SetMinSize(wxSize(120, 34));
-    SetBackgroundStyle(wxBG_STYLE_PAINT);
-}
+std::string fetchRecentlyAddedApps(std::atomic<bool>& stopFlag) {
+    CURL* curl = curl_easy_init();
+    if (!curl) return "";
 
-void CategoryChip::SetSelected(bool selected) {
-    m_selected = selected;
-    m_label->SetForegroundColour(selected ? *wxWHITE : wxColour(156, 163, 175));
-    Refresh();
-}
+    std::string response;
+    std::string url = "https://flathub.org/api/v2/collection/recently-added";
 
-void CategoryChip::OnPaint(wxPaintEvent& event) {
-    wxPaintDC dc(this);
-    wxRect rect = GetClientRect();
-    
-    dc.SetBrush(wxBrush(m_selected ? wxColour(79, 70, 229) : wxColour(55, 65, 81)));
-    dc.SetPen(*wxTRANSPARENT_PEN);
-    dc.DrawRoundedRectangle(rect, 16);
-}
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
 
-void CategoryChip::OnMouseDown(wxMouseEvent& event) {
-    wxCommandEvent evt(wxEVT_CATEGORY_SELECTED, GetId());
-    evt.SetEventObject(this);
-    wxPostEvent(GetParent(), evt);
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || stopFlag) {
+        return "";
+    }
+
+    return response;
 }
 
 // AppCard implementation
@@ -238,7 +215,7 @@ wxThread::ExitCode SearchThread::Entry() {
     try {
         if (TestDestroy() || m_stopFlag) return (ExitCode)0;
 
-        std::string response = searchFlathubApps(m_query, m_category.ToStdString(), m_stopFlag);
+        std::string response = searchFlathubApps(m_query, m_stopFlag);
         if (response.empty()) return (ExitCode)1;
 
         rapidjson::Document doc;
@@ -283,10 +260,61 @@ wxThread::ExitCode SearchThread::Entry() {
     }
 }
 
+// InitialLoadThread implementation
+wxThread::ExitCode InitialLoadThread::Entry() {
+    try {
+        if (TestDestroy() || m_stopFlag) return (ExitCode)0;
+
+        std::string response = fetchRecentlyAddedApps(m_stopFlag);
+        if (response.empty()) return (ExitCode)1;
+
+        rapidjson::Document doc;
+        if (doc.Parse(response.c_str()).HasParseError()) return (ExitCode)1;
+        if (!doc.IsObject() || !doc.HasMember("hits") || !doc["hits"].IsArray()) return (ExitCode)1;
+
+        const rapidjson::Value& hits = doc["hits"];
+        m_store->SetTotalResults(hits.Size());
+
+        for (rapidjson::SizeType i = 0; i < hits.Size() && !m_stopFlag && !TestDestroy(); i++) {
+            const rapidjson::Value& hit = hits[i];
+            if (!hit.IsObject() || !hit.HasMember("name") || !hit.HasMember("summary") || 
+                !hit.HasMember("icon") || !hit.HasMember("app_id")) continue;
+
+            wxString resultData = wxString(hit["name"].GetString(), wxConvUTF8) + "|" +
+                                  wxString(hit["summary"].GetString(), wxConvUTF8) + "|" +
+                                  wxString(hit["icon"].GetString(), wxConvUTF8) + "|" +
+                                  wxString(hit["app_id"].GetString(), wxConvUTF8);
+
+            wxCommandEvent resultEvent(wxEVT_RESULT_READY);
+            resultEvent.SetInt(-1);  // Special ID for initial load
+            resultEvent.SetString(resultData);
+            wxQueueEvent(m_store, resultEvent.Clone());
+
+            wxCommandEvent progressEvent(wxEVT_UPDATE_PROGRESS);
+            progressEvent.SetInt(i + 1);
+            wxQueueEvent(m_store, progressEvent.Clone());
+            
+            wxMilliSleep(50);
+        }
+
+        if (!m_stopFlag && !TestDestroy()) {
+            wxCommandEvent event(wxEVT_SEARCH_COMPLETE);
+            event.SetInt(-1);  // Special ID for initial load
+            wxQueueEvent(m_store, event.Clone());
+        }
+
+        return (ExitCode)0;
+    }
+    catch (...) { 
+        return (ExitCode)1; 
+    }
+}
+
 // FlatpakStore implementation
 FlatpakStore::FlatpakStore(wxWindow* parent)
     : wxPanel(parent, wxID_ANY),
       m_isSearching(false), 
+      m_isInitialLoading(false),
       totalResults(0),
       m_stopFlag(false), 
       m_searchId(0)
@@ -316,13 +344,6 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
     searchSizer->Add(m_searchButton, 0);
     searchPanel->SetSizer(searchSizer);
 
-    wxPanel* categoriesPanel = new wxPanel(this, wxID_ANY);
-    categoriesPanel->SetName("CategoriesPanel");
-    categoriesPanel->SetBackgroundColour(wxColour(40, 44, 52));
-    
-    m_categoriesSizer = new wxBoxSizer(wxHORIZONTAL);
-    categoriesPanel->SetSizer(m_categoriesSizer);
-
     m_progressBar = new wxGauge(this, wxID_ANY, 100, wxDefaultPosition, wxSize(-1, 6));
     m_progressBar->SetBackgroundColour(wxColour(40, 44, 52));
     m_progressBar->SetForegroundColour(wxColour(79, 70, 229));
@@ -337,12 +358,11 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
     m_resultsPanel->SetSizer(m_resultsSizer);
 
     mainSizer->Add(searchPanel, 0, wxEXPAND | wxALL, 15);
-    mainSizer->Add(categoriesPanel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 15);
     mainSizer->Add(m_progressBar, 0, wxEXPAND | wxLEFT | wxRIGHT, 15);
     mainSizer->Add(m_resultsPanel, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 15);
     SetSizer(mainSizer);
 
-    InitializeCategories();
+    LoadInitialApps();
 
     std::ifstream file("container_id.txt");
     if (file.is_open()) {
@@ -353,63 +373,6 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
     }
 }
 
-// ... [Rest of FlatpakStore methods] ...
-
-void FlatpakStore::InitializeCategories() {
-    const struct {
-        wxString label;
-        int id;
-    } categories[] = {
-        {"All", 1000},
-        {"Games", 1001},
-        {"Graphics", 1002},
-        {"Internet", 1003},
-        {"Office", 1004},
-        {"Developer", 1005},
-        {"Audio & Video", 1006},
-        {"Education", 1007},
-        {"Utilities", 1008}
-    };
-
-    wxWindow* categoriesPanel = nullptr;
-    for (wxWindowList::iterator it = GetChildren().begin(); it != GetChildren().end(); ++it) {
-        if ((*it)->GetName() == "CategoriesPanel") {
-            categoriesPanel = *it;
-            break;
-        }
-    }
-
-    if (!categoriesPanel) {
-        wxLogError("Categories panel not found!");
-        return;
-    }
-
-    for (const auto& category : categories) {
-        CategoryChip* chip = new CategoryChip(categoriesPanel, category.label, category.id);
-        m_categoriesSizer->Add(chip, 0, wxRIGHT, 8);
-        m_categories.push_back(chip);
-
-        if (category.id == 1000) {
-            chip->SetSelected(true);
-            m_currentCategory = "";
-        }
-    }
-}
-
-FlatpakStore::~FlatpakStore() {
-    try {
-        std::lock_guard<std::mutex> lock(m_searchMutex);
-        m_stopFlag = true;
-
-        if (m_threadPool) {
-            m_threadPool->CancelAll();
-            m_threadPool.reset();
-        }
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Error during cleanup: " << e.what() << std::endl;
-    }
-}
 void FlatpakStore::SetContainerId(const wxString& containerId) {
     m_containerId = containerId;
 }
@@ -419,6 +382,35 @@ void FlatpakStore::ClearResults() {
         m_gridSizer->Clear(true);
     }
     m_resultsPanel->Layout();
+}
+
+void FlatpakStore::LoadInitialApps() {
+    try {
+        std::lock_guard<std::mutex> lock(m_searchMutex);
+
+        // Cancel any ongoing search
+        m_stopFlag = true;
+        wxMilliSleep(50);  // Allow cancellation to propagate
+
+        // Reset state
+        ClearResults();
+        m_progressBar->SetValue(0);
+        totalResults = 0;
+        m_stopFlag = false;
+        m_isInitialLoading = true;
+
+        // Create and run thread
+        InitialLoadThread* thread = new InitialLoadThread(this, m_stopFlag);
+        if (thread->Run() != wxTHREAD_NO_ERROR) {
+            delete thread;
+            throw std::runtime_error("Failed to start initial load thread");
+        }
+    }
+    catch (const std::exception& e) {
+        m_isInitialLoading = false;
+        wxMessageBox(wxString::Format("Initial load failed: %s", e.what()),
+                    "Error", wxOK | wxICON_ERROR);
+    }
 }
 
 void FlatpakStore::OnSearch(wxCommandEvent& event) {
@@ -431,7 +423,7 @@ void FlatpakStore::OnSearch(wxCommandEvent& event) {
             return;
         }
 
-        // Cancel existing search
+        // Cancel existing operations
         m_stopFlag = true;
         wxMilliSleep(50);  // Allow cancellation to propagate
 
@@ -442,10 +434,10 @@ void FlatpakStore::OnSearch(wxCommandEvent& event) {
         m_stopFlag = false;
         m_searchId++;
         m_isSearching = true;
+        m_isInitialLoading = false;
 
-        // Create and run thread without storing the pointer
-        SearchThread* thread = new SearchThread(this, query.ToStdString(), 
-                                              m_currentCategory, m_searchId, m_stopFlag);
+        // Create and run thread
+        SearchThread* thread = new SearchThread(this, query.ToStdString(), m_searchId, m_stopFlag);
         if (thread->Run() != wxTHREAD_NO_ERROR) {
             delete thread;
             throw std::runtime_error("Failed to start search thread");
@@ -459,37 +451,15 @@ void FlatpakStore::OnSearch(wxCommandEvent& event) {
 }
 
 void FlatpakStore::OnSearchComplete(wxCommandEvent& event) {
-    if (event.GetInt() != m_searchId) return;
+    if (event.GetInt() != m_searchId && event.GetInt() != -1) return;
 
     m_isSearching = false;
+    m_isInitialLoading = false;
     m_progressBar->SetValue(100);
 
     m_resultsPanel->Layout();
     m_resultsPanel->FitInside();
     m_resultsPanel->Refresh();
-}
-
-void FlatpakStore::OnCategorySelected(wxCommandEvent& event) {
-    int selectedId = event.GetId();
-    
-    for (CategoryChip* chip : m_categories) {
-        bool isSelected = chip->GetId() == selectedId;
-        chip->SetSelected(isSelected);
-        
-        if (isSelected) {
-            wxString label = dynamic_cast<wxStaticText*>(chip->GetChildren().GetFirst()->GetData())->GetLabelText();
-            if (label == "All") {
-                m_currentCategory = "";
-            } else {
-                m_currentCategory = label;
-            }
-        }
-    }
-    
-    if (!m_searchBox->GetValue().IsEmpty()) {
-        wxCommandEvent searchEvent(wxEVT_COMMAND_BUTTON_CLICKED);
-        OnSearch(searchEvent);
-    }
 }
 
 void FlatpakStore::HandleInstallClick(const wxString& appId) {
@@ -539,7 +509,7 @@ void FlatpakStore::OnInstallButtonClicked(wxCommandEvent& event) {
 }
 
 void FlatpakStore::OnResultReady(wxCommandEvent& event) {
-    if (event.GetInt() != m_searchId) return;
+    if (event.GetInt() != m_searchId && event.GetInt() != -1) return;
 
     std::string resultData = event.GetString().ToStdString();
     std::istringstream iss(resultData);
@@ -590,7 +560,7 @@ void FlatpakStore::OnResultReady(wxCommandEvent& event) {
 }
 
 void FlatpakStore::OnImageReady(wxCommandEvent& event) {
-    if (event.GetInt() != m_searchId) {
+    if (event.GetInt() != m_searchId && event.GetInt() != -1) {
         wxBitmap* bitmap = static_cast<wxBitmap*>(event.GetClientData());
         delete bitmap;
         return;
@@ -606,7 +576,7 @@ void FlatpakStore::OnImageReady(wxCommandEvent& event) {
 }
 
 void FlatpakStore::OnUpdateProgress(wxCommandEvent& event) {
-    if (event.GetInt() != m_searchId) {
+    if (event.GetInt() != m_searchId && event.GetInt() != -1) {
         return;
     }
 
@@ -653,5 +623,20 @@ void ThreadPool::CancelAll() {
     std::unique_lock<std::mutex> lock(queueMutex);
     while (!tasks.empty()) {
         tasks.pop();
+    }
+}
+
+FlatpakStore::~FlatpakStore() {
+    try {
+        std::lock_guard<std::mutex> lock(m_searchMutex);
+        m_stopFlag = true;
+
+        if (m_threadPool) {
+            m_threadPool->CancelAll();
+            m_threadPool.reset();
+        }
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error during cleanup: " << e.what() << std::endl;
     }
 }
