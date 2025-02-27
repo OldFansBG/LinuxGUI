@@ -1,4 +1,4 @@
-// FlatpakStore.cpp (Updated)
+// FlatpakStore.cpp
 
 #include "FlatpakStore.h"
 #include <fstream>
@@ -12,6 +12,7 @@ wxDEFINE_EVENT(wxEVT_SEARCH_COMPLETE, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_RESULT_READY, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_IMAGE_READY, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_UPDATE_PROGRESS, wxCommandEvent);
+wxDEFINE_EVENT(wxEVT_BATCH_PROCESS, wxCommandEvent);
 
 // Event tables
 BEGIN_EVENT_TABLE(FlatpakStore, wxPanel)
@@ -21,6 +22,8 @@ BEGIN_EVENT_TABLE(FlatpakStore, wxPanel)
     EVT_COMMAND(wxID_ANY, wxEVT_RESULT_READY, FlatpakStore::OnResultReady)
     EVT_COMMAND(wxID_ANY, wxEVT_IMAGE_READY, FlatpakStore::OnImageReady)
     EVT_COMMAND(wxID_ANY, wxEVT_UPDATE_PROGRESS, FlatpakStore::OnUpdateProgress)
+    EVT_TIMER(ID_BATCH_TIMER, FlatpakStore::OnBatchTimer)
+    EVT_TIMER(ID_LAYOUT_TIMER, FlatpakStore::OnLayoutTimer)
 END_EVENT_TABLE()
 
 BEGIN_EVENT_TABLE(AppCard, wxPanel)
@@ -68,7 +71,6 @@ bool DownloadImage(const std::string& url, std::vector<unsigned char>& buffer, s
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK || stopFlag) {
-        // Create a placeholder image (solid color only, no text)
         wxBitmap placeholderBmp(48, 48);
         wxMemoryDC dc;
         dc.SelectObject(placeholderBmp);
@@ -149,15 +151,12 @@ AppCard::AppCard(wxWindow* parent, const wxString& name, const wxString& summary
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxSize(320, 160), wxBORDER_NONE),
       m_appId(appId), m_isLoading(true)
 {
-    // Set background style to prevent flickering
     SetBackgroundStyle(wxBG_STYLE_PAINT);
-
     SetBackgroundColour(wxColour(55, 65, 81));
     
     wxBoxSizer* mainSizer = new wxBoxSizer(wxHORIZONTAL);
     mainSizer->AddSpacer(12);
 
-    // Create placeholder icon (solid color only, no text)
     wxBitmap placeholderBmp(64, 64);
     {
         wxMemoryDC dc;
@@ -173,14 +172,12 @@ AppCard::AppCard(wxWindow* parent, const wxString& name, const wxString& summary
     wxBoxSizer* textSizer = new wxBoxSizer(wxVERTICAL);
     textSizer->AddSpacer(8);
     
-    // Create placeholder text if name is empty
     wxString displayName = name.IsEmpty() ? "Loading app..." : name;
     m_nameText = new wxStaticText(this, wxID_ANY, displayName);
     m_nameText->SetForegroundColour(wxColour(229, 229, 229));
     wxFont nameFont(14, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD);
     m_nameText->SetFont(nameFont);
     
-    // Create placeholder summary if empty
     wxString displaySummary = summary.IsEmpty() ? "Loading description..." : summary;
     m_summaryText = new wxStaticText(this, wxID_ANY, displaySummary);
     m_summaryText->SetForegroundColour(wxColour(156, 163, 175));
@@ -218,7 +215,7 @@ void AppCard::SetIcon(const wxBitmap& bitmap) {
 }
 
 void AppCard::OnPaint(wxPaintEvent& event) {
-    wxAutoBufferedPaintDC dc(this); // Use buffered DC to prevent flicker
+    wxAutoBufferedPaintDC dc(this);
     wxRect rect = GetClientRect();
     dc.SetBrush(wxBrush(GetBackgroundColour()));
     dc.SetPen(*wxTRANSPARENT_PEN);
@@ -253,7 +250,6 @@ wxThread::ExitCode SearchThread::Entry() {
             return (ExitCode)1;
         
         const rapidjson::Value& hits = doc["hits"];
-        // Set the total results count (even if some items will be skipped)
         m_store->SetTotalResults(hits.Size());
         
         for (rapidjson::SizeType i = 0; i < hits.Size() && !m_stopFlag && !TestDestroy(); i++) {
@@ -323,7 +319,7 @@ wxThread::ExitCode InitialLoadThread::Entry() {
                                   wxString(hit["app_id"].GetString(), wxConvUTF8);
             
             wxCommandEvent resultEvent(wxEVT_RESULT_READY);
-            resultEvent.SetInt(-1);  // special id for initial load
+            resultEvent.SetInt(-1);
             resultEvent.SetString(resultData);
             wxQueueEvent(m_store, resultEvent.Clone());
             
@@ -354,21 +350,21 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
       totalResults(0),
       m_stopFlag(false),
       m_searchId(0),
-      m_displayedResults(0)
+      m_displayedResults(0),
+      m_pendingBatchSize(0)
 {
-    // Enable double buffering for the entire panel
     SetDoubleBuffered(true);
 
-    // Initialize thread pool
     m_threadPool = std::make_unique<ThreadPool>(4);
+    
+    // Initialize timers with specific IDs
+    m_batchTimer = new wxTimer(this, ID_BATCH_TIMER);
+    m_layoutTimer = new wxTimer(this, ID_LAYOUT_TIMER);
 
-    // Set background color
     SetBackgroundColour(wxColour(40, 44, 52));
 
-    // Main layout
     m_mainSizer = new wxBoxSizer(wxVERTICAL);
 
-    // Search panel
     wxPanel* searchPanel = new wxPanel(this, wxID_ANY);
     searchPanel->SetBackgroundColour(wxColour(40, 44, 52));
 
@@ -389,7 +385,6 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
     searchSizer->Add(m_searchButton, 0);
     searchPanel->SetSizer(searchSizer);
 
-    // Progress panel
     m_progressPanel = new wxPanel(this, wxID_ANY);
     m_progressPanel->SetBackgroundColour(wxColour(40, 44, 52));
 
@@ -405,35 +400,26 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
     progressSizer->Add(m_progressBar, 0, wxEXPAND);
 
     m_progressPanel->SetSizer(progressSizer);
-    m_progressPanel->Hide(); // Initially hidden
+    m_progressPanel->Hide();
 
-    // Results panel with a responsive (wrap) layout
     m_resultsPanel = new wxScrolledWindow(this, wxID_ANY);
-    m_resultsPanel->SetDoubleBuffered(true); // Enable double buffering for smooth scrolling
+    m_resultsPanel->SetDoubleBuffered(true);
     m_resultsPanel->SetBackgroundColour(wxColour(40, 44, 52));
     m_resultsPanel->SetScrollRate(0, 20);
 
-    // Create a wxBoxSizer for the results area - this will contain the grid sizer
     wxBoxSizer* resultsSizer = new wxBoxSizer(wxVERTICAL);
-    
-    // Create a wxWrapSizer with HORIZONTAL orientation and no gap between items
     m_gridSizer = new wxWrapSizer(wxHORIZONTAL, wxWRAPSIZER_DEFAULT_FLAGS);
-    
-    // Add the grid sizer to the results sizer with padding
     resultsSizer->Add(m_gridSizer, 1, wxEXPAND | wxALL, 15);
     m_resultsPanel->SetSizer(resultsSizer);
 
-    // Add panels to main sizer
     m_mainSizer->Add(searchPanel, 0, wxEXPAND | wxALL, 15);
     m_mainSizer->Add(m_progressPanel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 15);
     m_mainSizer->Add(m_resultsPanel, 1, wxEXPAND);
 
     SetSizer(m_mainSizer);
 
-    // Load initial apps
     LoadInitialApps();
 
-    // Load container ID from file
     std::ifstream file("container_id.txt");
     if (file.is_open()) {
         std::string containerId;
@@ -442,7 +428,6 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
         file.close();
     }
 
-    // Bind install button events for future AppCard buttons
     this->Bind(wxEVT_BUTTON, &FlatpakStore::OnInstallButtonClicked, this);
 }
 
@@ -451,34 +436,27 @@ void FlatpakStore::SetContainerId(const wxString& containerId) {
 }
 
 void FlatpakStore::ClearResults() {
-    // Remove any stray UI elements by freezing updates first
     m_resultsPanel->Freeze();
-    
-    // Clear all child windows and delete them
     m_gridSizer->Clear(true);
-    
-    // Reset the displayed results counter
     m_displayedResults = 0;
-    
-    // Reset the scroll position to top
     m_resultsPanel->Scroll(0, 0);
-    
-    // Make sure all layouts are properly updated
     m_resultsPanel->Layout();
-    
-    // Refresh the panel to ensure all remnants are gone
     m_resultsPanel->Refresh();
-    
-    // Resume UI updates
     m_resultsPanel->Thaw();
+    
+    // Also clear any pending results
+    {
+        std::lock_guard<std::mutex> lock(m_resultsMutex);
+        m_pendingResults.clear();
+        m_pendingBatchSize = 0;
+    }
 }
 
 void FlatpakStore::LoadInitialApps() {
     try {
         std::lock_guard<std::mutex> lock(m_searchMutex);
-        // Cancel any ongoing search
         m_stopFlag = true;
-        wxMilliSleep(50);  // allow cancellation to propagate
+        wxMilliSleep(50);
         
         ClearResults();
         m_progressBar->SetValue(0);
@@ -490,7 +468,8 @@ void FlatpakStore::LoadInitialApps() {
         m_stopFlag = false;
         m_isInitialLoading = true;
         
-        // Create and run the initial load thread
+        m_layoutTimer->Start(100); // Start periodic layout updates
+        
         InitialLoadThread* thread = new InitialLoadThread(this, m_stopFlag);
         if (thread->Run() != wxTHREAD_NO_ERROR) {
             delete thread;
@@ -515,7 +494,6 @@ void FlatpakStore::OnSearch(wxCommandEvent& event) {
             return;
         }
         
-        // Cancel existing operations
         m_stopFlag = true;
         wxMilliSleep(50);
         
@@ -530,7 +508,8 @@ void FlatpakStore::OnSearch(wxCommandEvent& event) {
         m_searchId++;
         m_isSearching = true;
         
-        // Create and run the search thread
+        m_layoutTimer->Start(100); // Start periodic layout updates
+        
         SearchThread* thread = new SearchThread(this, query.ToStdString(), m_searchId, m_stopFlag);
         if (thread->Run() != wxTHREAD_NO_ERROR) {
             delete thread;
@@ -555,12 +534,9 @@ void FlatpakStore::OnSearchComplete(wxCommandEvent& event) {
     m_progressBar->SetValue(100);
     m_progressText->SetLabel("Loading complete!");
     
-    // Final layout update
-    m_resultsPanel->Layout();
-    m_resultsPanel->FitInside();
-    m_resultsPanel->Refresh();
+    // Process any remaining results
+    ProcessPendingBatch(true);
     
-    // Hide progress panel after a short delay
     wxTimer* timer = new wxTimer(this);
     timer->StartOnce(1000);
     timer->Bind(wxEVT_TIMER, [this, timer](wxTimerEvent&) {
@@ -570,101 +546,131 @@ void FlatpakStore::OnSearchComplete(wxCommandEvent& event) {
     });
 }
 
-// Updated OnResultReady method to fix UI issues
 void FlatpakStore::OnResultReady(wxCommandEvent& event) {
     if (event.GetInt() != m_searchId && event.GetInt() != -1) return;
 
-    // Parse the data
     wxString resultData = event.GetString();
-    wxStringTokenizer tokenizer(resultData, "|");
     
-    if (tokenizer.CountTokens() < 4) return;
+    // Store result for batch processing
+    {
+        std::lock_guard<std::mutex> lock(m_resultsMutex);
+        m_pendingResults.push_back(resultData);
+        m_pendingBatchSize++;
+        
+        // Start batch processing if not already running
+        if (!m_batchTimer->IsRunning() && m_pendingBatchSize >= 1) {
+            m_batchTimer->StartOnce(10);
+        }
+    }
     
-    wxString name = tokenizer.GetNextToken();
-    wxString summary = tokenizer.GetNextToken();
-    wxString iconUrl = tokenizer.GetNextToken();
-    wxString appId = tokenizer.GetNextToken();
-    
-    // Freeze UI before adding elements to prevent flickering and showing partial UI
-    m_resultsPanel->Freeze();
-    
-    // Create the card
-    AppCard* card = new AppCard(m_resultsPanel, name, summary, appId);
-    
-    // Use fixed spacing and no absolute positioning to prevent arrows/stray text
-    m_gridSizer->Add(card, 0, wxALL, 5); // Use fixed margin all around
     m_displayedResults++;
     
-    // Explicitly update the layout every time to ensure clean display
-    m_gridSizer->Layout();
-    
-    // Thaw UI to show changes
-    m_resultsPanel->Thaw();
-    
-    // Update layout every few items for efficiency
-    if (m_displayedResults % 5 == 0 || m_displayedResults <= 2) {
-        m_resultsPanel->Layout();
-        m_resultsPanel->FitInside();
-        m_resultsPanel->Refresh();
-    }
-
-    // Queue icon download
-    m_threadPool->Enqueue([this, card, iconUrl]() {
-        std::vector<unsigned char> iconData;
-        if (DownloadImage(iconUrl.ToStdString(), iconData, m_stopFlag)) {
-            wxMemoryInputStream stream(iconData.data(), iconData.size());
-            wxImage image;
-            if (image.LoadFile(stream, wxBITMAP_TYPE_PNG)) {
-                // Scale the image to fit
-                const int target_size = 64;
-                float scale = std::min(static_cast<float>(target_size) / image.GetWidth(), 
-                                    static_cast<float>(target_size) / image.GetHeight());
-                
-                image.Rescale(static_cast<int>(image.GetWidth() * scale),
-                            static_cast<int>(image.GetHeight() * scale),
-                            wxIMAGE_QUALITY_HIGH);
-
-                if (image.GetWidth() != target_size || image.GetHeight() != target_size) {
-                    wxImage padded(target_size, target_size);
-                    padded.SetRGB(wxRect(0, 0, target_size, target_size), 79, 70, 229);
-                    padded.Paste(image, 
-                                (target_size - image.GetWidth())/2,
-                                (target_size - image.GetHeight())/2);
-                    image = padded;
-                }
-
-                wxBitmap bitmap(image);
-                
-                wxCommandEvent imageEvent(wxEVT_IMAGE_READY);
-                imageEvent.SetClientData(new IconData{card, bitmap});
-                wxQueueEvent(this, imageEvent.Clone());
-            }
-        }
-    });
-    
-    // Update progress
     if (totalResults > 0) {
         int progressPercent = static_cast<int>((m_displayedResults * 100) / totalResults);
         m_progressBar->SetValue(progressPercent);
         m_progressText->SetLabel(wxString::Format("Loading applications: %d of %d", 
-                                                m_displayedResults, totalResults));
+                                                 m_displayedResults, totalResults));
     } else {
         m_progressBar->Pulse();
     }
 }
 
+void FlatpakStore::OnBatchTimer(wxTimerEvent& event) {
+    ProcessPendingBatch(false);
+}
+
+void FlatpakStore::ProcessPendingBatch(bool processAll) {
+    std::vector<wxString> currentBatch;
+    {
+        std::lock_guard<std::mutex> lock(m_resultsMutex);
+        
+        // Process max 10 items at a time unless processing all
+        int batchSize = processAll ? m_pendingResults.size() : std::min(10, static_cast<int>(m_pendingResults.size()));
+        
+        if (batchSize <= 0) return;
+        
+        // Get current batch
+        currentBatch.assign(m_pendingResults.begin(), m_pendingResults.begin() + batchSize);
+        
+        // Remove processed items
+        m_pendingResults.erase(m_pendingResults.begin(), m_pendingResults.begin() + batchSize);
+        m_pendingBatchSize = m_pendingResults.size();
+    }
+    
+    if (currentBatch.empty()) return;
+    
+    m_resultsPanel->Freeze();
+    
+    // Process the batch
+    for (const wxString& resultData : currentBatch) {
+        wxStringTokenizer tokenizer(resultData, "|");
+        
+        if (tokenizer.CountTokens() < 4) continue;
+        
+        wxString name = tokenizer.GetNextToken();
+        wxString summary = tokenizer.GetNextToken();
+        wxString iconUrl = tokenizer.GetNextToken();
+        wxString appId = tokenizer.GetNextToken();
+        
+        AppCard* card = new AppCard(m_resultsPanel, name, summary, appId);
+        m_gridSizer->Add(card, 0, wxALL, 5);
+        
+        // Queue image download
+        m_threadPool->Enqueue([this, card, iconUrl]() {
+            std::vector<unsigned char> iconData;
+            if (DownloadImage(iconUrl.ToStdString(), iconData, m_stopFlag)) {
+                wxMemoryInputStream stream(iconData.data(), iconData.size());
+                wxImage image;
+                if (image.LoadFile(stream, wxBITMAP_TYPE_PNG)) {
+                    const int target_size = 64;
+                    float scale = std::min(static_cast<float>(target_size) / image.GetWidth(), 
+                                           static_cast<float>(target_size) / image.GetHeight());
+                    
+                    image.Rescale(static_cast<int>(image.GetWidth() * scale),
+                                 static_cast<int>(image.GetHeight() * scale),
+                                 wxIMAGE_QUALITY_HIGH);
+
+                    if (image.GetWidth() != target_size || image.GetHeight() != target_size) {
+                        wxImage padded(target_size, target_size);
+                        padded.SetRGB(wxRect(0, 0, target_size, target_size), 79, 70, 229);
+                        padded.Paste(image, 
+                                    (target_size - image.GetWidth())/2,
+                                    (target_size - image.GetHeight())/2);
+                        image = padded;
+                    }
+
+                    wxBitmap bitmap(image);
+                    
+                    wxCommandEvent imageEvent(wxEVT_IMAGE_READY);
+                    imageEvent.SetClientData(new IconData{card, bitmap});
+                    wxQueueEvent(this, imageEvent.Clone());
+                }
+            }
+        });
+    }
+
+    // Update layout
+    m_gridSizer->Layout();
+    m_resultsPanel->Layout();
+    m_layoutTimer->StartOnce(100);
+    
+    m_resultsPanel->Thaw();
+    
+    // Schedule next batch if needed
+    if (!m_pendingResults.empty() && !m_batchTimer->IsRunning()) {
+        m_batchTimer->StartOnce(50);
+    }
+}
+
 void FlatpakStore::OnImageReady(wxCommandEvent& event) {
-    m_resultsPanel->Freeze(); // Pause UI updates
     IconData* data = static_cast<IconData*>(event.GetClientData());
     if (data) {
         data->card->SetIcon(data->bitmap);
         delete data;
     }
-    m_resultsPanel->Thaw(); // Resume UI updates
 }
 
 void FlatpakStore::OnUpdateProgress(wxCommandEvent& event) {
-    // If totalResults is unknown, perform a simple pulse.
     if (totalResults <= 0) {
         static int pulseVal = 0;
         pulseVal = (pulseVal + 5) % 100;
@@ -676,6 +682,12 @@ void FlatpakStore::OnUpdateProgress(wxCommandEvent& event) {
     int progressPercent = (current * 100) / totalResults;
     m_progressBar->SetValue(progressPercent);
     m_progressText->SetLabel(wxString::Format("Loading applications: %d of %d", current, totalResults));
+}
+
+void FlatpakStore::OnLayoutTimer(wxTimerEvent& event) {
+    m_resultsPanel->Layout();
+    m_resultsPanel->FitInside();
+    m_resultsPanel->Refresh();
 }
 
 void FlatpakStore::HandleInstallClick(const wxString& appId) {
@@ -734,6 +746,16 @@ FlatpakStore::~FlatpakStore() {
             m_threadPool->CancelAll();
             m_threadPool.reset();
         }
+        
+        if (m_batchTimer) {
+            m_batchTimer->Stop();
+            delete m_batchTimer;
+        }
+        
+        if (m_layoutTimer) {
+            m_layoutTimer->Stop();
+            delete m_layoutTimer;
+        }
     }
     catch (const std::exception& e) {
         std::cerr << "Error during cleanup: " << e.what() << std::endl;
@@ -766,7 +788,7 @@ ThreadPool::~ThreadPool() {
         stop = true;
     }
     condition.notify_all();
-    for (std::thread &worker : workers) {
+    for (std::thread& worker : workers) {
         if (worker.joinable())
             worker.join();
     }

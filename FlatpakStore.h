@@ -3,7 +3,7 @@
 
 #include <wx/wx.h>
 #include <wx/sizer.h>
-#include <wx/wrapsizer.h>  // Added for wxWrapSizer
+#include <wx/wrapsizer.h>
 #include <wx/textctrl.h>
 #include <wx/button.h>
 #include <wx/listbox.h>
@@ -40,7 +40,14 @@ class FlatpakStore;
 class SearchThread;
 class InitialLoadThread;
 
-// ThreadPool class declaration (must come first)
+// Custom event types
+wxDECLARE_EVENT(wxEVT_SEARCH_COMPLETE, wxCommandEvent);
+wxDECLARE_EVENT(wxEVT_RESULT_READY, wxCommandEvent);
+wxDECLARE_EVENT(wxEVT_IMAGE_READY, wxCommandEvent);
+wxDECLARE_EVENT(wxEVT_UPDATE_PROGRESS, wxCommandEvent);
+wxDECLARE_EVENT(wxEVT_BATCH_PROCESS, wxCommandEvent);
+
+// ThreadPool class declaration
 class ThreadPool {
 public:
     ThreadPool(size_t threads);
@@ -67,6 +74,12 @@ public:
 
     void SetTotalResults(int total) { totalResults = total; }
     void SetContainerId(const wxString& containerId);
+    
+    // Timer IDs
+    enum {
+        ID_BATCH_TIMER = wxID_HIGHEST + 1,
+        ID_LAYOUT_TIMER
+    };
 
 private:
     // UI elements
@@ -75,15 +88,22 @@ private:
     wxScrolledWindow* m_resultsPanel;
     wxBoxSizer* m_mainSizer;
     wxGauge* m_progressBar;
-    wxWrapSizer* m_gridSizer;  // Changed to wxWrapSizer for responsive layout
+    wxWrapSizer* m_gridSizer;
     wxPanel* m_progressPanel;
     wxStaticText* m_progressText;
+    wxTimer* m_layoutTimer;    // Timer for periodic layout updates
+    wxTimer* m_batchTimer;     // Timer for batch processing
     
+    // Batch processing members
+    std::vector<wxString> m_pendingResults;
+    std::mutex m_resultsMutex;
+    int m_pendingBatchSize;
+
     // Search state
     bool m_isSearching;
     bool m_isInitialLoading;
     int totalResults;
-    int m_displayedResults;  // Count of displayed cards
+    int m_displayedResults;
     std::mutex m_searchMutex;
     std::atomic<bool> m_stopFlag;
     int m_searchId;
@@ -91,7 +111,7 @@ private:
 
     // Thread pool
     std::unique_ptr<ThreadPool> m_threadPool;
-    
+
     // Data structures
     struct IconData {
         AppCard* card;
@@ -105,11 +125,14 @@ private:
     void OnImageReady(wxCommandEvent& event);
     void OnUpdateProgress(wxCommandEvent& event);
     void OnInstallButtonClicked(wxCommandEvent& event);
+    void OnLayoutTimer(wxTimerEvent& event);  // Timer event
+    void OnBatchTimer(wxTimerEvent& event);   // Batch timer event
 
     // Helper methods
     void HandleInstallClick(const wxString& appId);
     void ClearResults();
     void LoadInitialApps();
+    void ProcessPendingBatch(bool processAll);
 
     DECLARE_EVENT_TABLE()
 };
@@ -129,7 +152,7 @@ private:
     wxStaticText* m_summaryText;
     wxButton* m_installButton;
     wxString m_appId;
-    bool m_isLoading;  // Added to track loading state
+    bool m_isLoading;
 
     void OnPaint(wxPaintEvent& event);
     void OnMouseEnter(wxMouseEvent& event);
@@ -169,7 +192,7 @@ private:
     std::atomic<bool>& m_stopFlag;
 };
 
-// ThreadPool template method implementation (must be in header)
+// ThreadPool template method implementation
 template<class F>
 void ThreadPool::Enqueue(F&& f) {
     {
