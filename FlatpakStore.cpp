@@ -1,5 +1,3 @@
-// FlatpakStore.cpp
-
 #include "FlatpakStore.h"
 #include <fstream>
 #include <sstream>
@@ -343,6 +341,7 @@ wxThread::ExitCode InitialLoadThread::Entry() {
 }
 
 // FlatpakStore Implementation
+
 FlatpakStore::FlatpakStore(wxWindow* parent)
     : wxPanel(parent, wxID_ANY),
       m_isSearching(false),
@@ -584,29 +583,23 @@ void FlatpakStore::ProcessPendingBatch(bool processAll) {
     {
         std::lock_guard<std::mutex> lock(m_resultsMutex);
         
-        // Process max 10 items at a time unless processing all
+        // Process up to 10 items at a time unless processing all
         int batchSize = processAll ? m_pendingResults.size() : std::min(10, static_cast<int>(m_pendingResults.size()));
-        
         if (batchSize <= 0) return;
         
-        // Get current batch
         currentBatch.assign(m_pendingResults.begin(), m_pendingResults.begin() + batchSize);
-        
-        // Remove processed items
         m_pendingResults.erase(m_pendingResults.begin(), m_pendingResults.begin() + batchSize);
-        m_pendingBatchSize = m_pendingResults.size();
+        m_pendingBatchSize = static_cast<int>(m_pendingResults.size());
     }
     
     if (currentBatch.empty()) return;
     
     m_resultsPanel->Freeze();
     
-    // Process the batch
+    // Process each result in the current batch
     for (const wxString& resultData : currentBatch) {
         wxStringTokenizer tokenizer(resultData, "|");
-        
         if (tokenizer.CountTokens() < 4) continue;
-        
         wxString name = tokenizer.GetNextToken();
         wxString summary = tokenizer.GetNextToken();
         wxString iconUrl = tokenizer.GetNextToken();
@@ -615,7 +608,7 @@ void FlatpakStore::ProcessPendingBatch(bool processAll) {
         AppCard* card = new AppCard(m_resultsPanel, name, summary, appId);
         m_gridSizer->Add(card, 0, wxALL, 5);
         
-        // Queue image download
+        // Queue image download task
         m_threadPool->Enqueue([this, card, iconUrl]() {
             std::vector<unsigned char> iconData;
             if (DownloadImage(iconUrl.ToStdString(), iconData, m_stopFlag)) {
@@ -627,15 +620,14 @@ void FlatpakStore::ProcessPendingBatch(bool processAll) {
                                            static_cast<float>(target_size) / image.GetHeight());
                     
                     image.Rescale(static_cast<int>(image.GetWidth() * scale),
-                                 static_cast<int>(image.GetHeight() * scale),
-                                 wxIMAGE_QUALITY_HIGH);
+                                  static_cast<int>(image.GetHeight() * scale),
+                                  wxIMAGE_QUALITY_HIGH);
 
                     if (image.GetWidth() != target_size || image.GetHeight() != target_size) {
                         wxImage padded(target_size, target_size);
                         padded.SetRGB(wxRect(0, 0, target_size, target_size), 79, 70, 229);
-                        padded.Paste(image, 
-                                    (target_size - image.GetWidth())/2,
-                                    (target_size - image.GetHeight())/2);
+                        padded.Paste(image, (target_size - image.GetWidth())/2,
+                                          (target_size - image.GetHeight())/2);
                         image = padded;
                     }
 
@@ -649,16 +641,18 @@ void FlatpakStore::ProcessPendingBatch(bool processAll) {
         });
     }
 
-    // Update layout
+    // Update layout after processing the batch
     m_gridSizer->Layout();
     m_resultsPanel->Layout();
     m_layoutTimer->StartOnce(100);
     
     m_resultsPanel->Thaw();
     
-    // Schedule next batch if needed
+    // If there are additional results, schedule the next batch.
+    // If the current batch contained only one item, use a longer delay.
     if (!m_pendingResults.empty() && !m_batchTimer->IsRunning()) {
-        m_batchTimer->StartOnce(50);
+        int delay = (currentBatch.size() == 1) ? 100 : 50;
+        m_batchTimer->StartOnce(delay);
     }
 }
 
@@ -763,6 +757,7 @@ FlatpakStore::~FlatpakStore() {
 }
 
 // ThreadPool Implementation
+
 ThreadPool::ThreadPool(size_t threads) : stop(false) {
     for (size_t i = 0; i < threads; ++i) {
         workers.emplace_back([this] {
