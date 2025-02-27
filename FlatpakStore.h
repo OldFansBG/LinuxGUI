@@ -33,13 +33,8 @@
 #include <atomic>
 #include <memory>
 
-// Define custom events
-wxDECLARE_EVENT(wxEVT_SEARCH_COMPLETE, wxCommandEvent);
-wxDECLARE_EVENT(wxEVT_RESULT_READY, wxCommandEvent);
-wxDECLARE_EVENT(wxEVT_IMAGE_READY, wxCommandEvent);
-wxDECLARE_EVENT(wxEVT_UPDATE_PROGRESS, wxCommandEvent);
-
 // Forward declarations
+class AppCard;
 class FlatpakStore;
 class SearchThread;
 class InitialLoadThread;
@@ -77,10 +72,12 @@ private:
     wxTextCtrl* m_searchBox;
     wxButton* m_searchButton;
     wxScrolledWindow* m_resultsPanel;
-    wxBoxSizer* m_resultsSizer;
-    wxGridSizer* m_gridSizer;
+    wxBoxSizer* m_mainSizer;
     wxGauge* m_progressBar;
-
+    wxFlexGridSizer* m_gridSizer;
+    wxPanel* m_progressPanel;
+    wxStaticText* m_progressText;
+    
     // Search state
     bool m_isSearching;
     bool m_isInitialLoading;
@@ -92,6 +89,22 @@ private:
 
     // Thread pool
     std::unique_ptr<ThreadPool> m_threadPool;
+    
+    // Data structures to store results
+    struct ResultData {
+        size_t index;
+        wxString name;
+        wxString summary;
+        wxString iconUrl;
+        wxString appId;
+    };
+    
+    struct IconData {
+        AppCard* card;
+        wxBitmap bitmap;
+    };
+    
+    std::vector<ResultData> m_allResults;
 
     // Event handlers
     void OnSearch(wxCommandEvent& event);
@@ -105,6 +118,7 @@ private:
     void HandleInstallClick(const wxString& appId);
     void ClearResults();
     void LoadInitialApps();
+    void ProcessAllResults();
 
     DECLARE_EVENT_TABLE()
 };

@@ -190,6 +190,7 @@ AppCard::~AppCard() {
 
 void AppCard::SetIcon(const wxBitmap& bitmap) {
     m_iconBitmap->SetBitmap(bitmap);
+    Refresh();
 }
 
 void AppCard::OnPaint(wxPaintEvent& event) {
@@ -244,7 +245,7 @@ wxThread::ExitCode SearchThread::Entry() {
             progressEvent.SetInt(i + 1);
             wxQueueEvent(m_store, progressEvent.Clone());
             
-            wxMilliSleep(50);
+            wxMilliSleep(5); // Small delay to keep UI responsive
         }
 
         if (!m_stopFlag && !TestDestroy()) {
@@ -294,7 +295,7 @@ wxThread::ExitCode InitialLoadThread::Entry() {
             progressEvent.SetInt(i + 1);
             wxQueueEvent(m_store, progressEvent.Clone());
             
-            wxMilliSleep(50);
+            wxMilliSleep(5); // Small delay to keep UI responsive
         }
 
         if (!m_stopFlag && !TestDestroy()) {
@@ -322,8 +323,10 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
     m_threadPool = std::make_unique<ThreadPool>(4);
     SetBackgroundColour(wxColour(40, 44, 52));
 
-    wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
-
+    // Main layout
+    m_mainSizer = new wxBoxSizer(wxVERTICAL);
+    
+    // Search panel
     wxPanel* searchPanel = new wxPanel(this, wxID_ANY);
     searchPanel->SetBackgroundColour(wxColour(40, 44, 52));
     
@@ -343,27 +346,50 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
     searchSizer->Add(m_searchBox, 1, wxEXPAND | wxRIGHT, 12);
     searchSizer->Add(m_searchButton, 0);
     searchPanel->SetSizer(searchSizer);
-
-    m_progressBar = new wxGauge(this, wxID_ANY, 100, wxDefaultPosition, wxSize(-1, 6));
-    m_progressBar->SetBackgroundColour(wxColour(40, 44, 52));
+    
+    // Progress panel
+    m_progressPanel = new wxPanel(this, wxID_ANY);
+    m_progressPanel->SetBackgroundColour(wxColour(40, 44, 52));
+    
+    wxBoxSizer* progressSizer = new wxBoxSizer(wxVERTICAL);
+    
+    m_progressText = new wxStaticText(m_progressPanel, wxID_ANY, "");
+    m_progressText->SetForegroundColour(wxColour(229, 229, 229));
+    progressSizer->Add(m_progressText, 0, wxEXPAND | wxBOTTOM, 5);
+    
+    m_progressBar = new wxGauge(m_progressPanel, wxID_ANY, 100, wxDefaultPosition, wxSize(-1, 8));
+    m_progressBar->SetBackgroundColour(wxColour(55, 65, 81));
     m_progressBar->SetForegroundColour(wxColour(79, 70, 229));
+    progressSizer->Add(m_progressBar, 0, wxEXPAND);
+    
+    m_progressPanel->SetSizer(progressSizer);
+    m_progressPanel->Hide(); // Initially hidden
 
+    // Results panel
     m_resultsPanel = new wxScrolledWindow(this, wxID_ANY);
     m_resultsPanel->SetBackgroundColour(wxColour(40, 44, 52));
     m_resultsPanel->SetScrollRate(0, 20);
     
-    m_resultsSizer = new wxBoxSizer(wxVERTICAL);
-    m_gridSizer = new wxGridSizer(2, 15, 15);
-    m_resultsSizer->Add(m_gridSizer, 1, wxEXPAND | wxALL, 15);
-    m_resultsPanel->SetSizer(m_resultsSizer);
+    // Initialize results grid - 2 columns with equal size
+    m_gridSizer = new wxFlexGridSizer(0, 2, 15, 15); // rows, cols, vgap, hgap
+    m_gridSizer->AddGrowableCol(0, 1);
+    m_gridSizer->AddGrowableCol(1, 1);
+    
+    wxBoxSizer* resultsSizer = new wxBoxSizer(wxVERTICAL);
+    resultsSizer->Add(m_gridSizer, 1, wxEXPAND | wxALL, 15);
+    m_resultsPanel->SetSizer(resultsSizer);
 
-    mainSizer->Add(searchPanel, 0, wxEXPAND | wxALL, 15);
-    mainSizer->Add(m_progressBar, 0, wxEXPAND | wxLEFT | wxRIGHT, 15);
-    mainSizer->Add(m_resultsPanel, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 15);
-    SetSizer(mainSizer);
-
+    // Add panels to main sizer
+    m_mainSizer->Add(searchPanel, 0, wxEXPAND | wxALL, 15);
+    m_mainSizer->Add(m_progressPanel, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 15);
+    m_mainSizer->Add(m_resultsPanel, 1, wxEXPAND);
+    
+    SetSizer(m_mainSizer);
+    
+    // Load initial apps
     LoadInitialApps();
 
+    // Load container ID
     std::ifstream file("container_id.txt");
     if (file.is_open()) {
         std::string containerId;
@@ -371,6 +397,9 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
         m_containerId = wxString(containerId);
         file.close();
     }
+    
+    // Bind install button event to all future AppCard install buttons
+    this->Bind(wxEVT_BUTTON, &FlatpakStore::OnInstallButtonClicked, this);
 }
 
 void FlatpakStore::SetContainerId(const wxString& containerId) {
@@ -378,9 +407,27 @@ void FlatpakStore::SetContainerId(const wxString& containerId) {
 }
 
 void FlatpakStore::ClearResults() {
+    // Detach sizer before clearing to prevent UI artifacts
+    m_resultsPanel->SetSizer(nullptr, false);
+    
     if (m_gridSizer) {
-        m_gridSizer->Clear(true);
+        m_gridSizer->Clear(true); // Remove and delete all items
     }
+    
+    // Create a new grid sizer
+    m_gridSizer = new wxFlexGridSizer(0, 2, 15, 15); // rows, cols, vgap, hgap
+    m_gridSizer->AddGrowableCol(0, 1);
+    m_gridSizer->AddGrowableCol(1, 1);
+    
+    // Re-attach sizer
+    wxBoxSizer* resultsSizer = new wxBoxSizer(wxVERTICAL);
+    resultsSizer->Add(m_gridSizer, 1, wxEXPAND | wxALL, 15);
+    m_resultsPanel->SetSizer(resultsSizer);
+    
+    // Reset scroll position
+    m_resultsPanel->Scroll(0, 0);
+    
+    // Queue a layout update
     m_resultsPanel->Layout();
 }
 
@@ -395,10 +442,15 @@ void FlatpakStore::LoadInitialApps() {
         // Reset state
         ClearResults();
         m_progressBar->SetValue(0);
+        m_progressText->SetLabel("Loading recently added apps...");
+        m_progressPanel->Show();
+        Layout();
+        
         totalResults = 0;
         m_stopFlag = false;
         m_isInitialLoading = true;
-
+        m_allResults.clear();
+        
         // Create and run thread
         InitialLoadThread* thread = new InitialLoadThread(this, m_stopFlag);
         if (thread->Run() != wxTHREAD_NO_ERROR) {
@@ -408,6 +460,8 @@ void FlatpakStore::LoadInitialApps() {
     }
     catch (const std::exception& e) {
         m_isInitialLoading = false;
+        m_progressPanel->Hide();
+        Layout();
         wxMessageBox(wxString::Format("Initial load failed: %s", e.what()),
                     "Error", wxOK | wxICON_ERROR);
     }
@@ -430,11 +484,16 @@ void FlatpakStore::OnSearch(wxCommandEvent& event) {
         // Reset search state
         ClearResults();
         m_progressBar->SetValue(0);
+        m_progressText->SetLabel(wxString::Format("Searching for '%s'...", query));
+        m_progressPanel->Show();
+        Layout();
+        
         totalResults = 0;
         m_stopFlag = false;
         m_searchId++;
         m_isSearching = true;
         m_isInitialLoading = false;
+        m_allResults.clear();
 
         // Create and run thread
         SearchThread* thread = new SearchThread(this, query.ToStdString(), m_searchId, m_stopFlag);
@@ -445,6 +504,8 @@ void FlatpakStore::OnSearch(wxCommandEvent& event) {
     }
     catch (const std::exception& e) {
         m_isSearching = false;
+        m_progressPanel->Hide();
+        Layout();
         wxMessageBox(wxString::Format("Search failed: %s", e.what()),
                     "Error", wxOK | wxICON_ERROR);
     }
@@ -455,11 +516,84 @@ void FlatpakStore::OnSearchComplete(wxCommandEvent& event) {
 
     m_isSearching = false;
     m_isInitialLoading = false;
+    
+    // Process all accumulated results at once to prevent UI artifacts
+    ProcessAllResults();
+    
     m_progressBar->SetValue(100);
+    m_progressText->SetLabel("Loading complete!");
+    
+    // Hide progress panel after a short delay
+    wxTimer* timer = new wxTimer(this);
+    timer->StartOnce(1000);
+    timer->Bind(wxEVT_TIMER, [this, timer](wxTimerEvent&) {
+        m_progressPanel->Hide();
+        Layout();
+        delete timer;
+    });
 
     m_resultsPanel->Layout();
     m_resultsPanel->FitInside();
     m_resultsPanel->Refresh();
+}
+
+void FlatpakStore::ProcessAllResults() {
+    // Make sure we have results to process
+    if (m_allResults.empty()) return;
+    
+    // Sort by index to ensure correct order
+    std::sort(m_allResults.begin(), m_allResults.end(), 
+             [](const ResultData& a, const ResultData& b) { return a.index < b.index; });
+    
+    // Get a reference to prevent modification during processing
+    const auto resultsCopy = m_allResults;
+    
+    // Clear the grid first to prevent any UI artifacts
+    m_gridSizer->Clear(true);
+    
+    // Add all apps to the grid
+    for (const auto& result : resultsCopy) {
+        // Create app card
+        AppCard* card = new AppCard(m_resultsPanel, result.name, result.summary, result.appId);
+        m_gridSizer->Add(card, 1, wxEXPAND);
+        
+        // Queue icon download
+        m_threadPool->Enqueue([this, card, iconUrl = result.iconUrl]() {
+            std::vector<unsigned char> iconData;
+            if (DownloadImage(iconUrl.ToStdString(), iconData, m_stopFlag)) {
+                wxMemoryInputStream stream(iconData.data(), iconData.size());
+                wxImage image;
+                if (image.LoadFile(stream, wxBITMAP_TYPE_PNG)) {
+                    const int target_size = 64;
+                    float scale = std::min(static_cast<float>(target_size) / image.GetWidth(), 
+                                          static_cast<float>(target_size) / image.GetHeight());
+                    
+                    image.Rescale(static_cast<int>(image.GetWidth() * scale),
+                                 static_cast<int>(image.GetHeight() * scale),
+                                 wxIMAGE_QUALITY_HIGH);
+
+                    if (image.GetWidth() != target_size || image.GetHeight() != target_size) {
+                        wxImage padded(target_size, target_size);
+                        padded.SetRGB(wxRect(0, 0, target_size, target_size), 79, 70, 229);
+                        padded.Paste(image, 
+                                    (target_size - image.GetWidth())/2,
+                                    (target_size - image.GetHeight())/2);
+                        image = padded;
+                    }
+
+                    wxBitmap bitmap(image);
+                    
+                    wxCommandEvent imageEvent(wxEVT_IMAGE_READY);
+                    imageEvent.SetClientData(new IconData{card, bitmap});
+                    wxQueueEvent(this, imageEvent.Clone());
+                }
+            }
+        });
+    }
+    
+    // Update the layout
+    m_resultsPanel->Layout();
+    m_resultsPanel->FitInside();
 }
 
 void FlatpakStore::HandleInstallClick(const wxString& appId) {
@@ -511,6 +645,7 @@ void FlatpakStore::OnInstallButtonClicked(wxCommandEvent& event) {
 void FlatpakStore::OnResultReady(wxCommandEvent& event) {
     if (event.GetInt() != m_searchId && event.GetInt() != -1) return;
 
+    // Parse the data
     std::string resultData = event.GetString().ToStdString();
     std::istringstream iss(resultData);
     std::string name, summary, iconUrl, appId;
@@ -519,72 +654,52 @@ void FlatpakStore::OnResultReady(wxCommandEvent& event) {
     std::getline(iss, summary, '|');
     std::getline(iss, iconUrl, '|');
     std::getline(iss, appId, '|');
-
-    AppCard* card = new AppCard(m_resultsPanel, name, summary, appId);
-    m_gridSizer->Add(card, 0, wxEXPAND);
     
-    m_threadPool->Enqueue([this, iconUrl, card, event]() {
-        std::vector<unsigned char> iconData;
-        if (DownloadImage(iconUrl, iconData, m_stopFlag)) {
-            wxMemoryInputStream stream(iconData.data(), iconData.size());
-            wxImage image;
-            if (image.LoadFile(stream, wxBITMAP_TYPE_PNG)) {
-                const int target_size = 64;
-                float scale = std::min(static_cast<float>(target_size) / image.GetWidth(), 
-                                      static_cast<float>(target_size) / image.GetHeight());
-                
-                image.Rescale(static_cast<int>(image.GetWidth() * scale),
-                             static_cast<int>(image.GetHeight() * scale),
-                             wxIMAGE_QUALITY_HIGH);
-
-                if (image.GetWidth() != target_size || image.GetHeight() != target_size) {
-                    wxImage padded(target_size, target_size);
-                    padded.SetRGB(wxRect(0, 0, target_size, target_size), 79, 70, 229);
-                    padded.Paste(image, 
-                                (target_size - image.GetWidth())/2,
-                                (target_size - image.GetHeight())/2);
-                    image = padded;
-                }
-
-                wxBitmap bitmap(image);
-                wxCommandEvent imageEvent(wxEVT_IMAGE_READY);
-                imageEvent.SetInt(event.GetInt());
-                imageEvent.SetClientData(new wxBitmap(bitmap));
-                imageEvent.SetEventObject(card);
-                wxQueueEvent(this, imageEvent.Clone());
-            }
-        }
-    });
-
-    m_resultsPanel->Layout();
+    // Store the result for later processing
+    ResultData data;
+    data.index = m_allResults.size();
+    data.name = name;
+    data.summary = summary;
+    data.iconUrl = iconUrl;
+    data.appId = appId;
+    
+    m_allResults.push_back(data);
+    
+    // Update progress
+    if (totalResults > 0) {
+        int progressPercent = static_cast<int>((m_allResults.size() * 100) / totalResults);
+        m_progressBar->SetValue(progressPercent);
+        m_progressText->SetLabel(wxString::Format("Loading applications: %zu of %d", 
+                                                m_allResults.size(), totalResults));
+    } else {
+        m_progressBar->Pulse();
+    }
 }
 
 void FlatpakStore::OnImageReady(wxCommandEvent& event) {
-    if (event.GetInt() != m_searchId && event.GetInt() != -1) {
-        wxBitmap* bitmap = static_cast<wxBitmap*>(event.GetClientData());
-        delete bitmap;
-        return;
-    }
-
-    wxBitmap* bitmap = static_cast<wxBitmap*>(event.GetClientData());
-    AppCard* card = static_cast<AppCard*>(event.GetEventObject());
-
-    if (bitmap && card) {
-        card->SetIcon(*bitmap);
-        delete bitmap;
+    IconData* data = static_cast<IconData*>(event.GetClientData());
+    if (data) {
+        data->card->SetIcon(data->bitmap);
+        delete data;
     }
 }
 
 void FlatpakStore::OnUpdateProgress(wxCommandEvent& event) {
-    if (event.GetInt() != m_searchId && event.GetInt() != -1) {
+    // Simple pulse animation if totalResults is not known
+    if (totalResults <= 0) {
+        static int pulseVal = 0;
+        pulseVal = (pulseVal + 5) % 100;
+        m_progressBar->SetValue(pulseVal);
         return;
     }
-
-    int currentProgress = event.GetInt();
-    if (totalResults > 0) {
-        int progressValue = (currentProgress * 100) / totalResults;
-        m_progressBar->SetValue(progressValue);
-    }
+    
+    // Otherwise, show actual progress
+    int current = event.GetInt();
+    int progressPercent = (current * 100) / totalResults;
+    m_progressBar->SetValue(progressPercent);
+    
+    m_progressText->SetLabel(wxString::Format("Loading applications: %d of %d", 
+                                            current, totalResults));
 }
 
 // ThreadPool implementation
