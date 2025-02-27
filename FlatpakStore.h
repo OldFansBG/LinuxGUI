@@ -3,6 +3,7 @@
 
 #include <wx/wx.h>
 #include <wx/sizer.h>
+#include <wx/wrapsizer.h>  // Added for wxWrapSizer
 #include <wx/textctrl.h>
 #include <wx/button.h>
 #include <wx/listbox.h>
@@ -74,7 +75,7 @@ private:
     wxScrolledWindow* m_resultsPanel;
     wxBoxSizer* m_mainSizer;
     wxGauge* m_progressBar;
-    wxFlexGridSizer* m_gridSizer;
+    wxWrapSizer* m_gridSizer;  // Changed to wxWrapSizer for responsive layout
     wxPanel* m_progressPanel;
     wxStaticText* m_progressText;
     
@@ -82,6 +83,7 @@ private:
     bool m_isSearching;
     bool m_isInitialLoading;
     int totalResults;
+    int m_displayedResults;  // Count of displayed cards
     std::mutex m_searchMutex;
     std::atomic<bool> m_stopFlag;
     int m_searchId;
@@ -90,21 +92,11 @@ private:
     // Thread pool
     std::unique_ptr<ThreadPool> m_threadPool;
     
-    // Data structures to store results
-    struct ResultData {
-        size_t index;
-        wxString name;
-        wxString summary;
-        wxString iconUrl;
-        wxString appId;
-    };
-    
+    // Data structures
     struct IconData {
         AppCard* card;
         wxBitmap bitmap;
     };
-    
-    std::vector<ResultData> m_allResults;
 
     // Event handlers
     void OnSearch(wxCommandEvent& event);
@@ -118,7 +110,6 @@ private:
     void HandleInstallClick(const wxString& appId);
     void ClearResults();
     void LoadInitialApps();
-    void ProcessAllResults();
 
     DECLARE_EVENT_TABLE()
 };
@@ -138,6 +129,7 @@ private:
     wxStaticText* m_summaryText;
     wxButton* m_installButton;
     wxString m_appId;
+    bool m_isLoading;  // Added to track loading state
 
     void OnPaint(wxPaintEvent& event);
     void OnMouseEnter(wxMouseEvent& event);
