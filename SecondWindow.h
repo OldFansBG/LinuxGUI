@@ -3,7 +3,7 @@
 #define SECONDWINDOW_H
 
 #include <wx/wx.h>
-#include <wx/event.h>
+#include "DesktopTab.h" // Include DesktopTab header
 
 enum {
     ID_TERMINAL_TAB = 1001,
@@ -24,10 +24,13 @@ class OverlayFrame;
 
 class SecondWindow : public wxFrame {
 public:
-    SecondWindow(wxWindow* parent, 
-                const wxString& title, 
+    // Updated constructor with DesktopTab parameter
+    SecondWindow(wxWindow* parent,
+                const wxString& title,
                 const wxString& isoPath,
-                const wxString& projectDir);
+                const wxString& projectDir,
+                DesktopTab* desktopTab); // Add this parameter
+
     virtual ~SecondWindow();
 
     void CloseOverlay();
@@ -37,6 +40,9 @@ public:
 
     // Public method to execute Docker commands
     void ExecuteDockerCommand(const wxString& containerId);
+
+    // Getter for DesktopTab
+    DesktopTab* GetDesktopTab() const { return m_desktopTab; }
 
 private:
     wxPanel* m_mainPanel;
@@ -51,6 +57,9 @@ private:
 
     OverlayFrame* m_overlay;
     OSDetector m_osDetector;
+
+    // Add DesktopTab member variable
+    DesktopTab* m_desktopTab;
 
 #ifdef _WIN32
     WinTerminalManager* m_winTerminalManager;

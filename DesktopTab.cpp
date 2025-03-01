@@ -71,7 +71,7 @@ void DesktopTab::CreateDesktopTab() {
     m_scrolledWindow->SetSizer(scrolledSizer);
 
     // Add a wxStaticText to display the text from the file
-    m_textDisplay = new wxStaticText(m_scrolledWindow, wxID_ANY, "ENV is: ");
+    m_textDisplay = new wxStaticText(m_scrolledWindow, wxID_ANY, "GUI Environment: Not detected");
     m_textDisplay->SetForegroundColour(*wxWHITE);
     m_textDisplay->SetFont(wxFont(12, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
     scrolledSizer->Add(m_textDisplay, 0, wxALIGN_LEFT | wxALL, 10);
@@ -165,44 +165,23 @@ void DesktopTab::CreateDesktopTab() {
     CallAfter(&DesktopTab::RecalculateLayout, GetSize().GetWidth());
 }
 
-void DesktopTab::UpdateTextFromFile() {
-    wxString filePath = "I:\\Files\\Desktop\\LinuxGUI\\build\\detected_gui.txt";
-    wxLogMessage("Checking for file: %s", filePath);
-
-    // Debug: Check if file exists
-    if (!wxFileName::FileExists(filePath)) {
-        wxLogError("File does NOT exist: %s", filePath);
-        return;
-    }
-
-    wxTextFile textFile;
-    if (textFile.Open(filePath)) {
-        wxString fileContent;
-        for (size_t i = 0; i < textFile.GetLineCount(); ++i) {
-            fileContent += textFile.GetLine(i) + "\n";
-        }
-        textFile.Close();
-
-        // Debug: Log content
-        wxLogMessage("File content: '%s' (length: %zu)", fileContent, fileContent.length());
-
-        m_textDisplay->SetLabel("ENV is: " + fileContent);
-        m_textDisplay->Refresh(); // Force UI update
-        m_scrolledWindow->Layout(); // Refresh layout
-    } else {
-        wxLogError("Failed to open file: %s", filePath);
-    }
+void DesktopTab::UpdateGUILabel(const wxString& guiName) {
+    wxString displayText = "GUI Environment: " + guiName;
+    m_textDisplay->SetLabel(displayText);
+    m_textDisplay->Refresh();
+    m_scrolledWindow->Layout();
 }
 
 void DesktopTab::OnFileCopyComplete(wxCommandEvent& event) {
-    wxLogMessage("Received FILE_COPY_COMPLETE_EVENT in DesktopTab.");
+    wxString guiName = event.GetString();
+    guiName.Trim(true).Trim(false); // Clean again for safety
 
-    // Debug: Log before updating the UI
-    wxLogMessage("Checking for detected_gui.txt and updating UI...");
+    if (guiName.IsEmpty()) {
+        UpdateGUILabel("Not detected");
+    } else {
+        UpdateGUILabel(guiName);
+    }
 
-    // Update the UI with the content of the file
-    UpdateTextFromFile();
-
-    // Debug: Log after updating the UI
-    wxLogMessage("UI update completed.");
+    // Force UI refresh
+    Update(); // Add this to ensure immediate redraw
 }

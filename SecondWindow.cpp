@@ -1,5 +1,6 @@
 // SecondWindow.cpp
 #include "SecondWindow.h"
+#include "DesktopTab.h" // Include DesktopTab header
 #include <wx/utils.h>
 #include <wx/statline.h>
 #include <wx/process.h>
@@ -48,7 +49,16 @@ public:
                 int exitCode = wxExecute(guiDetectCommand, output, errors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE);
                 
                 if (exitCode == 0 && !output.IsEmpty()) {
-                    wxLogDebug("Detected GUI environment: %s", output[0]);
+                    wxString guiName = output[0];
+                    guiName.Trim(true).Trim(false); // Remove leading/trailing whitespace
+                    guiName.Replace("\n", "");      // Remove newlines
+
+                    wxLogDebug("Detected GUI environment: %s", guiName);
+
+                    // Send the GUI name to DesktopTab via event
+                    wxCommandEvent* guiEvent = new wxCommandEvent(FILE_COPY_COMPLETE_EVENT);
+                    guiEvent->SetString(guiName); // Store GUI name in event
+                    wxQueueEvent(m_parent->GetDesktopTab(), guiEvent); // Forward to DesktopTab
                 } else {
                     wxString errorMsg = wxString::Format("GUI detection failed (exit code %d). ", exitCode);
                     if (!errors.IsEmpty()) errorMsg += "Error: " + errors[0];
@@ -170,7 +180,7 @@ private:
     }
 
     void DrawLoadingAnimation(wxDC& dc, const wxSize& size) {
-        wxPoint center(size.GetWidth()/2, size.GetHeight()/2);
+        wxPoint center(size.GetWidth() / 2, size.GetHeight() / 2);
         int radius = std::min(size.GetWidth(), size.GetHeight()) / 6;
         int numPoints = 8;
         int pointRadius = radius / 4;
@@ -211,7 +221,8 @@ wxEND_EVENT_TABLE()
 SecondWindow::SecondWindow(wxWindow* parent,
         const wxString& title,
         const wxString& isoPath,
-        const wxString& projectDir)
+        const wxString& projectDir,
+        DesktopTab* desktopTab) // Add DesktopTab parameter
     : wxFrame(parent, wxID_ANY, title, 
             wxDefaultPosition, wxSize(800, 650),
             wxDEFAULT_FRAME_STYLE | wxSYSTEM_MENU | wxCAPTION | 
@@ -220,7 +231,8 @@ SecondWindow::SecondWindow(wxWindow* parent,
     m_isoPath(isoPath),
     m_projectDir(projectDir),
     m_threadRunning(false),
-    m_overlay(nullptr)
+    m_overlay(nullptr),
+    m_desktopTab(desktopTab) // Initialize DesktopTab pointer
 #ifdef __WXMSW__
     , m_winTerminalManager(nullptr)
 #endif

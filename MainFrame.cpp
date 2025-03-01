@@ -14,6 +14,7 @@
 #include <wx/display.h>
 #include <wx/filename.h>
 #include "SystemTheme.h"
+#include "DesktopTab.h"
 
 BEGIN_EVENT_TABLE(MainFrame, wxFrame)
    EVT_BUTTON(ID_BROWSE_ISO, MainFrame::OnBrowseISO)
@@ -83,6 +84,12 @@ MainFrame::MainFrame(const wxString& title)
    
     Centre();
     Layout();
+
+    // Create DesktopTab instance
+    m_desktopTab = new DesktopTab(this);
+
+    // Bind custom event to handler
+    Bind(FILE_COPY_COMPLETE_EVENT, &MainFrame::OnGUIDetected, this);
 }
 
 MainFrame::~MainFrame() {
@@ -268,9 +275,10 @@ void MainFrame::CreateSettingsMenu() {
 }
 
 void MainFrame::OpenSecondWindow() {
-    SecondWindow* secondWindow = new SecondWindow(this, "Terminal", 
+    SecondWindow* secondWindow = new SecondWindow(this, "Analyzer", 
                                                  m_isoPathCtrl->GetValue(), 
-                                                 m_workDirCtrl->GetValue());
+                                                 m_workDirCtrl->GetValue(),
+                                                 m_desktopTab); // Add this as the 5th parameter
     this->Hide();
     secondWindow->Show(true);
 }
@@ -348,9 +356,10 @@ void MainFrame::OnNextButton(wxCommandEvent& event) {
     m_currentISOPath = m_isoPathCtrl->GetValue();
     
     // Open second window
-    SecondWindow* secondWindow = new SecondWindow(this, "Terminal", 
+    SecondWindow* secondWindow = new SecondWindow(this, "Analyzer", 
                                                  m_currentISOPath, 
-                                                 m_workDirCtrl->GetValue());
+                                                 m_workDirCtrl->GetValue(),
+                                                 m_desktopTab); // Add this
     this->Hide();
     secondWindow->Show(true);
 }
@@ -385,9 +394,10 @@ void MainFrame::UpdateExtractionProgress(int progress, const wxString& status) {
         FindWindow(ID_CANCEL)->Enable(false);
         SetStatusText("Extraction completed successfully");
         
-        SecondWindow* secondWindow = new SecondWindow(this, "Terminal", 
+        SecondWindow* secondWindow = new SecondWindow(this, "Analyzer", 
                                                      m_currentISOPath, 
-                                                     m_workDirCtrl->GetValue());
+                                                     m_workDirCtrl->GetValue(),
+                                                     m_desktopTab); // Add this
         this->Hide();
         secondWindow->Show(true);
     } else if (progress == 0) {
@@ -631,4 +641,11 @@ wxString MainFrame::DetectDistribution(const wxString& releaseContent) {
         }
     }
     return "Unknown Distribution";
+}
+
+void MainFrame::OnGUIDetected(wxCommandEvent& event) {
+    wxString guiName = event.GetString();
+    if (m_desktopTab) {
+        m_desktopTab->UpdateGUILabel(guiName); // Add this method to DesktopTab
+    }
 }

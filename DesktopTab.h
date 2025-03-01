@@ -14,6 +14,9 @@ public:
     // Add a method to update the UI with text from a file
     void UpdateTextFromFile();
 
+    // Add this method
+    void UpdateGUILabel(const wxString& guiName);
+
 private:
     void CreateDesktopTab();
     wxBitmap LoadImage(const wxString& imageName);

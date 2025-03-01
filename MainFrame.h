@@ -13,6 +13,7 @@
 #include "SecondWindow.h"
 #include "WindowIDs.h"
 #include "SettingsManager.h"
+#include "DesktopTab.h"
 
 #ifdef __WXMSW__
   #include <dwmapi.h>
@@ -74,6 +75,11 @@ private:
 
    // Settings manager
    SettingsManager m_settingsManager;
+
+   // Add DesktopTab member
+   DesktopTab* m_desktopTab;
+
+   void OnGUIDetected(wxCommandEvent& event); // Add this handler
 
    // Event table declaration
    DECLARE_EVENT_TABLE()
