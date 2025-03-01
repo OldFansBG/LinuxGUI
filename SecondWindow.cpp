@@ -6,6 +6,8 @@
 #include <wx/dcbuffer.h>
 #include <wx/filename.h>
 #include <wx/file.h>
+#include <wx/arrstr.h>
+#include <wx/log.h>
 #include <cmath>
 #include <chrono>
 #ifdef __WXMSW__
@@ -39,6 +41,19 @@ public:
                 wxString containerId;
                 file.ReadAll(&containerId);
                 containerId.Trim();
+
+                // Read detected_gui.txt from container and log it
+                wxString guiDetectCommand = wxString::Format("docker exec %s cat /root/custom_iso/detected_gui.txt", containerId);
+                wxArrayString output, errors;
+                int exitCode = wxExecute(guiDetectCommand, output, errors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE);
+                
+                if (exitCode == 0 && !output.IsEmpty()) {
+                    wxLogDebug("Detected GUI environment: %s", output[0]);
+                } else {
+                    wxString errorMsg = wxString::Format("GUI detection failed (exit code %d). ", exitCode);
+                    if (!errors.IsEmpty()) errorMsg += "Error: " + errors[0];
+                    wxLogDebug(errorMsg);
+                }
 
                 // Execute Docker command in the terminal
                 m_parent->ExecuteDockerCommand(containerId);
