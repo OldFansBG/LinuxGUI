@@ -1,15 +1,21 @@
 #include "DesktopTab.h"
 #include <wx/filename.h>
 #include <array>
-#include <wx/textfile.h> // For reading text files
+#include <wx/textfile.h>
+#include "SecondWindow.h" // Include here in the .cpp file instead of .h
+#include <wx/file.h>
+#include <wx/wfstream.h>
+#include <wx/txtstrm.h>
 
-// Custom event declaration (if not already declared in a shared header)
+// Custom event declaration
 wxDEFINE_EVENT(FILE_COPY_COMPLETE_EVENT, wxCommandEvent);
 
-DesktopTab::DesktopTab(wxWindow* parent) : wxPanel(parent) {
+DesktopTab::DesktopTab(wxWindow* parent)
+    : wxPanel(parent), m_gridSizer(nullptr)
+{
     CreateDesktopTab();
     Bind(wxEVT_SIZE, &DesktopTab::OnSize, this);
-    Bind(FILE_COPY_COMPLETE_EVENT, &DesktopTab::OnFileCopyComplete, this); // Bind custom event
+    Bind(FILE_COPY_COMPLETE_EVENT, &DesktopTab::OnFileCopyComplete, this);
 }
 
 wxBitmap DesktopTab::LoadImage(const wxString& imageName) {
@@ -70,11 +76,28 @@ void DesktopTab::CreateDesktopTab() {
     wxBoxSizer* scrolledSizer = new wxBoxSizer(wxVERTICAL);
     m_scrolledWindow->SetSizer(scrolledSizer);
 
+    // Add a horizontal sizer for the text and reload button
+    wxBoxSizer* headerSizer = new wxBoxSizer(wxHORIZONTAL);
+
     // Add a wxStaticText to display the text from the file
     m_textDisplay = new wxStaticText(m_scrolledWindow, wxID_ANY, "GUI Environment: Not detected");
     m_textDisplay->SetForegroundColour(*wxWHITE);
     m_textDisplay->SetFont(wxFont(12, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
-    scrolledSizer->Add(m_textDisplay, 0, wxALIGN_LEFT | wxALL, 10);
+    headerSizer->Add(m_textDisplay, 1, wxALIGN_LEFT | wxALL, 10);
+
+    // Add a reload button
+    m_reloadButton = new wxButton(m_scrolledWindow, wxID_ANY, "Reload UI", 
+                                 wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+    m_reloadButton->SetForegroundColour(*wxWHITE);
+    m_reloadButton->SetBackgroundColour(wxColour(60, 60, 60));
+    headerSizer->Add(m_reloadButton, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
+
+    // Bind event for reload button
+    m_reloadButton->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        UpdateTextFromFile();
+    });
+
+    scrolledSizer->Add(headerSizer, 0, wxEXPAND);
 
     const std::array<wxString, 9> environments = {
         "GNOME", "KDE Plasma", "XFCE",
@@ -166,22 +189,77 @@ void DesktopTab::CreateDesktopTab() {
 }
 
 void DesktopTab::UpdateGUILabel(const wxString& guiName) {
+    wxLogDebug("DesktopTab::UpdateGUILabel - Setting label with GUI name: %s", guiName);
     wxString displayText = "GUI Environment: " + guiName;
     m_textDisplay->SetLabel(displayText);
+    
+    // Force refresh and layout updates
     m_textDisplay->Refresh();
     m_scrolledWindow->Layout();
+    
+    wxLogDebug("DesktopTab::UpdateGUILabel - Label updated to: %s", m_textDisplay->GetLabel());
+    
+    // Force more aggressive UI updates
+    Refresh(true);
+    Update();
+    GetParent()->Refresh(true);
+    GetParent()->Update();
 }
 
 void DesktopTab::OnFileCopyComplete(wxCommandEvent& event) {
     wxString guiName = event.GetString();
+    wxLogDebug("DesktopTab::OnFileCopyComplete - Event received with GUI name: %s", guiName);
+    
     guiName.Trim(true).Trim(false); // Clean again for safety
 
     if (guiName.IsEmpty()) {
+        wxLogDebug("DesktopTab::OnFileCopyComplete - GUI name is empty, setting to 'Not detected'");
         UpdateGUILabel("Not detected");
     } else {
+        wxLogDebug("DesktopTab::OnFileCopyComplete - Updating GUI label to: %s", guiName);
         UpdateGUILabel(guiName);
     }
+}
 
-    // Force UI refresh
-    Update(); // Add this to ensure immediate redraw
+void DesktopTab::UpdateTextFromFile() {
+    wxLogDebug("Reload UI button clicked. Initiating UI reload.");
+    
+    // First try to get from SecondWindow parent if possible
+    wxString guiFilePath;
+    wxWindow* parent = GetParent();
+    while (parent) {
+        // Try to cast to SecondWindow
+        SecondWindow* secondWindow = wxDynamicCast(parent, SecondWindow);
+        if (secondWindow) {
+            guiFilePath = wxFileName(secondWindow->GetProjectDir(), "detected_gui.txt").GetFullPath();
+            wxLogDebug("Found SecondWindow parent, using project dir: %s", secondWindow->GetProjectDir());
+            break;
+        }
+        parent = parent->GetParent();
+    }
+    
+    // If we couldn't get from SecondWindow, try current working directory
+    if (guiFilePath.IsEmpty()) {
+        guiFilePath = wxFileName(wxGetCwd(), "detected_gui.txt").GetFullPath();
+        wxLogDebug("No SecondWindow parent found, using current dir: %s", wxGetCwd());
+    }
+    
+    wxLogDebug("DesktopTab::UpdateTextFromFile - Looking for file: %s", guiFilePath);
+    
+    if (wxFileExists(guiFilePath)) {
+        wxFile file(guiFilePath);
+        wxString content;
+        if (file.ReadAll(&content)) {
+            content.Trim(true).Trim(false);
+            wxLogDebug("DesktopTab::UpdateTextFromFile - Read content: %s", content);
+            
+            UpdateGUILabel(content);
+        } else {
+            wxLogDebug("DesktopTab::UpdateTextFromFile - Failed to read file contents");
+            UpdateGUILabel("Not detected");
+        }
+    } else {
+        wxLogDebug("DesktopTab::UpdateTextFromFile - File not found: %s", guiFilePath);
+        UpdateGUILabel("Not detected");
+    }
 }

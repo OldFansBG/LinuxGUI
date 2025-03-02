@@ -4,6 +4,9 @@
 #include <wx/wx.h>
 #include "CustomEvents.h" // Include the shared header
 
+// Forward declarations
+class SecondWindow; // Forward declare instead of including
+
 class DesktopTab : public wxPanel {
 public:
     DesktopTab(wxWindow* parent);
@@ -28,6 +31,9 @@ private:
 
     // Add a wxStaticText to display the text
     wxStaticText* m_textDisplay;
+    
+    // Add the reload button
+    wxButton* m_reloadButton;
 };
 
 #endif // DESKTOPTAB_H

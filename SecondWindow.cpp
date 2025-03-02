@@ -53,12 +53,29 @@ public:
                     guiName.Trim(true).Trim(false); // Remove leading/trailing whitespace
                     guiName.Replace("\n", "");      // Remove newlines
 
-                    wxLogDebug("Detected GUI environment: %s", guiName);
+                    wxLogDebug("Detected GUI environment before event: %s", guiName);
 
-                    // Send the GUI name to DesktopTab via event
-                    wxCommandEvent* guiEvent = new wxCommandEvent(FILE_COPY_COMPLETE_EVENT);
-                    guiEvent->SetString(guiName); // Store GUI name in event
-                    wxQueueEvent(m_parent->GetDesktopTab(), guiEvent); // Forward to DesktopTab
+                    // Save to file for reload button to use later
+                    wxString localGuiPath = wxFileName(m_parent->GetProjectDir(), "detected_gui.txt").GetFullPath();
+                    wxFile guiFile;
+                    if (guiFile.Create(localGuiPath, true) && guiFile.IsOpened()) {
+                        guiFile.Write(guiName);
+                        guiFile.Close();
+                        wxLogDebug("GUI name saved to file: %s", localGuiPath);
+                    }
+
+                    // Create and send event to DesktopTab
+                    if (m_parent->GetDesktopTab()) {
+                        wxCommandEvent* guiEvent = new wxCommandEvent(FILE_COPY_COMPLETE_EVENT);
+                        guiEvent->SetString(guiName); // Store GUI name in event
+                        
+                        // Try to post the event directly
+                        wxLogDebug("Posting event with GUI name: %s", guiName);
+                        wxPostEvent(m_parent->GetDesktopTab(), *guiEvent);
+                        delete guiEvent;
+                    } else {
+                        wxLogDebug("ERROR: DesktopTab pointer is NULL!");
+                    }
                 } else {
                     wxString errorMsg = wxString::Format("GUI detection failed (exit code %d). ", exitCode);
                     if (!errors.IsEmpty()) errorMsg += "Error: " + errors[0];
@@ -237,6 +254,8 @@ SecondWindow::SecondWindow(wxWindow* parent,
     , m_winTerminalManager(nullptr)
 #endif
 {
+    wxLogDebug("SecondWindow constructor: desktopTab pointer = %p", m_desktopTab);
+
     // Enable dark mode title bar
     #ifdef __WXMSW__
     BOOL value = TRUE;
