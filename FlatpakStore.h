@@ -83,7 +83,7 @@ private:
 // FlatpakStore class declaration
 class FlatpakStore : public wxPanel {
 public:
-    FlatpakStore(wxWindow* parent);
+    FlatpakStore(wxWindow* parent, const wxString& workDir); // Updated constructor
     virtual ~FlatpakStore();
 
     void SetTotalResults(int total) { totalResults = total; }
@@ -122,6 +122,7 @@ private:
     std::atomic<bool> m_stopFlag;
     int m_searchId;
     wxString m_containerId;
+    wxString m_workDir; // Added to store the working directory
 
     // Thread pool
     std::unique_ptr<ThreadPool> m_threadPool;

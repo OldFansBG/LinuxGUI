@@ -3,6 +3,9 @@
 #include <sstream>
 #include <algorithm>
 #include <wx/tokenzr.h>
+#include <wx/filename.h>
+#include <wx/stdpaths.h> // Added for wxStandardPaths
+#include <wx/log.h>
 #include <iostream>
 
 // Define event types
@@ -152,35 +155,22 @@ RoundedSearchPanel::RoundedSearchPanel(wxWindow* parent, wxWindowID id, const wx
     : wxPanel(parent, id, pos, size, wxBORDER_NONE)
 {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
-    // Set the background to match the parent's background to avoid the black corners
     SetBackgroundColour(parent->GetBackgroundColour());
 }
 
 void RoundedSearchPanel::OnPaint(wxPaintEvent& event)
 {
     wxAutoBufferedPaintDC dc(this);
-    
-    // First clear the entire background with the parent's color
-    // This ensures no black corners
     dc.SetBackground(wxBrush(GetBackgroundColour()));
     dc.Clear();
     
     wxGraphicsContext* gc = wxGraphicsContext::Create(dc);
-    
     if (gc) {
         wxRect rect = GetClientRect();
-        
-        // Set up the graphics context
         gc->SetBrush(wxBrush(wxColour(55, 65, 81)));
         gc->SetPen(*wxTRANSPARENT_PEN);
-        
-        // Enable anti-aliasing for smoother corners
         gc->SetAntialiasMode(wxANTIALIAS_DEFAULT);
-        
-        // Draw a rounded rectangle
-        // Inset slightly to ensure corners stay within the panel bounds
         gc->DrawRoundedRectangle(rect.x, rect.y, rect.width, rect.height, 10);
-        
         delete gc;
     }
 }
@@ -192,7 +182,6 @@ AppCard::AppCard(wxWindow* parent, const wxString& name, const wxString& summary
       m_appId(appId), m_isLoading(true)
 {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
-    // Set the background color to match the parent's background
     SetBackgroundColour(parent->GetBackgroundColour());
     
     wxBoxSizer* mainSizer = new wxBoxSizer(wxHORIZONTAL);
@@ -257,40 +246,27 @@ void AppCard::SetIcon(const wxBitmap& bitmap) {
 
 void AppCard::OnPaint(wxPaintEvent& event) {
     wxAutoBufferedPaintDC dc(this);
-    
-    // Clear background with parent color first to avoid black corners
     dc.SetBackground(wxBrush(GetParent()->GetBackgroundColour()));
     dc.Clear();
     
-    // Use a graphics context for anti-aliased drawing
     wxGraphicsContext* gc = wxGraphicsContext::Create(dc);
     if (gc) {
         wxRect rect = GetClientRect();
-        
-        // Determine the proper background color
         wxColour bgColor = GetBackgroundColour();
-        
-        // Set up the graphics context for the rounded rectangle
         gc->SetAntialiasMode(wxANTIALIAS_DEFAULT);
         gc->SetBrush(wxBrush(bgColor));
         gc->SetPen(*wxTRANSPARENT_PEN);
-        
-        // Draw the rounded rectangle
         gc->DrawRoundedRectangle(0, 0, rect.width, rect.height, 10);
-        
         delete gc;
     }
 }
 
-
 void AppCard::OnMouseEnter(wxMouseEvent& event) {
-    // Just change the stored background color for the hover state
     SetBackgroundColour(wxColour(65, 75, 91));
     Refresh();
 }
 
 void AppCard::OnMouseLeave(wxMouseEvent& event) {
-    // Just change the stored background color back to normal
     SetBackgroundColour(wxColour(55, 65, 81));
     Refresh();
 }
@@ -406,9 +382,9 @@ wxThread::ExitCode InitialLoadThread::Entry() {
 }
 
 // FlatpakStore Implementation
-
-FlatpakStore::FlatpakStore(wxWindow* parent)
+FlatpakStore::FlatpakStore(wxWindow* parent, const wxString& workDir)
     : wxPanel(parent, wxID_ANY),
+      m_workDir(workDir), // Initialize m_workDir
       m_isSearching(false),
       m_isInitialLoading(false),
       totalResults(0),
@@ -421,7 +397,6 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
 
     m_threadPool = std::make_unique<ThreadPool>(4);
     
-    // Initialize timers with specific IDs
     m_batchTimer = new wxTimer(this, ID_BATCH_TIMER);
     m_layoutTimer = new wxTimer(this, ID_LAYOUT_TIMER);
 
@@ -429,35 +404,28 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
 
     m_mainSizer = new wxBoxSizer(wxVERTICAL);
 
-    // Create a rounded search panel
     RoundedSearchPanel* searchPanel = new RoundedSearchPanel(this, wxID_ANY);
-
     wxBoxSizer* searchSizer = new wxBoxSizer(wxHORIZONTAL);
 
-    // Modern search box with rounded corners
     m_searchBox = new wxTextCtrl(searchPanel, wxID_ANY, "", wxDefaultPosition,
                                  wxSize(-1, 42), wxTE_PROCESS_ENTER | wxBORDER_NONE);
     m_searchBox->SetBackgroundColour(wxColour(55, 65, 81));
     m_searchBox->SetForegroundColour(wxColour(229, 229, 229));
     m_searchBox->SetHint("Search for applications...");
     
-    // Use a larger font for the search box
     wxFont searchFont = m_searchBox->GetFont();
     searchFont.SetPointSize(searchFont.GetPointSize() + 1);
     m_searchBox->SetFont(searchFont);
 
-    // Modern search button with rounded corners
     m_searchButton = new wxButton(searchPanel, wxID_ANY, "Search",
                                   wxDefaultPosition, wxSize(120, 42), wxBORDER_NONE);
     m_searchButton->SetBackgroundColour(wxColour(79, 70, 229));
     m_searchButton->SetForegroundColour(*wxWHITE);
     
-    // Use a bolder font for the search button
     wxFont buttonFont = m_searchButton->GetFont();
     buttonFont.SetWeight(wxFONTWEIGHT_BOLD);
     m_searchButton->SetFont(buttonFont);
 
-    // Add padding around the elements inside the rounded panel
     searchSizer->Add(m_searchBox, 1, wxEXPAND | wxALL, 10);
     searchSizer->Add(m_searchButton, 0, wxALL, 10);
     searchPanel->SetSizer(searchSizer);
@@ -497,12 +465,22 @@ FlatpakStore::FlatpakStore(wxWindow* parent)
 
     LoadInitialApps();
 
-    std::ifstream file("container_id.txt");
+    // Check for container_id.txt in the provided workDir
+    wxString containerPath = m_workDir + wxFILE_SEP_PATH + "container_id.txt";
+    wxLogDebug("Checking for container_id.txt in: %s", containerPath);
+    std::ifstream file(containerPath.ToStdString());
     if (file.is_open()) {
         std::string containerId;
         std::getline(file, containerId);
-        m_containerId = wxString(containerId);
+        if (!containerId.empty()) {
+            m_containerId = wxString(containerId);
+            wxLogDebug("Loaded container ID: %s from %s", m_containerId, containerPath);
+        } else {
+            wxLogDebug("container_id.txt is empty at: %s", containerPath);
+        }
         file.close();
+    } else {
+        wxLogDebug("container_id.txt not found in workDir: %s", containerPath);
     }
 
     this->Bind(wxEVT_BUTTON, &FlatpakStore::OnInstallButtonClicked, this);
@@ -521,12 +499,9 @@ void FlatpakStore::ClearResults() {
     m_resultsPanel->Refresh();
     m_resultsPanel->Thaw();
     
-    // Also clear any pending results
-    {
-        std::lock_guard<std::mutex> lock(m_resultsMutex);
-        m_pendingResults.clear();
-        m_pendingBatchSize = 0;
-    }
+    std::lock_guard<std::mutex> lock(m_resultsMutex);
+    m_pendingResults.clear();
+    m_pendingBatchSize = 0;
 }
 
 void FlatpakStore::LoadInitialApps() {
@@ -545,7 +520,7 @@ void FlatpakStore::LoadInitialApps() {
         m_stopFlag = false;
         m_isInitialLoading = true;
         
-        m_layoutTimer->Start(100); // Start periodic layout updates
+        m_layoutTimer->Start(100);
         
         InitialLoadThread* thread = new InitialLoadThread(this, m_stopFlag);
         if (thread->Run() != wxTHREAD_NO_ERROR) {
@@ -585,7 +560,7 @@ void FlatpakStore::OnSearch(wxCommandEvent& event) {
         m_searchId++;
         m_isSearching = true;
         
-        m_layoutTimer->Start(100); // Start periodic layout updates
+        m_layoutTimer->Start(100);
         
         SearchThread* thread = new SearchThread(this, query.ToStdString(), m_searchId, m_stopFlag);
         if (thread->Run() != wxTHREAD_NO_ERROR) {
@@ -611,7 +586,6 @@ void FlatpakStore::OnSearchComplete(wxCommandEvent& event) {
     m_progressBar->SetValue(100);
     m_progressText->SetLabel("Loading complete!");
     
-    // Process any remaining results
     ProcessPendingBatch(true);
     
     wxTimer* timer = new wxTimer(this);
@@ -628,16 +602,12 @@ void FlatpakStore::OnResultReady(wxCommandEvent& event) {
 
     wxString resultData = event.GetString();
     
-    // Store result for batch processing
-    {
-        std::lock_guard<std::mutex> lock(m_resultsMutex);
-        m_pendingResults.push_back(resultData);
-        m_pendingBatchSize++;
-        
-        // Start batch processing if not already running
-        if (!m_batchTimer->IsRunning() && m_pendingBatchSize >= 1) {
-            m_batchTimer->StartOnce(10);
-        }
+    std::lock_guard<std::mutex> lock(m_resultsMutex);
+    m_pendingResults.push_back(resultData);
+    m_pendingBatchSize++;
+    
+    if (!m_batchTimer->IsRunning() && m_pendingBatchSize >= 1) {
+        m_batchTimer->StartOnce(10);
     }
     
     m_displayedResults++;
@@ -661,7 +631,6 @@ void FlatpakStore::ProcessPendingBatch(bool processAll) {
     {
         std::lock_guard<std::mutex> lock(m_resultsMutex);
         
-        // Process up to 10 items at a time unless processing all
         int batchSize = processAll ? m_pendingResults.size() : std::min(10, static_cast<int>(m_pendingResults.size()));
         if (batchSize <= 0) return;
         
@@ -674,7 +643,6 @@ void FlatpakStore::ProcessPendingBatch(bool processAll) {
     
     m_resultsPanel->Freeze();
     
-    // Process each result in the current batch
     for (const wxString& resultData : currentBatch) {
         wxStringTokenizer tokenizer(resultData, "|");
         if (tokenizer.CountTokens() < 4) continue;
@@ -686,7 +654,6 @@ void FlatpakStore::ProcessPendingBatch(bool processAll) {
         AppCard* card = new AppCard(m_resultsPanel, name, summary, appId);
         m_gridSizer->Add(card, 0, wxALL, 5);
         
-        // Queue image download task
         m_threadPool->Enqueue([this, card, iconUrl]() {
             std::vector<unsigned char> iconData;
             if (DownloadImage(iconUrl.ToStdString(), iconData, m_stopFlag)) {
@@ -719,15 +686,12 @@ void FlatpakStore::ProcessPendingBatch(bool processAll) {
         });
     }
 
-    // Update layout after processing the batch
     m_gridSizer->Layout();
     m_resultsPanel->Layout();
     m_layoutTimer->StartOnce(100);
     
     m_resultsPanel->Thaw();
     
-    // If there are additional results, schedule the next batch.
-    // If the current batch contained only one item, use a longer delay.
     if (!m_pendingResults.empty() && !m_batchTimer->IsRunning()) {
         int delay = (currentBatch.size() == 1) ? 100 : 50;
         m_batchTimer->StartOnce(delay);
@@ -764,31 +728,46 @@ void FlatpakStore::OnLayoutTimer(wxTimerEvent& event) {
 
 void FlatpakStore::HandleInstallClick(const wxString& appId) {
     if (m_containerId.IsEmpty()) {
-        wxMessageBox("Container ID is not available. Cannot install applications.",
-                     "Installation Error", wxOK | wxICON_ERROR);
-        return;
+        // Check directly in the provided workDir
+        wxString containerPath = m_workDir + wxFILE_SEP_PATH + "container_id.txt";
+        std::ifstream file(containerPath.ToStdString());
+        if (file.is_open()) {
+            std::string containerId;
+            std::getline(file, containerId);
+            if (!containerId.empty()) {
+                m_containerId = wxString(containerId);
+                wxLogDebug("Reloaded container ID: %s from %s", m_containerId, containerPath);
+            } else {
+                wxLogDebug("container_id.txt is empty at: %s", containerPath);
+            }
+            file.close();
+        } else {
+            wxMessageBox("Container ID is not available. Cannot install applications.\n"
+                         "Please ensure the container is initialized and container_id.txt exists in the working directory.",
+                         "Installation Error", wxOK | wxICON_ERROR);
+            return;
+        }
     }
-    
+
     wxProgressDialog progressDialog("Installing Application",
                                     "Installing " + appId + "...",
                                     100, this,
                                     wxPD_APP_MODAL | wxPD_AUTO_HIDE);
     progressDialog.Pulse();
-    
+
     wxString installCommand = wxString::Format(
         "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'flatpak install -y flathub %s'\"",
         m_containerId, appId
     );
-    
+
     wxArrayString output, errors;
     int result = wxExecute(installCommand, output, errors, wxEXEC_SYNC);
-    
+
     if (result == 0) {
         progressDialog.Update(100);
         wxMessageBox("Successfully installed " + appId, "Installation Complete",
                      wxOK | wxICON_INFORMATION);
-    }
-    else {
+    } else {
         wxString errorMsg = "Installation failed for " + appId + "\n\nErrors:\n";
         for (const auto& err : errors) {
             errorMsg += err + "\n";
@@ -856,10 +835,8 @@ ThreadPool::ThreadPool(size_t threads) : stop(false) {
 }
 
 ThreadPool::~ThreadPool() {
-    {
-        std::unique_lock<std::mutex> lock(queueMutex);
-        stop = true;
-    }
+    std::unique_lock<std::mutex> lock(queueMutex);
+    stop = true;
     condition.notify_all();
     for (std::thread& worker : workers) {
         if (worker.joinable())
