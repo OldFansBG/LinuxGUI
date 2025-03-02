@@ -25,6 +25,10 @@ private:
     wxBitmap LoadImage(const wxString& imageName);
     void OnSize(wxSizeEvent& event);
     void OnFileCopyComplete(wxCommandEvent& event); // Event handler
+    
+    // New methods for grayscale functionality
+    wxBitmap ConvertToGrayscale(const wxBitmap& original);
+    void ApplyGrayscaleToCards(const wxString& detectedEnv);
 
     wxFlexGridSizer* m_gridSizer;
     wxScrolledWindow* m_scrolledWindow;

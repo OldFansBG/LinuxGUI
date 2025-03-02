@@ -27,6 +27,64 @@ wxBitmap DesktopTab::LoadImage(const wxString& imageName) {
     return wxNullBitmap;
 }
 
+wxBitmap DesktopTab::ConvertToGrayscale(const wxBitmap& original) {
+    wxImage image = original.ConvertToImage();
+    if (!image.IsOk()) return original;
+    
+    image = image.ConvertToGreyscale();
+    return wxBitmap(image);
+}
+
+void DesktopTab::ApplyGrayscaleToCards(const wxString& detectedEnv) {
+    wxLogDebug("Applying grayscale filter for detected environment: %s", detectedEnv);
+    
+    // Get all child panels that are environment cards
+    wxWindowList& children = m_scrolledWindow->GetChildren();
+    for (wxWindowList::iterator it = children.begin(); it != children.end(); ++it) {
+        wxPanel* card = wxDynamicCast(*it, wxPanel);
+        if (!card || !card->GetSizer()) continue;
+        
+        wxString cardName = card->GetName();
+        bool isDetectedEnv = (cardName == detectedEnv);
+        
+        // Process each panel's image container
+        wxWindowList& cardChildren = card->GetChildren();
+        for (wxWindowList::iterator childIt = cardChildren.begin(); childIt != cardChildren.end(); ++childIt) {
+            wxPanel* imageContainer = wxDynamicCast(*childIt, wxPanel);
+            if (!imageContainer || !imageContainer->GetClientData()) continue;
+            
+            // If this is an image container
+            wxBitmap* storedBitmap = static_cast<wxBitmap*>(imageContainer->GetClientData());
+            if (storedBitmap && storedBitmap->IsOk()) {
+                // Apply grayscale if not the detected environment
+                if (!isDetectedEnv) {
+                    *storedBitmap = ConvertToGrayscale(*storedBitmap);
+                }
+                
+                // Force refresh of the image container
+                imageContainer->Refresh();
+            }
+        }
+        
+        // Update button color
+        wxWindowList& grandChildren = card->GetChildren();
+        for (wxWindowList::iterator gcIt = grandChildren.begin(); gcIt != grandChildren.end(); ++gcIt) {
+            wxButton* button = wxDynamicCast(*gcIt, wxButton);
+            if (button) {
+                if (isDetectedEnv) {
+                    button->SetBackgroundColour(wxColour(0, 120, 215));
+                } else {
+                    button->SetBackgroundColour(wxColour(80, 80, 80));
+                }
+                button->Refresh();
+            }
+        }
+    }
+    
+    // Force refresh of the entire panel
+    m_scrolledWindow->Refresh();
+}
+
 void DesktopTab::OnSize(wxSizeEvent& event) {
     wxSize size = event.GetSize();
     RecalculateLayout(size.GetWidth());
@@ -119,6 +177,9 @@ void DesktopTab::CreateDesktopTab() {
         wxPanel* card = new wxPanel(m_scrolledWindow);
         card->SetBackgroundColour(wxColour(32, 32, 32));
         card->SetMinSize(wxSize(200, 300)); // Minimum card size
+        
+        // Store the environment name as card name
+        card->SetName(environments[i]);
 
         wxBoxSizer* cardSizer = new wxBoxSizer(wxVERTICAL);
 
@@ -129,12 +190,22 @@ void DesktopTab::CreateDesktopTab() {
 
         wxBitmap bitmap = LoadImage(imageFiles[i]);
         if (bitmap.IsOk()) {
-            imageContainer->Bind(wxEVT_PAINT, [bitmap](wxPaintEvent& evt) {
+            // Store the original bitmap in client data
+            imageContainer->SetClientData(new wxBitmap(bitmap));
+            
+            imageContainer->Bind(wxEVT_PAINT, [this](wxPaintEvent& evt) {
                 wxPanel* panel = dynamic_cast<wxPanel*>(evt.GetEventObject());
+                if (!panel) return;
+                
                 wxPaintDC dc(panel);
-
                 wxSize panelSize = panel->GetSize();
-                wxSize bmpSize = bitmap.GetSize();
+                
+                // Get the bitmap to draw from client data
+                wxBitmap* bmpPtr = static_cast<wxBitmap*>(panel->GetClientData());
+                if (!bmpPtr || !bmpPtr->IsOk()) return;
+                
+                wxBitmap bmpToDraw = *bmpPtr;
+                wxSize bmpSize = bmpToDraw.GetSize();
 
                 double scale = std::min(
                     static_cast<double>(panelSize.GetWidth()) / bmpSize.GetWidth(),
@@ -147,7 +218,7 @@ void DesktopTab::CreateDesktopTab() {
                 int x = (panelSize.GetWidth() - newWidth) / 2;
                 int y = (panelSize.GetHeight() - newHeight) / 2;
 
-                wxImage img = bitmap.ConvertToImage();
+                wxImage img = bmpToDraw.ConvertToImage();
                 dc.DrawBitmap(
                     wxBitmap(img.Scale(newWidth, newHeight, wxIMAGE_QUALITY_HIGH)),
                     x, y
@@ -192,6 +263,9 @@ void DesktopTab::UpdateGUILabel(const wxString& guiName) {
     wxLogDebug("DesktopTab::UpdateGUILabel - Setting label with GUI name: %s", guiName);
     wxString displayText = "GUI Environment: " + guiName;
     m_textDisplay->SetLabel(displayText);
+    
+    // Apply grayscale filter based on detected environment
+    ApplyGrayscaleToCards(guiName);
     
     // Force refresh and layout updates
     m_textDisplay->Refresh();
