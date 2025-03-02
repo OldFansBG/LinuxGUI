@@ -228,6 +228,7 @@ private:
 wxDEFINE_EVENT(PYTHON_TASK_COMPLETED, wxCommandEvent);
 wxDEFINE_EVENT(PYTHON_LOG_UPDATE, wxCommandEvent);
 
+// SecondWindow.cpp
 wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)
     EVT_CLOSE(SecondWindow::OnClose)
     EVT_BUTTON(ID_TERMINAL_TAB, SecondWindow::OnTabChanged)
@@ -372,7 +373,7 @@ void SecondWindow::CreateControls() {
 
     // Terminal/SQL Content
     m_terminalTab = new wxPanel(m_mainPanel);
-    m_sqlTab = new SQLTab(m_mainPanel);
+    m_sqlTab = new SQLTab(m_mainPanel, m_projectDir);
 
     wxBoxSizer* terminalSizer = new wxBoxSizer(wxVERTICAL);
     m_terminalTab->SetBackgroundColour(wxColour(30, 30, 30));
@@ -400,6 +401,10 @@ void SecondWindow::CreateControls() {
     m_terminalTab->SetSizer(terminalSizer);
     m_sqlTab->Hide();
 
+    // Flatpak Store
+    m_flatpakStore = new FlatpakStore(m_mainPanel, m_projectDir); // Initialize FlatpakStore with workDir
+    m_flatpakStore->Hide(); // Initially hidden
+
     // Bottom Button Panel
     wxPanel* buttonPanel = new wxPanel(m_mainPanel);
     buttonPanel->SetBackgroundColour(wxColour(30, 30, 30));
@@ -418,6 +423,7 @@ void SecondWindow::CreateControls() {
     mainSizer->Add(tabPanel, 0, wxEXPAND);
     mainSizer->Add(m_terminalTab, 1, wxEXPAND);
     mainSizer->Add(m_sqlTab, 1, wxEXPAND);
+    mainSizer->Add(m_flatpakStore, 1, wxEXPAND); // Add FlatpakStore to layout
     mainSizer->Add(buttonPanel, 0, wxEXPAND);
 
     m_mainPanel->SetSizer(mainSizer);

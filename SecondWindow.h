@@ -1,20 +1,13 @@
-// SecondWindow.h
 #ifndef SECONDWINDOW_H
 #define SECONDWINDOW_H
 
 #include <wx/wx.h>
-#include "DesktopTab.h" // Include DesktopTab header
-
-enum {
-    ID_TERMINAL_TAB = 1001,
-    ID_SQL_TAB,
-    ID_NEXT_BUTTON
-};
-
+#include "DesktopTab.h"
 #include "SQLTab.h"
 #include "LinuxTerminalPanel.h"
 #include "OSDetector.h"
 #include "ContainerManager.h"
+#include "FlatpakStore.h"
 
 #ifdef _WIN32
 #include "WinTerminalManager.h"
@@ -22,14 +15,20 @@ enum {
 
 class OverlayFrame;
 
+// Define control IDs
+enum {
+    ID_TERMINAL_TAB = 1001, // Start from wxID_HIGHEST + 1 to avoid conflicts
+    ID_SQL_TAB,
+    ID_NEXT_BUTTON
+};
+
 class SecondWindow : public wxFrame {
 public:
-    // Updated constructor with DesktopTab parameter
     SecondWindow(wxWindow* parent,
                 const wxString& title,
                 const wxString& isoPath,
                 const wxString& projectDir,
-                DesktopTab* desktopTab); // Add this parameter
+                DesktopTab* desktopTab); // Add DesktopTab parameter
 
     virtual ~SecondWindow();
 
@@ -49,6 +48,7 @@ private:
     wxPanel* m_terminalTab;
     SQLTab* m_sqlTab;
     LinuxTerminalPanel* m_terminalPanel;
+    FlatpakStore* m_flatpakStore; // Added FlatpakStore member
 
     wxString m_isoPath;
     wxString m_projectDir; // Private member

@@ -10,7 +10,9 @@ wxBEGIN_EVENT_TABLE(SQLTab, wxPanel)
     EVT_BUTTON(ID_SQL_HARDWARE, SQLTab::OnSQLTabChanged)
 wxEND_EVENT_TABLE()
 
-SQLTab::SQLTab(wxWindow* parent) : wxPanel(parent) {
+SQLTab::SQLTab(wxWindow* parent, const wxString& workDir) 
+    : wxPanel(parent), m_workDir(workDir) // Initialize m_workDir
+{
     wxBoxSizer* contentSizer = new wxBoxSizer(wxVERTICAL);
 
     wxPanel* tabPanel = new wxPanel(this);
@@ -129,7 +131,8 @@ void SQLTab::CreateDesktopTab() {
 void SQLTab::CreateAppsTab() {
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 
-    FlatpakStore* flatpakStore = new FlatpakStore(m_sqlContent);
+    // Pass m_workDir to FlatpakStore constructor
+    FlatpakStore* flatpakStore = new FlatpakStore(m_sqlContent, m_workDir);
     flatpakStore->SetContainerId(m_containerId);
     sizer->Add(flatpakStore, 1, wxEXPAND | wxALL, 10);
 

@@ -8,7 +8,7 @@
 
 class SQLTab : public wxPanel {
 public:
-    SQLTab(wxWindow* parent);
+    SQLTab(wxWindow* parent, const wxString& workDir); // Add workDir parameter
     void ShowTab(int tabId);
     void SetContainerId(const wxString& containerId);
 
@@ -19,13 +19,17 @@ private:
     void CreateCustomizeTab();
     void CreateHardwareTab();
     void OnSQLTabChanged(wxCommandEvent& event);
-    wxString m_containerId;
 
-    wxPanel* m_sqlContent;
-    int m_currentSqlTab;
-    std::vector<wxButton*> m_sqlTabButtons;
+    wxString m_containerId; // Container ID for FlatpakStore
+    wxString m_workDir;     // Working directory for FlatpakStore
+
+    wxPanel* m_sqlContent;  // Content panel for tabs
+    int m_currentSqlTab;    // Currently active tab
+    std::vector<wxButton*> m_sqlTabButtons; // Buttons for tab switching
+
+    // Tab IDs
     enum {
-        ID_SQL_DESKTOP = wxID_HIGHEST + 1,
+        ID_SQL_DESKTOP = wxID_HIGHEST + 1, // Start from wxID_HIGHEST + 1 to avoid conflicts
         ID_SQL_APPS,
         ID_SQL_SYSTEM,
         ID_SQL_CUSTOMIZE,
