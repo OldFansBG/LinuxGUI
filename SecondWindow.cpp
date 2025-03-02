@@ -115,7 +115,29 @@ public:
         if (m_parent) {
             m_parent->CloseOverlay();
             if (status == 0) {
-                wxMessageBox("ISO created successfully!", "Success", wxOK | wxICON_INFORMATION);
+                // Read container ID from container_id.txt
+                wxString containerIdPath = wxFileName(m_parent->GetProjectDir(), "container_id.txt").GetFullPath();
+                wxFile file;
+                if (file.Open(containerIdPath)) {
+                    wxString containerId;
+                    file.ReadAll(&containerId);
+                    containerId.Trim();
+
+                    // Copy ISO from container to host's project directory
+                    wxString sourcePath = wxString::Format("%s:/root/custom_iso/custom_linuxmint.iso", containerId);
+                    wxString destPath = m_parent->GetProjectDir();
+
+                    wxString copyCommand = wxString::Format("docker cp \"%s\" \"%s\"", sourcePath, destPath);
+                    int copyStatus = wxExecute(copyCommand, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE);
+
+                    if (copyStatus == 0) {
+                        wxMessageBox("ISO created and copied to project directory successfully!", "Success", wxOK | wxICON_INFORMATION);
+                    } else {
+                        wxMessageBox("ISO creation succeeded but failed to copy to host.", "Error", wxICON_ERROR);
+                    }
+                } else {
+                    wxMessageBox("Container ID not found for copying ISO.", "Error", wxICON_ERROR);
+                }
             } else {
                 wxMessageBox("ISO creation failed. Check logs for details.", "Error", wxICON_ERROR);
             }
