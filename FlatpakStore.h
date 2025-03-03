@@ -18,6 +18,7 @@
 #include <wx/progdlg.h>
 #include <wx/dcbuffer.h>
 #include <wx/graphics.h>
+#include <wx/process.h>
 #include <curl/curl.h>
 #include <rapidjson/document.h>
 #include <rapidjson/error/en.h>
@@ -39,6 +40,7 @@ class AppCard;
 class FlatpakStore;
 class SearchThread;
 class InitialLoadThread;
+class InstallThread;
 class RoundedSearchPanel;
 
 // Custom event types
@@ -47,6 +49,9 @@ wxDECLARE_EVENT(wxEVT_RESULT_READY, wxCommandEvent);
 wxDECLARE_EVENT(wxEVT_IMAGE_READY, wxCommandEvent);
 wxDECLARE_EVENT(wxEVT_UPDATE_PROGRESS, wxCommandEvent);
 wxDECLARE_EVENT(wxEVT_BATCH_PROCESS, wxCommandEvent);
+wxDECLARE_EVENT(INSTALL_START_EVENT, wxCommandEvent);
+wxDECLARE_EVENT(INSTALL_COMPLETE_EVENT, wxCommandEvent);
+wxDECLARE_EVENT(INSTALL_CANCEL_EVENT, wxCommandEvent);
 
 // ThreadPool class declaration
 class ThreadPool {
@@ -71,84 +76,12 @@ private:
 class RoundedSearchPanel : public wxPanel {
 public:
     RoundedSearchPanel(wxWindow* parent, wxWindowID id = wxID_ANY,
-                     const wxPoint& pos = wxDefaultPosition,
-                     const wxSize& size = wxDefaultSize);
+                       const wxPoint& pos = wxDefaultPosition,
+                       const wxSize& size = wxDefaultSize);
 
 private:
     void OnPaint(wxPaintEvent& event);
     
-    DECLARE_EVENT_TABLE()
-};
-
-// FlatpakStore class declaration
-class FlatpakStore : public wxPanel {
-public:
-    FlatpakStore(wxWindow* parent, const wxString& workDir); // Updated constructor
-    virtual ~FlatpakStore();
-
-    void SetTotalResults(int total) { totalResults = total; }
-    void SetContainerId(const wxString& containerId);
-    
-    // Timer IDs
-    enum {
-        ID_BATCH_TIMER = wxID_HIGHEST + 1,
-        ID_LAYOUT_TIMER
-    };
-
-private:
-    // UI elements
-    wxTextCtrl* m_searchBox;
-    wxButton* m_searchButton;
-    wxScrolledWindow* m_resultsPanel;
-    wxBoxSizer* m_mainSizer;
-    wxGauge* m_progressBar;
-    wxWrapSizer* m_gridSizer;
-    wxPanel* m_progressPanel;
-    wxStaticText* m_progressText;
-    wxTimer* m_layoutTimer;    // Timer for periodic layout updates
-    wxTimer* m_batchTimer;     // Timer for batch processing
-    
-    // Batch processing members
-    std::vector<wxString> m_pendingResults;
-    std::mutex m_resultsMutex;
-    int m_pendingBatchSize;
-
-    // Search state
-    bool m_isSearching;
-    bool m_isInitialLoading;
-    int totalResults;
-    int m_displayedResults;
-    std::mutex m_searchMutex;
-    std::atomic<bool> m_stopFlag;
-    int m_searchId;
-    wxString m_containerId;
-    wxString m_workDir; // Added to store the working directory
-
-    // Thread pool
-    std::unique_ptr<ThreadPool> m_threadPool;
-
-    // Data structures
-    struct IconData {
-        AppCard* card;
-        wxBitmap bitmap;
-    };
-
-    // Event handlers
-    void OnSearch(wxCommandEvent& event);
-    void OnSearchComplete(wxCommandEvent& event);
-    void OnResultReady(wxCommandEvent& event);
-    void OnImageReady(wxCommandEvent& event);
-    void OnUpdateProgress(wxCommandEvent& event);
-    void OnInstallButtonClicked(wxCommandEvent& event);
-    void OnLayoutTimer(wxTimerEvent& event);  // Timer event
-    void OnBatchTimer(wxTimerEvent& event);   // Batch timer event
-
-    // Helper methods
-    void HandleInstallClick(const wxString& appId);
-    void ClearResults();
-    void LoadInitialApps();
-    void ProcessPendingBatch(bool processAll);
-
     DECLARE_EVENT_TABLE()
 };
 
@@ -160,12 +93,20 @@ public:
 
     void SetIcon(const wxBitmap& bitmap);
     wxString GetAppId() const { return m_appId; }
+    wxGauge* GetProgressGauge() { return m_progressGauge; }
+    wxButton* GetCancelButton() { return m_cancelButton; }
+    void ShowInstalling(bool show);
+    void SetInstallButtonLabel(const wxString& label);
+    void DisableInstallButton();
 
 private:
     wxStaticBitmap* m_iconBitmap;
     wxStaticText* m_nameText;
     wxStaticText* m_summaryText;
     wxButton* m_installButton;
+    wxGauge* m_progressGauge;
+    wxButton* m_cancelButton;
+    wxBoxSizer* m_controlSizer;
     wxString m_appId;
     bool m_isLoading;
 
@@ -205,6 +146,106 @@ protected:
 private:
     FlatpakStore* m_store;
     std::atomic<bool>& m_stopFlag;
+};
+
+// InstallState structure
+struct InstallState {
+    AppCard* card;
+    std::atomic<bool> cancelFlag;
+    wxProcess* process;
+    long pid;
+    InstallState(AppCard* c) : card(c), cancelFlag(false), process(nullptr), pid(0) {}
+};
+
+// InstallThread class declaration
+class InstallThread : public wxThread {
+public:
+    InstallThread(FlatpakStore* store, const wxString& appId, InstallState* state)
+        : wxThread(wxTHREAD_DETACHED), m_store(store), m_appId(appId), m_state(state) {}
+
+protected:
+    virtual ExitCode Entry() override;
+
+private:
+    FlatpakStore* m_store;
+    wxString m_appId;
+    InstallState* m_state;
+};
+
+// FlatpakStore class declaration
+class FlatpakStore : public wxPanel {
+public:
+    FlatpakStore(wxWindow* parent, const wxString& workDir);
+    virtual ~FlatpakStore();
+
+    void SetTotalResults(int total) { totalResults = total; }
+    void SetContainerId(const wxString& containerId);
+    wxString GetContainerId() const;
+
+    // Timer IDs
+    enum {
+        ID_BATCH_TIMER = wxID_HIGHEST + 1,
+        ID_LAYOUT_TIMER
+    };
+
+private:
+    // UI elements
+    wxTextCtrl* m_searchBox;
+    wxButton* m_searchButton;
+    wxScrolledWindow* m_resultsPanel;
+    wxBoxSizer* m_mainSizer;
+    wxGauge* m_progressBar;
+    wxWrapSizer* m_gridSizer;
+    wxPanel* m_progressPanel;
+    wxStaticText* m_progressText;
+    wxTimer* m_layoutTimer;
+    wxTimer* m_batchTimer;
+    
+    // Batch processing members
+    std::vector<wxString> m_pendingResults;
+    std::mutex m_resultsMutex;
+    int m_pendingBatchSize;
+
+    // Search state
+    bool m_isSearching;
+    bool m_isInitialLoading;
+    int totalResults;
+    int m_displayedResults;
+    std::mutex m_searchMutex;
+    std::atomic<bool> m_stopFlag;
+    int m_searchId;
+    wxString m_containerId;
+    wxString m_workDir;
+
+    // Thread pool
+    std::unique_ptr<ThreadPool> m_threadPool;
+
+    // Data structures
+    struct IconData {
+        AppCard* card;
+        wxBitmap bitmap;
+    };
+
+    // Event handlers
+    void OnSearch(wxCommandEvent& event);
+    void OnSearchComplete(wxCommandEvent& event);
+    void OnResultReady(wxCommandEvent& event);
+    void OnImageReady(wxCommandEvent& event);
+    void OnUpdateProgress(wxCommandEvent& event);
+    void OnInstallButtonClicked(wxCommandEvent& event);
+    void OnInstallStart(wxCommandEvent& event);  // New handler for INSTALL_START_EVENT
+    void OnInstallComplete(wxCommandEvent& event);
+    void OnInstallCancel(wxCommandEvent& event);
+    void OnProcessTerminated(wxProcessEvent& event);
+    void OnLayoutTimer(wxTimerEvent& event);
+    void OnBatchTimer(wxTimerEvent& event);
+
+    // Helper methods
+    void ClearResults();
+    void LoadInitialApps();
+    void ProcessPendingBatch(bool processAll);
+
+    DECLARE_EVENT_TABLE()
 };
 
 // ThreadPool template method implementation
