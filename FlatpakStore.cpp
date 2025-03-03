@@ -183,10 +183,12 @@ void RoundedSearchPanel::OnPaint(wxPaintEvent& event)
 
 // AppCard Implementation
 void AppCard::SetInstallButtonLabel(const wxString& label) {
+    wxLogDebug("Setting install button label to: %s for app: %s", label, m_appId);
     m_installButton->SetLabel(label);
 }
 
 void AppCard::DisableInstallButton() {
+    wxLogDebug("Disabling install button for app: %s", m_appId);
     m_installButton->Disable();
 }
 
@@ -194,6 +196,7 @@ AppCard::AppCard(wxWindow* parent, const wxString& name, const wxString& summary
     : wxPanel(parent, wxID_ANY, wxDefaultPosition, wxSize(320, 160), wxBORDER_NONE),
       m_appId(appId), m_isLoading(true)
 {
+    wxLogDebug("Creating AppCard for app: %s", appId);
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     SetBackgroundColour(parent->GetBackgroundColour());
 
@@ -251,6 +254,7 @@ AppCard::AppCard(wxWindow* parent, const wxString& name, const wxString& summary
 }
 
 AppCard::~AppCard() {
+    wxLogDebug("Destroying AppCard for app: %s", m_appId);
     wxString* appIdPtr = static_cast<wxString*>(m_installButton->GetClientData());
     if (appIdPtr) {
         delete appIdPtr;
@@ -259,21 +263,25 @@ AppCard::~AppCard() {
 }
 
 void AppCard::SetIcon(const wxBitmap& bitmap) {
+    wxLogDebug("Setting icon for app: %s", m_appId);
     m_iconBitmap->SetBitmap(bitmap);
     m_isLoading = false;
     Refresh();
 }
 
 void AppCard::ShowInstalling(bool show) {
+    wxLogDebug("ShowInstalling set to %d for app: %s", show, m_appId);
     if (show) {
         m_controlSizer->Hide(m_installButton);
         m_controlSizer->Show(m_progressGauge);
         m_controlSizer->Show(m_cancelButton);
         m_progressGauge->Pulse();
+        wxLogDebug("Progress gauge started pulsing for app: %s", m_appId);
     } else {
         m_controlSizer->Show(m_installButton);
         m_controlSizer->Hide(m_progressGauge);
         m_controlSizer->Hide(m_cancelButton);
+        wxLogDebug("Installing UI hidden for app: %s", m_appId);
     }
     Layout();
 }
@@ -415,37 +423,55 @@ wxThread::ExitCode InitialLoadThread::Entry() {
 
 // InstallThread Implementation
 wxThread::ExitCode InstallThread::Entry() {
+    wxLogDebug("InstallThread started for app: %s", m_appId);
     wxString command = wxString::Format(
         "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'flatpak install -y flathub %s'\"",
         m_store->GetContainerId(), m_appId
     );
+    wxLogDebug("Command prepared: %s", command);
 
     // Start the process asynchronously in the main thread via a command event
     wxCommandEvent startEvent(INSTALL_START_EVENT);
     startEvent.SetString(command);
     startEvent.SetClientData(m_state);
+    wxLogDebug("Queuing INSTALL_START_EVENT for app: %s", m_appId);
     wxQueueEvent(m_store, startEvent.Clone());
 
     // Poll for cancellation or process completion
+    int pollCount = 0;
     while (!m_state->cancelFlag && !TestDestroy()) {
         wxMilliSleep(100);  // Check every 100ms
-        if (m_state->process && !m_state->process->Exists(m_state->pid)) {
-            break;  // Process has ended naturally
+        pollCount++;
+        if (m_state->process) {
+            wxLogDebug("Polling: Process exists for PID %ld, poll count: %d", m_state->pid, pollCount);
+            if (!m_state->process->Exists(m_state->pid)) {
+                wxLogDebug("Process %ld has ended naturally for app: %s", m_state->pid, m_appId);
+                break;  // Process has ended naturally
+            }
+        } else {
+            wxLogDebug("Polling: Process not yet started, poll count: %d", pollCount);
         }
     }
 
     if (m_state->cancelFlag && m_state->process && m_state->process->Exists(m_state->pid)) {
+        wxLogDebug("Cancellation requested for app: %s, PID: %ld", m_appId, m_state->pid);
         wxKill(m_state->pid, wxSIGTERM);  // Try to terminate gracefully
+        wxLogDebug("Sent SIGTERM to PID: %ld", m_state->pid);
         wxMilliSleep(500);
         if (m_state->process->Exists(m_state->pid)) {
             wxKill(m_state->pid, wxSIGKILL);  // Force kill if necessary
+            wxLogDebug("Sent SIGKILL to PID: %ld", m_state->pid);
         }
         wxCommandEvent cancelEvent(INSTALL_CANCEL_EVENT);
         cancelEvent.SetInt(1);  // Indicate cancellation
         cancelEvent.SetClientData(m_state);
+        wxLogDebug("Queuing INSTALL_CANCEL_EVENT for app: %s", m_appId);
         wxQueueEvent(m_store, cancelEvent.Clone());
+    } else if (m_state->cancelFlag) {
+        wxLogDebug("Cancellation requested but process already ended or not started for app: %s", m_appId);
     }
 
+    wxLogDebug("InstallThread exiting for app: %s", m_appId);
     return (ExitCode)0;
 }
 
@@ -461,6 +487,7 @@ FlatpakStore::FlatpakStore(wxWindow* parent, const wxString& workDir)
       m_displayedResults(0),
       m_pendingBatchSize(0)
 {
+    wxLogDebug("FlatpakStore constructor started");
     SetDoubleBuffered(true);
 
     m_threadPool = std::make_unique<ThreadPool>(4);
@@ -531,6 +558,7 @@ FlatpakStore::FlatpakStore(wxWindow* parent, const wxString& workDir)
 
     SetSizer(m_mainSizer);
 
+    wxLogDebug("Loading initial apps");
     LoadInitialApps();
 
     wxString containerPath = m_workDir + wxFILE_SEP_PATH + "container_id.txt";
@@ -549,9 +577,11 @@ FlatpakStore::FlatpakStore(wxWindow* parent, const wxString& workDir)
     } else {
         wxLogDebug("container_id.txt not found in workDir: %s", containerPath);
     }
+    wxLogDebug("FlatpakStore constructor completed");
 }
 
 void FlatpakStore::SetContainerId(const wxString& containerId) {
+    wxLogDebug("Setting container ID to: %s", containerId);
     m_containerId = containerId;
 }
 
@@ -560,6 +590,7 @@ wxString FlatpakStore::GetContainerId() const {
 }
 
 void FlatpakStore::ClearResults() {
+    wxLogDebug("Clearing results panel");
     m_resultsPanel->Freeze();
     m_gridSizer->Clear(true);
     m_displayedResults = 0;
@@ -571,10 +602,12 @@ void FlatpakStore::ClearResults() {
     std::lock_guard<std::mutex> lock(m_resultsMutex);
     m_pendingResults.clear();
     m_pendingBatchSize = 0;
+    wxLogDebug("Results cleared");
 }
 
 void FlatpakStore::LoadInitialApps() {
     try {
+        wxLogDebug("Starting LoadInitialApps");
         std::lock_guard<std::mutex> lock(m_searchMutex);
         m_stopFlag = true;
         wxMilliSleep(50);
@@ -594,13 +627,16 @@ void FlatpakStore::LoadInitialApps() {
         InitialLoadThread* thread = new InitialLoadThread(this, m_stopFlag);
         if (thread->Run() != wxTHREAD_NO_ERROR) {
             delete thread;
+            wxLogDebug("Failed to start InitialLoadThread");
             throw std::runtime_error("Failed to start initial load thread");
         }
+        wxLogDebug("InitialLoadThread started successfully");
     }
     catch (const std::exception& e) {
         m_isInitialLoading = false;
         m_progressPanel->Hide();
         Layout();
+        wxLogDebug("Exception in LoadInitialApps: %s", e.what());
         wxMessageBox(wxString::Format("Initial load failed: %s", e.what()),
                      "Error", wxOK | wxICON_ERROR);
     }
@@ -608,9 +644,11 @@ void FlatpakStore::LoadInitialApps() {
 
 void FlatpakStore::OnSearch(wxCommandEvent& event) {
     try {
+        wxLogDebug("OnSearch triggered");
         std::lock_guard<std::mutex> lock(m_searchMutex);
         wxString query = m_searchBox->GetValue();
         if (query.IsEmpty()) {
+            wxLogDebug("Search query is empty");
             wxMessageBox("Please enter a search term", "Search Error", wxOK | wxICON_INFORMATION);
             return;
         }
@@ -634,19 +672,23 @@ void FlatpakStore::OnSearch(wxCommandEvent& event) {
         SearchThread* thread = new SearchThread(this, query.ToStdString(), m_searchId, m_stopFlag);
         if (thread->Run() != wxTHREAD_NO_ERROR) {
             delete thread;
+            wxLogDebug("Failed to start SearchThread");
             throw std::runtime_error("Failed to start search thread");
         }
+        wxLogDebug("SearchThread started for query: %s", query);
     }
     catch (const std::exception& e) {
         m_isSearching = false;
         m_progressPanel->Hide();
         Layout();
+        wxLogDebug("Exception in OnSearch: %s", e.what());
         wxMessageBox(wxString::Format("Search failed: %s", e.what()),
                      "Error", wxOK | wxICON_ERROR);
     }
 }
 
 void FlatpakStore::OnSearchComplete(wxCommandEvent& event) {
+    wxLogDebug("OnSearchComplete triggered with ID: %d", event.GetInt());
     if (event.GetInt() != m_searchId && event.GetInt() != -1) return;
 
     m_isSearching = false;
@@ -654,12 +696,14 @@ void FlatpakStore::OnSearchComplete(wxCommandEvent& event) {
     
     m_progressBar->SetValue(100);
     m_progressText->SetLabel("Loading complete!");
+    wxLogDebug("Search completed, processing pending batch");
     
     ProcessPendingBatch(true);
     
     wxTimer* timer = new wxTimer(this);
     timer->StartOnce(1000);
     timer->Bind(wxEVT_TIMER, [this, timer](wxTimerEvent&) {
+        wxLogDebug("Hiding progress panel after search complete");
         m_progressPanel->Hide();
         Layout();
         delete timer;
@@ -667,15 +711,18 @@ void FlatpakStore::OnSearchComplete(wxCommandEvent& event) {
 }
 
 void FlatpakStore::OnResultReady(wxCommandEvent& event) {
+    wxLogDebug("OnResultReady triggered with ID: %d", event.GetInt());
     if (event.GetInt() != m_searchId && event.GetInt() != -1) return;
 
     wxString resultData = event.GetString();
+    wxLogDebug("Received result data: %s", resultData);
     
     std::lock_guard<std::mutex> lock(m_resultsMutex);
     m_pendingResults.push_back(resultData);
     m_pendingBatchSize++;
     
     if (!m_batchTimer->IsRunning() && m_pendingBatchSize >= 1) {
+        wxLogDebug("Starting batch timer with %d pending results", m_pendingBatchSize);
         m_batchTimer->StartOnce(10);
     }
     
@@ -686,29 +733,40 @@ void FlatpakStore::OnResultReady(wxCommandEvent& event) {
         m_progressBar->SetValue(progressPercent);
         m_progressText->SetLabel(wxString::Format("Loading applications: %d of %d", 
                                                  m_displayedResults, totalResults));
+        wxLogDebug("Progress updated: %d%% (%d/%d)", progressPercent, m_displayedResults, totalResults);
     } else {
         m_progressBar->Pulse();
+        wxLogDebug("Progress bar pulsing, totalResults not set");
     }
 }
 
 void FlatpakStore::OnBatchTimer(wxTimerEvent& event) {
+    wxLogDebug("OnBatchTimer triggered");
     ProcessPendingBatch(false);
 }
 
 void FlatpakStore::ProcessPendingBatch(bool processAll) {
+    wxLogDebug("ProcessPendingBatch started, processAll: %d", processAll);
     std::vector<wxString> currentBatch;
     {
         std::lock_guard<std::mutex> lock(m_resultsMutex);
         
         int batchSize = processAll ? m_pendingResults.size() : std::min(10, static_cast<int>(m_pendingResults.size()));
-        if (batchSize <= 0) return;
+        if (batchSize <= 0) {
+            wxLogDebug("No pending results to process");
+            return;
+        }
         
         currentBatch.assign(m_pendingResults.begin(), m_pendingResults.begin() + batchSize);
         m_pendingResults.erase(m_pendingResults.begin(), m_pendingResults.begin() + batchSize);
         m_pendingBatchSize = static_cast<int>(m_pendingResults.size());
+        wxLogDebug("Processing batch of %d results, remaining: %d", batchSize, m_pendingBatchSize);
     }
     
-    if (currentBatch.empty()) return;
+    if (currentBatch.empty()) {
+        wxLogDebug("Current batch is empty");
+        return;
+    }
     
     m_resultsPanel->Freeze();
     
@@ -719,11 +777,13 @@ void FlatpakStore::ProcessPendingBatch(bool processAll) {
         wxString summary = tokenizer.GetNextToken();
         wxString iconUrl = tokenizer.GetNextToken();
         wxString appId = tokenizer.GetNextToken();
+        wxLogDebug("Adding AppCard - Name: %s, AppID: %s", name, appId);
         
         AppCard* card = new AppCard(m_resultsPanel, name, summary, appId);
         m_gridSizer->Add(card, 0, wxALL, 5);
         
         m_threadPool->Enqueue([this, card, iconUrl]() {
+            wxLogDebug("Enqueuing icon download for app: %s", card->GetAppId());
             std::vector<unsigned char> iconData;
             if (DownloadImage(iconUrl.ToStdString(), iconData, m_stopFlag)) {
                 wxMemoryInputStream stream(iconData.data(), iconData.size());
@@ -749,8 +809,13 @@ void FlatpakStore::ProcessPendingBatch(bool processAll) {
                     
                     wxCommandEvent imageEvent(wxEVT_IMAGE_READY);
                     imageEvent.SetClientData(new IconData{card, bitmap});
+                    wxLogDebug("Queuing IMAGE_READY event for app: %s", card->GetAppId());
                     wxQueueEvent(this, imageEvent.Clone());
+                } else {
+                    wxLogDebug("Failed to load image for app: %s", card->GetAppId());
                 }
+            } else {
+                wxLogDebug("Image download failed for app: %s", card->GetAppId());
             }
         });
     }
@@ -760,26 +825,34 @@ void FlatpakStore::ProcessPendingBatch(bool processAll) {
     m_layoutTimer->StartOnce(100);
     
     m_resultsPanel->Thaw();
+    wxLogDebug("Batch processing completed");
     
     if (!m_pendingResults.empty() && !m_batchTimer->IsRunning()) {
         int delay = (currentBatch.size() == 1) ? 100 : 50;
+        wxLogDebug("Starting batch timer with delay: %d ms", delay);
         m_batchTimer->StartOnce(delay);
     }
 }
 
 void FlatpakStore::OnImageReady(wxCommandEvent& event) {
+    wxLogDebug("OnImageReady triggered");
     IconData* data = static_cast<IconData*>(event.GetClientData());
     if (data) {
+        wxLogDebug("Setting icon for app: %s", data->card->GetAppId());
         data->card->SetIcon(data->bitmap);
         delete data;
+    } else {
+        wxLogDebug("No IconData received");
     }
 }
 
 void FlatpakStore::OnUpdateProgress(wxCommandEvent& event) {
+    wxLogDebug("OnUpdateProgress triggered");
     if (totalResults <= 0) {
         static int pulseVal = 0;
         pulseVal = (pulseVal + 5) % 100;
         m_progressBar->SetValue(pulseVal);
+        wxLogDebug("Pulsing progress bar, value: %d", pulseVal);
         return;
     }
     
@@ -787,37 +860,56 @@ void FlatpakStore::OnUpdateProgress(wxCommandEvent& event) {
     int progressPercent = (current * 100) / totalResults;
     m_progressBar->SetValue(progressPercent);
     m_progressText->SetLabel(wxString::Format("Loading applications: %d of %d", current, totalResults));
+    wxLogDebug("Progress updated: %d%% (%d/%d)", progressPercent, current, totalResults);
 }
 
 void FlatpakStore::OnLayoutTimer(wxTimerEvent& event) {
+    wxLogDebug("OnLayoutTimer triggered");
     m_resultsPanel->Layout();
     m_resultsPanel->FitInside();
     m_resultsPanel->Refresh();
 }
 
 void FlatpakStore::OnInstallButtonClicked(wxCommandEvent& event) {
+    wxLogDebug("OnInstallButtonClicked triggered");
     wxButton* button = dynamic_cast<wxButton*>(event.GetEventObject());
-    if (!button) return;
+    if (!button) {
+        wxLogDebug("No button found in event");
+        return;
+    }
 
     AppCard* card = dynamic_cast<AppCard*>(button->GetParent());
-    if (!card) return;
+    if (!card) {
+        wxLogDebug("No AppCard found as parent of button");
+        return;
+    }
 
     wxString* appIdPtr = static_cast<wxString*>(button->GetClientData());
-    if (!appIdPtr) return;
+    if (!appIdPtr) {
+        wxLogDebug("No app ID found in button client data");
+        return;
+    }
 
     wxString appId = *appIdPtr;
+    wxLogDebug("Install button clicked for app: %s", appId);
 
     // Create installation state
     InstallState* state = new InstallState(card);
+    wxLogDebug("Created InstallState for app: %s", appId);
 
     // Update UI and bind cancel button
     card->ShowInstalling(true);
-    auto cancelHandler = [state](wxCommandEvent&) { state->cancelFlag = true; };
+    auto cancelHandler = [state](wxCommandEvent&) {
+        wxLogDebug("Cancel button clicked for app: %s", state->card->GetAppId());
+        state->cancelFlag = true;
+    };
     card->GetCancelButton()->Bind(wxEVT_BUTTON, cancelHandler);
+    wxLogDebug("Cancel button bound for app: %s", appId);
 
     // Start installation thread
     InstallThread* thread = new InstallThread(this, appId, state);
     if (thread->Run() != wxTHREAD_NO_ERROR) {
+        wxLogDebug("Failed to start InstallThread for app: %s", appId);
         delete thread;
         card->GetCancelButton()->Unbind(wxEVT_BUTTON, cancelHandler);
         delete state;
@@ -825,84 +917,120 @@ void FlatpakStore::OnInstallButtonClicked(wxCommandEvent& event) {
         wxMessageBox("Failed to start installation thread", "Error", wxICON_ERROR);
         return;
     }
+    wxLogDebug("InstallThread started successfully for app: %s", appId);
 }
 
 void FlatpakStore::OnInstallStart(wxCommandEvent& event) {
+    wxLogDebug("OnInstallStart triggered");
     InstallState* state = static_cast<InstallState*>(event.GetClientData());
-    if (!state || !state->card) return;
+    if (!state || !state->card) {
+        wxLogDebug("Invalid InstallState or card in OnInstallStart");
+        return;
+    }
 
+    wxLogDebug("Starting installation process for app: %s", state->card->GetAppId());
     state->process = new wxProcess(this);
     state->process->Redirect();
     state->pid = wxExecute(event.GetString(), wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, state->process);
+    wxLogDebug("wxExecute called with command: %s, PID: %ld", event.GetString(), state->pid);
+
     if (state->pid == 0) {
+        wxLogDebug("wxExecute failed to start process for app: %s", state->card->GetAppId());
         delete state->process;
         state->process = nullptr;
         wxCommandEvent completeEvent(INSTALL_COMPLETE_EVENT);
         completeEvent.SetInt(-1);  // Indicate failure to start
         completeEvent.SetClientData(state);
+        wxLogDebug("Queuing INSTALL_COMPLETE_EVENT with failure for app: %s", state->card->GetAppId());
         wxQueueEvent(this, completeEvent.Clone());
+    } else {
+        m_activeInstalls[state->pid] = state;
+        wxLogDebug("Process started successfully, PID: %ld added to active installs", state->pid);
     }
 }
 
 void FlatpakStore::OnProcessTerminated(wxProcessEvent& event) {
-    // Find the InstallState associated with this process
-    for (wxWindow* child : m_resultsPanel->GetChildren()) {
-        AppCard* card = dynamic_cast<AppCard*>(child);
-        if (!card) continue;
-
-        InstallState* state = nullptr;
-        // Check if this card has an associated InstallState (assuming stored as client data, adjust if stored differently)
-        // For simplicity, we assume the last state is the one we want; ideally, use a map
-        state = static_cast<InstallState*>(card->GetClientData());
-        if (state && state->process && state->process->GetPid() == event.GetPid()) {
-            int exitCode = event.GetExitCode();
-            wxCommandEvent completeEvent(INSTALL_COMPLETE_EVENT);
-            completeEvent.SetInt(exitCode);
-            completeEvent.SetClientData(state);
-            wxQueueEvent(this, completeEvent.Clone());
-            return;
-        }
+    wxLogDebug("OnProcessTerminated triggered for PID: %ld", event.GetPid());
+    auto it = m_activeInstalls.find(event.GetPid());
+    if (it != m_activeInstalls.end()) {
+        InstallState* state = it->second;
+        int exitCode = event.GetExitCode();
+        wxLogDebug("Process terminated for app: %s, PID: %ld, ExitCode: %d", state->card->GetAppId(), event.GetPid(), exitCode);
+        
+        wxCommandEvent completeEvent(INSTALL_COMPLETE_EVENT);
+        completeEvent.SetInt(exitCode);
+        completeEvent.SetClientData(state);
+        wxLogDebug("Queuing INSTALL_COMPLETE_EVENT for app: %s with exit code: %d", state->card->GetAppId(), exitCode);
+        wxQueueEvent(this, completeEvent.Clone());
+        
+        m_activeInstalls.erase(it);
+        wxLogDebug("Removed PID: %ld from active installs", event.GetPid());
+    } else {
+        wxLogDebug("No active install found for PID: %ld", event.GetPid());
     }
 }
 
 void FlatpakStore::OnInstallComplete(wxCommandEvent& event) {
+    wxLogDebug("OnInstallComplete triggered");
     InstallState* state = static_cast<InstallState*>(event.GetClientData());
-    if (!state || !state->card) return;
+    if (!state || !state->card) {
+        wxLogDebug("Invalid InstallState or card in OnInstallComplete");
+        return;
+    }
 
     int result = event.GetInt();
     AppCard* card = state->card;
+    wxLogDebug("Installation completed for app: %s with result: %d", card->GetAppId(), result);
 
     card->ShowInstalling(false);
     auto cancelHandler = [state](wxCommandEvent&) { state->cancelFlag = true; };
     card->GetCancelButton()->Unbind(wxEVT_BUTTON, cancelHandler);
+    wxLogDebug("Unbound cancel button for app: %s", card->GetAppId());
 
     if (result == 0) {
         card->SetInstallButtonLabel("Installed");
         card->DisableInstallButton();
-    } else if (result != -1) {  // -1 means failed to start
+        wxLogDebug("Installation successful for app: %s", card->GetAppId());
+    } else if (result != -1) {
+        wxLogDebug("Installation failed for app: %s with exit code: %d", card->GetAppId(), result);
         wxMessageBox("Installation failed for " + card->GetAppId(), "Error", wxICON_ERROR);
+    } else {
+        wxLogDebug("Installation failed to start for app: %s", card->GetAppId());
+        wxMessageBox("Failed to start installation for " + card->GetAppId(), "Error", wxICON_ERROR);
     }
 
     delete state->process;
     delete state;
+    wxLogDebug("Cleaned up InstallState for app: %s", card->GetAppId());
 }
 
 void FlatpakStore::OnInstallCancel(wxCommandEvent& event) {
+    wxLogDebug("OnInstallCancel triggered");
     InstallState* state = static_cast<InstallState*>(event.GetClientData());
-    if (!state || !state->card) return;
+    if (!state || !state->card) {
+        wxLogDebug("Invalid InstallState or card in OnInstallCancel");
+        return;
+    }
 
     AppCard* card = state->card;
+    wxLogDebug("Cancellation completed for app: %s", card->GetAppId());
+
     card->ShowInstalling(false);
     auto cancelHandler = [state](wxCommandEvent&) { state->cancelFlag = true; };
     card->GetCancelButton()->Unbind(wxEVT_BUTTON, cancelHandler);
+    wxLogDebug("Unbound cancel button for app: %s", card->GetAppId());
 
     wxMessageBox("Installation of " + card->GetAppId() + " was canceled.", "Canceled", wxICON_INFORMATION);
 
+    m_activeInstalls.erase(state->pid);
+    wxLogDebug("Removed PID: %ld from active installs due to cancellation", state->pid);
     delete state->process;
     delete state;
+    wxLogDebug("Cleaned up InstallState for app: %s after cancellation", card->GetAppId());
 }
 
 FlatpakStore::~FlatpakStore() {
+    wxLogDebug("FlatpakStore destructor started");
     try {
         std::lock_guard<std::mutex> lock(m_searchMutex);
         m_stopFlag = true;
@@ -920,14 +1048,25 @@ FlatpakStore::~FlatpakStore() {
             m_layoutTimer->Stop();
             delete m_layoutTimer;
         }
+
+        for (auto& [pid, state] : m_activeInstalls) {
+            wxLogDebug("Cleaning up active install for PID: %ld", pid);
+            delete state->process;
+            delete state;
+        }
+        m_activeInstalls.clear();
+        wxLogDebug("All active installs cleaned up");
     }
     catch (const std::exception& e) {
+        wxLogDebug("Exception in destructor: %s", e.what());
         std::cerr << "Error during cleanup: " << e.what() << std::endl;
     }
+    wxLogDebug("FlatpakStore destructor completed");
 }
 
 // ThreadPool Implementation (unchanged)
 ThreadPool::ThreadPool(size_t threads) : stop(false) {
+    wxLogDebug("ThreadPool constructor with %zu threads", threads);
     for (size_t i = 0; i < threads; ++i) {
         workers.emplace_back([this] {
             while (true) {
@@ -947,6 +1086,7 @@ ThreadPool::ThreadPool(size_t threads) : stop(false) {
 }
 
 ThreadPool::~ThreadPool() {
+    wxLogDebug("ThreadPool destructor started");
     std::unique_lock<std::mutex> lock(queueMutex);
     stop = true;
     condition.notify_all();
@@ -954,9 +1094,11 @@ ThreadPool::~ThreadPool() {
         if (worker.joinable())
             worker.join();
     }
+    wxLogDebug("ThreadPool destructor completed");
 }
 
 void ThreadPool::CancelAll() {
+    wxLogDebug("ThreadPool::CancelAll called");
     std::unique_lock<std::mutex> lock(queueMutex);
     while (!tasks.empty())
         tasks.pop();

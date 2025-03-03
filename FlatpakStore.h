@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <atomic>
 #include <memory>
+#include <map>  // Added for std::map
 
 // Forward declarations
 class AppCard;
@@ -226,6 +227,9 @@ private:
         wxBitmap bitmap;
     };
 
+    // Active installations tracking
+    std::map<long, InstallState*> m_activeInstalls;  // Added declaration
+
     // Event handlers
     void OnSearch(wxCommandEvent& event);
     void OnSearchComplete(wxCommandEvent& event);
@@ -233,7 +237,7 @@ private:
     void OnImageReady(wxCommandEvent& event);
     void OnUpdateProgress(wxCommandEvent& event);
     void OnInstallButtonClicked(wxCommandEvent& event);
-    void OnInstallStart(wxCommandEvent& event);  // New handler for INSTALL_START_EVENT
+    void OnInstallStart(wxCommandEvent& event);
     void OnInstallComplete(wxCommandEvent& event);
     void OnInstallCancel(wxCommandEvent& event);
     void OnProcessTerminated(wxProcessEvent& event);
