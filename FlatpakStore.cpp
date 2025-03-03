@@ -424,22 +424,25 @@ wxThread::ExitCode InitialLoadThread::Entry() {
 // InstallThread Implementation
 wxThread::ExitCode InstallThread::Entry() {
     wxLogDebug("InstallThread started for app: %s", m_appId);
+    
+    // Updated command with output redirection to /dev/null
     wxString command = wxString::Format(
-        "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'flatpak install -y flathub %s'\"",
+        "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'flatpak install -y flathub %s > /dev/null 2>&1'\"",
         m_store->GetContainerId(), m_appId
     );
     wxLogDebug("Command prepared: %s", command);
 
-    // Start the process asynchronously in the main thread via a command event
+    // Start the process asynchronously via a command event
     wxCommandEvent startEvent(INSTALL_START_EVENT);
     startEvent.SetString(command);
     startEvent.SetClientData(m_state);
     wxLogDebug("Queuing INSTALL_START_EVENT for app: %s", m_appId);
     wxQueueEvent(m_store, startEvent.Clone());
 
-    // Poll for cancellation or process completion
+    // Poll for cancellation or process completion with a timeout
+    const int maxPolls = 6000; // 10 minutes timeout (6000 * 100ms = 600s)
     int pollCount = 0;
-    while (!m_state->cancelFlag && !TestDestroy()) {
+    while (!m_state->cancelFlag && !TestDestroy() && pollCount < maxPolls) {
         wxMilliSleep(100);  // Check every 100ms
         pollCount++;
         if (m_state->process) {
@@ -453,7 +456,24 @@ wxThread::ExitCode InstallThread::Entry() {
         }
     }
 
-    if (m_state->cancelFlag && m_state->process && m_state->process->Exists(m_state->pid)) {
+    if (pollCount >= maxPolls) {
+        wxLogDebug("Installation timed out for app: %s after %d polls", m_appId, maxPolls);
+        if (m_state->process && m_state->process->Exists(m_state->pid)) {
+            wxKill(m_state->pid, wxSIGTERM);  // Try to terminate gracefully
+            wxLogDebug("Sent SIGTERM to PID: %ld due to timeout", m_state->pid);
+            wxMilliSleep(500);
+            if (m_state->process->Exists(m_state->pid)) {
+                wxKill(m_state->pid, wxSIGKILL);  // Force kill if necessary
+                wxLogDebug("Sent SIGKILL to PID: %ld due to timeout", m_state->pid);
+            }
+        }
+        wxCommandEvent cancelEvent(INSTALL_CANCEL_EVENT);
+        cancelEvent.SetInt(2);  // Indicate timeout (distinct from user cancel = 1)
+        cancelEvent.SetClientData(m_state);
+        wxLogDebug("Queuing INSTALL_CANCEL_EVENT due to timeout for app: %s", m_appId);
+        wxQueueEvent(m_store, cancelEvent.Clone());
+    }
+    else if (m_state->cancelFlag && m_state->process && m_state->process->Exists(m_state->pid)) {
         wxLogDebug("Cancellation requested for app: %s, PID: %ld", m_appId, m_state->pid);
         wxKill(m_state->pid, wxSIGTERM);  // Try to terminate gracefully
         wxLogDebug("Sent SIGTERM to PID: %ld", m_state->pid);
@@ -893,6 +913,15 @@ void FlatpakStore::OnInstallButtonClicked(wxCommandEvent& event) {
     wxString appId = *appIdPtr;
     wxLogDebug("Install button clicked for app: %s", appId);
 
+    // Validate container ID
+    if (m_containerId.IsEmpty()) {
+        wxLogDebug("Container ID is not set!");
+        wxMessageBox("Container ID not available. Please wait for the initial setup to complete.", 
+                     "Error", wxICON_ERROR);
+        return;
+    }
+    wxLogDebug("Container ID validated: %s", m_containerId);
+
     // Create installation state
     InstallState* state = new InstallState(card);
     wxLogDebug("Created InstallState for app: %s", appId);
@@ -1013,14 +1042,19 @@ void FlatpakStore::OnInstallCancel(wxCommandEvent& event) {
     }
 
     AppCard* card = state->card;
-    wxLogDebug("Cancellation completed for app: %s", card->GetAppId());
+    int cancelReason = event.GetInt();
+    wxLogDebug("Cancellation completed for app: %s with reason: %d", card->GetAppId(), cancelReason);
 
     card->ShowInstalling(false);
     auto cancelHandler = [state](wxCommandEvent&) { state->cancelFlag = true; };
     card->GetCancelButton()->Unbind(wxEVT_BUTTON, cancelHandler);
     wxLogDebug("Unbound cancel button for app: %s", card->GetAppId());
 
-    wxMessageBox("Installation of " + card->GetAppId() + " was canceled.", "Canceled", wxICON_INFORMATION);
+    if (cancelReason == 1) {
+        wxMessageBox("Installation of " + card->GetAppId() + " was canceled by user.", "Canceled", wxICON_INFORMATION);
+    } else if (cancelReason == 2) {
+        wxMessageBox("Installation of " + card->GetAppId() + " timed out.", "Timeout", wxICON_WARNING);
+    }
 
     m_activeInstalls.erase(state->pid);
     wxLogDebug("Removed PID: %ld from active installs due to cancellation", state->pid);

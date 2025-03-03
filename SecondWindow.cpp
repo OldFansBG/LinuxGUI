@@ -1,6 +1,6 @@
 // SecondWindow.cpp
 #include "SecondWindow.h"
-#include "DesktopTab.h" // Include DesktopTab header
+#include "DesktopTab.h"
 #include <wx/utils.h>
 #include <wx/statline.h>
 #include <wx/process.h>
@@ -35,13 +35,28 @@ public:
         if (m_parent) {
             m_parent->CloseOverlay();
 
-            // Use the public getter to access m_projectDir
             wxString containerIdPath = wxFileName(m_parent->GetProjectDir(), "container_id.txt").GetFullPath();
             wxFile file;
             if (file.Open(containerIdPath)) {
                 wxString containerId;
                 file.ReadAll(&containerId);
                 containerId.Trim();
+
+                // Update FlatpakStore using getter
+                if (m_parent->GetFlatpakStore()) {
+                    m_parent->GetFlatpakStore()->SetContainerId(containerId);
+                    wxLogDebug("Updated FlatpakStore container ID in SecondWindow: %s", containerId);
+                } else {
+                    wxLogDebug("FlatpakStore is null in SecondWindow");
+                }
+
+                // Update SQLTab using getter (if active)
+                if (m_parent->GetSQLTab()) {
+                    m_parent->GetSQLTab()->SetContainerId(containerId);
+                    wxLogDebug("Updated SQLTab container ID: %s", containerId);
+                } else {
+                    wxLogDebug("SQLTab is null in SecondWindow");
+                }
 
                 // Read detected_gui.txt from container and log it
                 wxString guiDetectCommand = wxString::Format("docker exec %s cat /root/custom_iso/detected_gui.txt", containerId);
@@ -69,7 +84,6 @@ public:
                         wxCommandEvent* guiEvent = new wxCommandEvent(FILE_COPY_COMPLETE_EVENT);
                         guiEvent->SetString(guiName); // Store GUI name in event
                         
-                        // Try to post the event directly
                         wxLogDebug("Posting event with GUI name: %s", guiName);
                         wxPostEvent(m_parent->GetDesktopTab(), *guiEvent);
                         delete guiEvent;
@@ -86,6 +100,7 @@ public:
                 m_parent->ExecuteDockerCommand(containerId);
             } else {
                 wxMessageBox("Container ID not found!", "Error", wxICON_ERROR);
+                wxLogDebug("Failed to open container_id.txt at: %s", containerIdPath);
             }
         }
 #ifndef wxPROCESS_AUTO_DELETE
@@ -250,7 +265,7 @@ private:
 wxDEFINE_EVENT(PYTHON_TASK_COMPLETED, wxCommandEvent);
 wxDEFINE_EVENT(PYTHON_LOG_UPDATE, wxCommandEvent);
 
-// SecondWindow.cpp
+// Event table
 wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)
     EVT_CLOSE(SecondWindow::OnClose)
     EVT_BUTTON(ID_TERMINAL_TAB, SecondWindow::OnTabChanged)
@@ -262,7 +277,7 @@ SecondWindow::SecondWindow(wxWindow* parent,
         const wxString& title,
         const wxString& isoPath,
         const wxString& projectDir,
-        DesktopTab* desktopTab) // Add DesktopTab parameter
+        DesktopTab* desktopTab)
     : wxFrame(parent, wxID_ANY, title, 
             wxDefaultPosition, wxSize(800, 650),
             wxDEFAULT_FRAME_STYLE | wxSYSTEM_MENU | wxCAPTION | 
@@ -272,7 +287,7 @@ SecondWindow::SecondWindow(wxWindow* parent,
     m_projectDir(projectDir),
     m_threadRunning(false),
     m_overlay(nullptr),
-    m_desktopTab(desktopTab) // Initialize DesktopTab pointer
+    m_desktopTab(desktopTab)
 #ifdef __WXMSW__
     , m_winTerminalManager(nullptr)
 #endif
@@ -424,7 +439,7 @@ void SecondWindow::CreateControls() {
     m_sqlTab->Hide();
 
     // Flatpak Store
-    m_flatpakStore = new FlatpakStore(m_mainPanel, m_projectDir); // Initialize FlatpakStore with workDir
+    m_flatpakStore = new FlatpakStore(m_mainPanel, m_projectDir);
     m_flatpakStore->Hide(); // Initially hidden
 
     // Bottom Button Panel
@@ -445,7 +460,7 @@ void SecondWindow::CreateControls() {
     mainSizer->Add(tabPanel, 0, wxEXPAND);
     mainSizer->Add(m_terminalTab, 1, wxEXPAND);
     mainSizer->Add(m_sqlTab, 1, wxEXPAND);
-    mainSizer->Add(m_flatpakStore, 1, wxEXPAND); // Add FlatpakStore to layout
+    mainSizer->Add(m_flatpakStore, 1, wxEXPAND);
     mainSizer->Add(buttonPanel, 0, wxEXPAND);
 
     m_mainPanel->SetSizer(mainSizer);
@@ -506,6 +521,7 @@ void SecondWindow::OnTabChanged(wxCommandEvent& event) {
     if (event.GetId() == ID_TERMINAL_TAB) {
         m_terminalTab->Show();
         m_sqlTab->Hide();
+        m_flatpakStore->Hide(); // Hide FlatpakStore when switching to Terminal tab
         wxButton* terminalButton = wxDynamicCast(FindWindow(ID_TERMINAL_TAB), wxButton);
         wxButton* sqlButton = wxDynamicCast(FindWindow(ID_SQL_TAB), wxButton);
         if (terminalButton) {
@@ -519,6 +535,7 @@ void SecondWindow::OnTabChanged(wxCommandEvent& event) {
     } else if (event.GetId() == ID_SQL_TAB) {
         m_terminalTab->Hide();
         m_sqlTab->Show();
+        m_flatpakStore->Hide(); // Hide FlatpakStore when switching to SQL tab
         wxButton* terminalButton = wxDynamicCast(FindWindow(ID_TERMINAL_TAB), wxButton);
         wxButton* sqlButton = wxDynamicCast(FindWindow(ID_SQL_TAB), wxButton);
         if (terminalButton) {

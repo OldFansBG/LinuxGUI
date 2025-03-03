@@ -1,6 +1,7 @@
 #include "SQLTab.h"
 #include "FlatpakStore.h"
 #include "DesktopTab.h"
+#include "SecondWindow.h" // Added to provide full definition of SecondWindow
 
 wxBEGIN_EVENT_TABLE(SQLTab, wxPanel)
     EVT_BUTTON(ID_SQL_DESKTOP, SQLTab::OnSQLTabChanged)
@@ -11,7 +12,7 @@ wxBEGIN_EVENT_TABLE(SQLTab, wxPanel)
 wxEND_EVENT_TABLE()
 
 SQLTab::SQLTab(wxWindow* parent, const wxString& workDir) 
-    : wxPanel(parent), m_workDir(workDir) // Initialize m_workDir
+    : wxPanel(parent), m_workDir(workDir)
 {
     wxBoxSizer* contentSizer = new wxBoxSizer(wxVERTICAL);
 
@@ -58,18 +59,18 @@ SQLTab::SQLTab(wxWindow* parent, const wxString& workDir)
 }
 
 void SQLTab::ShowTab(int tabId) {
-    wxWindowList children = m_sqlContent->GetChildren();
-    for (wxWindowList::iterator it = children.begin(); it != children.end(); ++it) {
-        (*it)->Destroy();
-    }
+    // Destroy all existing children of m_sqlContent to prevent conflicts
+    m_sqlContent->DestroyChildren();
 
+    // Clear and delete the old sizer, if any, to avoid sizer reuse issues
     if (m_sqlContent->GetSizer()) {
-        m_sqlContent->GetSizer()->Clear(true);
-        m_sqlContent->SetSizer(nullptr);
+        m_sqlContent->SetSizer(nullptr, true); // true deletes the old sizer
     }
 
+    // Update the current tab ID
     m_currentSqlTab = tabId;
 
+    // Switch to the appropriate tab and create its content
     switch (tabId) {
         case ID_SQL_DESKTOP:
             CreateDesktopTab();
@@ -80,20 +81,29 @@ void SQLTab::ShowTab(int tabId) {
                 desktopTab->GetEventHandler()->ProcessEvent(event);
             }
             break;
+
         case ID_SQL_APPS:
             CreateAppsTab();
             break;
+
         case ID_SQL_SYSTEM:
             CreateSystemTab();
             break;
+
         case ID_SQL_CUSTOMIZE:
             CreateCustomizeTab();
             break;
+
         case ID_SQL_HARDWARE:
             CreateHardwareTab();
             break;
+
+        default:
+            wxLogDebug("Unknown tab ID: %d", tabId);
+            break;
     }
 
+    // Ensure the layout is updated after adding new content
     m_sqlContent->Layout();
 }
 
@@ -129,16 +139,24 @@ void SQLTab::CreateDesktopTab() {
 }
 
 void SQLTab::CreateAppsTab() {
+    // Create a new vertical sizer for the tab content
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
 
-    // Pass m_workDir to FlatpakStore constructor
+    // Create a new FlatpakStore instance with m_sqlContent as its parent
     FlatpakStore* flatpakStore = new FlatpakStore(m_sqlContent, m_workDir);
-    flatpakStore->SetContainerId(m_containerId);
+    flatpakStore->SetContainerId(m_containerId); // Apply the container ID
+    wxLogDebug("Created new FlatpakStore for Apps tab with container ID: %s", m_containerId);
+
+    // Add the FlatpakStore panel to the sizer with expansion and padding
     sizer->Add(flatpakStore, 1, wxEXPAND | wxALL, 10);
 
+    // Set the sizer to m_sqlContent and ensure proper layout
     m_sqlContent->SetSizer(sizer);
-}
+    m_sqlContent->Layout();
 
+    // Optional: Verify the parent hierarchy for debugging
+    wxLogDebug("Parent of FlatpakStore: %p, m_sqlContent: %p", flatpakStore->GetParent(), m_sqlContent);
+}
 void SQLTab::SetContainerId(const wxString& containerId) {
     m_containerId = containerId;
 }
