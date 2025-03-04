@@ -8,7 +8,6 @@ BEGIN_EVENT_TABLE(CustomTitleBar, wxPanel)
     EVT_MOUSE_CAPTURE_LOST(CustomTitleBar::OnMouseCaptureLost)
     EVT_LEAVE_WINDOW(CustomTitleBar::OnMouseLeave)
     EVT_BUTTON(ID_MINIMIZE, CustomTitleBar::OnMinimize)
-    EVT_BUTTON(ID_MAXIMIZE, CustomTitleBar::OnMaximize)
     EVT_BUTTON(ID_CLOSE_WINDOW, CustomTitleBar::OnClose)
 END_EVENT_TABLE()
 
@@ -20,6 +19,7 @@ CustomTitleBar::CustomTitleBar(wxWindow* parent)
     ThemeConfig::Get().LoadThemes();
     ThemeConfig::Get().ApplyTheme(this, "light"); // default theme
 }
+
 void CustomTitleBar::CreateControls() {
     wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
     
@@ -37,16 +37,13 @@ void CustomTitleBar::CreateControls() {
     
     m_minimizeButton = new MyButton(this, ID_MINIMIZE, "minimize.png", 
                                   wxDefaultPosition, FromDIP(wxSize(36, 28)));
-    m_maximizeButton = new MyButton(this, ID_MAXIMIZE, "maximize.png", 
-                                  wxDefaultPosition, FromDIP(wxSize(36, 28)));
     m_closeButton = new MyButton(this, ID_CLOSE_WINDOW, "close.png", 
-                               wxDefaultPosition, FromDIP(wxSize(24, 16)));
+                               wxDefaultPosition, FromDIP(wxSize(24, 24)));
     
     sizer->Add(titleText, 1, wxALIGN_CENTER_VERTICAL | wxLEFT, 8);
     sizer->AddSpacer(2);
-    sizer->Add(m_minimizeButton, 0, wxEXPAND);
-    sizer->Add(m_maximizeButton, 0, wxEXPAND);
-    sizer->Add(m_closeButton, 0, wxEXPAND);
+    sizer->Add(m_minimizeButton, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
+    sizer->Add(m_closeButton, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
     
     SetSizer(sizer);
     
@@ -64,10 +61,9 @@ void CustomTitleBar::OnPaint(wxPaintEvent& event) {
     dc.DrawRectangle(rect);
 }
 
-// Rest of the implementation remains the same
 void CustomTitleBar::OnMouseLeftDown(wxMouseEvent& event) {
     wxWindow* button = wxDynamicCast(event.GetEventObject(), wxWindow);
-    if (button && (button == m_minimizeButton || button == m_maximizeButton || button == m_closeButton)) {
+    if (button && (button == m_minimizeButton || button == m_closeButton)) {
         event.Skip();
         return;
     }
@@ -123,12 +119,6 @@ void CustomTitleBar::OnMinimize(wxCommandEvent& event) {
     if (wxFrame* frame = wxDynamicCast(GetParent(), wxFrame)) {
         frame->Iconize();
     }
-}
-
-void CustomTitleBar::OnMaximize(wxCommandEvent& event) {
-    if (wxFrame* frame = wxDynamicCast(GetParent(), wxFrame)) {
-        frame->Maximize(!frame->IsMaximized());
-    }   
 }
 
 void CustomTitleBar::OnClose(wxCommandEvent& event) {
