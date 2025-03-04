@@ -29,8 +29,8 @@ MainFrame::MainFrame(const wxString& title)
    : wxFrame() 
 {
     Create(NULL, wxID_ANY, title, wxDefaultPosition, wxDefaultSize,
-           wxNO_BORDER | wxCLIP_CHILDREN);
-
+        wxCAPTION | wxCLOSE_BOX | wxMINIMIZE_BOX | wxSYSTEM_MENU | wxNO_BORDER | wxCLIP_CHILDREN);
+    
     // Load and set the application icon
     wxIcon icon;
     icon.LoadFile(wxT("IDI_MAIN_ICON"), wxBITMAP_TYPE_ICO_RESOURCE);
@@ -57,8 +57,7 @@ MainFrame::MainFrame(const wxString& title)
         if (hwnd) {
             LONG_PTR style = GetWindowLongPtr(hwnd, GWL_STYLE);
             style &= ~(WS_CAPTION | WS_OVERLAPPED | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
-            style |= WS_THICKFRAME;
-            SetWindowLongPtr(hwnd, GWL_STYLE, style);
+            style &= ~WS_THICKFRAME;            SetWindowLongPtr(hwnd, GWL_STYLE, style);
 
             LONG_PTR exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
             exStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE | WS_EX_WINDOWEDGE);
