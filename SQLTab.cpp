@@ -197,4 +197,5 @@ void SQLTab::CreateCustomizeTab() {
     sizer->Add(customizeTab, 1, wxEXPAND);
     m_sqlContent->SetSizer(sizer);
     m_sqlContent->Layout();
+    customizeTab->LoadWallpaper();  // Load the wallpaper after tab creation
 }
