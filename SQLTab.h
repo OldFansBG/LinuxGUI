@@ -18,7 +18,6 @@ private:
     void CreateAppsTab();
     void CreateSystemTab();
     void CreateCustomizeTab();  // Keep declaration
-    void CreateHardwareTab();
     void OnSQLTabChanged(wxCommandEvent& event);
 
     wxString m_containerId; // Container ID for FlatpakStore
@@ -33,8 +32,7 @@ private:
         ID_SQL_DESKTOP = wxID_HIGHEST + 1, // Start from wxID_HIGHEST + 1 to avoid conflicts
         ID_SQL_APPS,
         ID_SQL_SYSTEM,
-        ID_SQL_CUSTOMIZE,
-        ID_SQL_HARDWARE
+        ID_SQL_CUSTOMIZE
     };
 
     DECLARE_EVENT_TABLE()
