@@ -2,18 +2,45 @@
 #define CUSTOMIZETAB_H
 
 #include <wx/wx.h>
+#include <atomic>
 
 class CustomizeTab : public wxPanel {
 public:
     CustomizeTab(wxWindow* parent);
-    void CreateContent();  // Method to create the tab content
-    void LoadWallpaper();  // Method to load and display wallpapers
-    wxString GetProjectDir();  // Method to get the project directory
-    wxString GetWallpaperDirFromCommand(const wxString& containerId, const wxString& detectedDE);  // Helper to get wallpaper dir
+    ~CustomizeTab();
+    void CreateContent();
+    void LoadWallpaper();
+    wxString GetProjectDir();
+    wxString GetWallpaperDirFromCommand(const wxString& containerId, const wxString& detectedDE);
 
 private:
-    wxScrolledWindow* wallpaperPanel;  // Scrollable panel for displaying wallpapers
+    wxScrolledWindow* wallpaperPanel;
+    wxStaticText* m_loadingText;
+    std::atomic<bool> m_stopWallpaperLoad;
+    bool m_isDestroyed;  // Flag to track destruction
+
+    void OnWallpaperReady(wxCommandEvent& event);
+    void OnWallpaperLoadComplete(wxCommandEvent& event);
+
     DECLARE_EVENT_TABLE()
+};
+
+wxDECLARE_EVENT(wxEVT_WALLPAPER_READY, wxCommandEvent);
+wxDECLARE_EVENT(wxEVT_WALLPAPER_LOAD_COMPLETE, wxCommandEvent);
+
+struct WallpaperImageData {
+    wxImage image;
+};
+
+class WallpaperLoadThread : public wxThread {
+public:
+    WallpaperLoadThread(CustomizeTab* tab, std::atomic<bool>& stopFlag)
+        : wxThread(wxTHREAD_DETACHED), m_tab(tab), m_stopFlag(stopFlag) {}
+protected:
+    virtual ExitCode Entry() override;
+private:
+    CustomizeTab* m_tab;
+    std::atomic<bool>& m_stopFlag;
 };
 
 #endif // CUSTOMIZETAB_H
