@@ -23,7 +23,7 @@ CustomTitleBar::CustomTitleBar(wxWindow* parent)
 void CustomTitleBar::CreateControls() {
     wxBoxSizer* sizer = new wxBoxSizer(wxHORIZONTAL);
     
-    wxStaticText* titleText = new wxStaticText(this, wxID_ANY, "ISO Analyzer",
+    wxStaticText* titleText = new wxStaticText(this, wxID_ANY, "LinuxISOPro",
                                               wxDefaultPosition, wxDefaultSize,
                                               wxALIGN_CENTER_HORIZONTAL);
     wxFont titleFont = titleText->GetFont();

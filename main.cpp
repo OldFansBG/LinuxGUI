@@ -82,7 +82,7 @@ public:
             }
         }
 
-        MainFrame* frame = new MainFrame("ISO Analyzer");
+        MainFrame* frame = new MainFrame("LinuxISOPro");
         frame->Show(true);
         return true;
     }
