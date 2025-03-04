@@ -7,8 +7,7 @@
 #include <yaml-cpp/yaml.h>
 #include <vector>
 #include <string>
-#include "MyButton.h"
-#include "CustomTitleBar.h"
+#include "CustomTitleBar.h"  // Includes MyButton definition now
 #include "CustomStatusBar.h"
 #include "SecondWindow.h"
 #include "WindowIDs.h"
@@ -42,7 +41,7 @@ private:
    void OnBrowseISO(wxCommandEvent& event);
    void OnBrowseWorkDir(wxCommandEvent& event);
    void OnDetect(wxCommandEvent& event);
-   void OnNextButton(wxCommandEvent& event);  // Changed from OnExtract
+   void OnNextButton(wxCommandEvent& event);
    void OnCancel(wxCommandEvent& event);
    void OnSettings(wxCommandEvent& event);
    void UpdateExtractionProgress(int progress, const wxString& status);
@@ -68,7 +67,7 @@ private:
    wxTextCtrl* m_workDirCtrl;
    wxGauge* m_progressGauge;
    wxStaticText* m_statusText;
-   MyButton* m_settingsButton;
+   MyButton* m_settingsButton;  // MyButton is now defined via CustomTitleBar.h
    CustomTitleBar* m_titleBar;
    CustomStatusBar* m_statusBar;
    YAML::Node m_config;
@@ -79,7 +78,7 @@ private:
    // Add DesktopTab member
    DesktopTab* m_desktopTab;
 
-   void OnGUIDetected(wxCommandEvent& event); // Add this handler
+   void OnGUIDetected(wxCommandEvent& event);
 
    // Event table declaration
    DECLARE_EVENT_TABLE()
