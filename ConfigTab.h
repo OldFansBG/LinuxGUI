@@ -18,21 +18,21 @@ private:
     void CreateAppsTab();
     void CreateSystemTab();
     void CreateCustomizeTab();  // Keep declaration
-    void OnSQLTabChanged(wxCommandEvent& event);
+    void OnConfigTabChanged(wxCommandEvent& event);
 
     wxString m_containerId; // Container ID for FlatpakStore
     wxString m_workDir;     // Working directory for FlatpakStore
 
-    wxPanel* m_sqlContent;  // Content panel for tabs
-    int m_currentSqlTab;    // Currently active tab
-    std::vector<wxButton*> m_sqlTabButtons; // Buttons for tab switching
+    wxPanel* m_configContent;  // Content panel for tabs
+    int m_currentConfigTab;    // Currently active tab
+    std::vector<wxButton*> m_configTabButtons; // Buttons for tab switching
 
     // Tab IDs
     enum {
-        ID_SQL_DESKTOP = wxID_HIGHEST + 1, // Start from wxID_HIGHEST + 1 to avoid conflicts
-        ID_SQL_APPS,
-        ID_SQL_SYSTEM,
-        ID_SQL_CUSTOMIZE
+        ID_CONFIG_DESKTOP = wxID_HIGHEST + 1, // Start from wxID_HIGHEST + 1 to avoid conflicts
+        ID_CONFIG_APPS,
+        ID_CONFIG_SYSTEM,
+        ID_CONFIG_CUSTOMIZE
     };
 
     DECLARE_EVENT_TABLE()

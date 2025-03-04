@@ -114,7 +114,7 @@ set(SOURCES
    ContainerManager.cpp
    ScriptManager.cpp
    ScriptContents.cpp
-   SQLTab.cpp
+   ConfigTab.cpp
    FlatpakStore.cpp
    DesktopTab.cpp
    SettingsManager.cpp
