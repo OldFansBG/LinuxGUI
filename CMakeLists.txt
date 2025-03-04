@@ -132,7 +132,6 @@ set(HEADERS
    SecondWindow.h
    LinuxTerminalPanel.h
    SettingsDialog.h
-   MyButton.h
    ContainerManager.h
    SettingsManager.h
 )

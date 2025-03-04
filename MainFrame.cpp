@@ -9,7 +9,6 @@
 #include <filesystem>
 #include <wx/artprov.h>
 #include <wx/bmpbuttn.h>
-#include "MyButton.h"
 #include <wx/settings.h>
 #include <wx/display.h>
 #include <wx/filename.h>
