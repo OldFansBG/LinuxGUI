@@ -1,7 +1,8 @@
 #include "SQLTab.h"
 #include "FlatpakStore.h"
 #include "DesktopTab.h"
-#include "SecondWindow.h" // Added to provide full definition of SecondWindow
+#include "CustomizeTab.h" // Add new header
+#include "SecondWindow.h"  // Added to provide full definition of SecondWindow
 
 wxBEGIN_EVENT_TABLE(SQLTab, wxPanel)
     EVT_BUTTON(ID_SQL_DESKTOP, SQLTab::OnSQLTabChanged)
@@ -157,6 +158,7 @@ void SQLTab::CreateAppsTab() {
     // Optional: Verify the parent hierarchy for debugging
     wxLogDebug("Parent of FlatpakStore: %p, m_sqlContent: %p", flatpakStore->GetParent(), m_sqlContent);
 }
+
 void SQLTab::SetContainerId(const wxString& containerId) {
     m_containerId = containerId;
 }
@@ -196,36 +198,11 @@ void SQLTab::CreateSystemTab() {
 }
 
 void SQLTab::CreateCustomizeTab() {
+    CustomizeTab* customizeTab = new CustomizeTab(m_sqlContent);
     wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
-
-    wxStaticBox* themeBox = new wxStaticBox(m_sqlContent, wxID_ANY, "Theme");
-    themeBox->SetForegroundColour(*wxWHITE);
-    wxStaticBoxSizer* themeSizer = new wxStaticBoxSizer(themeBox, wxVERTICAL);
-
-    wxFlexGridSizer* themeGrid = new wxFlexGridSizer(2, 2, 10, 10);
-    themeGrid->AddGrowableCol(1, 1);
-
-    auto themeLabel = new wxStaticText(m_sqlContent, wxID_ANY, "Global Theme");
-    themeLabel->SetForegroundColour(*wxWHITE);
-    wxChoice* theme = new wxChoice(m_sqlContent, wxID_ANY);
-    theme->Append({"Default", "Nord", "Dracula", "Gruvbox", "Tokyo Night", "Catppuccin"});
-    theme->SetSelection(0);
-
-    themeGrid->Add(themeLabel, 0, wxALIGN_CENTER_VERTICAL);
-    themeGrid->Add(theme, 1, wxEXPAND);
-
-    auto accentLabel = new wxStaticText(m_sqlContent, wxID_ANY, "Accent Color");
-    accentLabel->SetForegroundColour(*wxWHITE);
-    wxPanel* colorPanel = new wxPanel(m_sqlContent);
-    colorPanel->SetBackgroundColour(wxColour(37, 99, 235));
-
-    themeGrid->Add(accentLabel, 0, wxALIGN_CENTER_VERTICAL);
-    themeGrid->Add(colorPanel, 1, wxEXPAND);
-
-    themeSizer->Add(themeGrid, 1, wxEXPAND | wxALL, 5);
-    sizer->Add(themeSizer, 0, wxEXPAND | wxALL, 10);
-
+    sizer->Add(customizeTab, 1, wxEXPAND);
     m_sqlContent->SetSizer(sizer);
+    m_sqlContent->Layout();
 }
 
 void SQLTab::CreateHardwareTab() {

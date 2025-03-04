@@ -4,7 +4,8 @@
 #include <wx/wx.h>
 #include <vector>
 #include "FlatpakStore.h"
-#include "DesktopTab.h"  // Include the new DesktopTab header
+#include "DesktopTab.h"
+#include "CustomizeTab.h"  // Add the new CustomizeTab header
 
 class SQLTab : public wxPanel {
 public:
@@ -16,7 +17,7 @@ private:
     void CreateDesktopTab();
     void CreateAppsTab();
     void CreateSystemTab();
-    void CreateCustomizeTab();
+    void CreateCustomizeTab();  // Keep declaration
     void CreateHardwareTab();
     void OnSQLTabChanged(wxCommandEvent& event);
 

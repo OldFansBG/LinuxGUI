@@ -114,6 +114,7 @@ set(SOURCES
    DesktopTab.cpp
    SettingsManager.cpp
    WinTerminalManager.cpp
+   CustomizeTab.cpp
 )
 
 # Header files
