@@ -1,11 +1,17 @@
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
-project(iso_analyzer LANGUAGES CXX)
+project(LinuxISOPro LANGUAGES CXX)
 
 # Disable all warnings
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     add_compile_options(-w)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     add_compile_options(/W0)
+endif()
+
+# Enable RC (Resource Compiler) for Windows
+if(WIN32)
+    enable_language(RC)
+    set(CMAKE_RC_COMPILER_INIT windres)  # Use windres for MinGW
 endif()
 
 include(FetchContent)
@@ -77,11 +83,10 @@ endif()
 # ---------------------------------------------------------------
 # Python 3.9 Configuration (Anaconda Environment)
 # ---------------------------------------------------------------
-# Force CMake to use the correct Python version
 set(Python_FIND_REGISTRY NEVER)  # Ignore Windows registry
 set(Python_FIND_STRATEGY LOCATION)  # Prioritize explicit paths
 set(Python_ROOT_DIR "C:/Users/PC/anaconda3/envs/myenv")  # Conda environment path
-find_package(Python 3.9 EXACT REQUIRED COMPONENTS Development)  # Match your Python version
+find_package(Python 3.9 EXACT REQUIRED COMPONENTS Development)
 
 # Add Python include and library paths
 include_directories(
@@ -132,13 +137,13 @@ set(HEADERS
    SettingsManager.h
 )
 
-# Scripts and resources to copy
-set(SCRIPT_FILES
-   setup_output.sh
-   setup_chroot.sh
-   create_iso.sh
+# Resource files (including the icon and RC file)
+set(RESOURCE_FILES
+   "${CMAKE_CURRENT_SOURCE_DIR}/resources/linuxisopro.ico"  # Explicitly include the icon
+   "${CMAKE_CURRENT_SOURCE_DIR}/resources.rc"               # Include the RC file
+   "${CMAKE_CURRENT_SOURCE_DIR}/resources/gear.png"         # Assuming this exists from your code
+   # Add other PNGs or ICOs here if needed
 )
-
 
 # Platform-specific configurations
 if(WIN32)
@@ -156,10 +161,10 @@ if(WIN32)
 endif()
 
 # Create executable as a Windows GUI application
-add_executable(iso_analyzer WIN32 ${SOURCES} ${HEADERS} ${RESOURCE_FILES})
+add_executable(LinuxISOPro WIN32 ${SOURCES} ${HEADERS} ${RESOURCE_FILES})
 
 # Include directories
-target_include_directories(iso_analyzer 
+target_include_directories(LinuxISOPro 
    PRIVATE
        ${CMAKE_CURRENT_SOURCE_DIR}
        ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -167,24 +172,24 @@ target_include_directories(iso_analyzer
        ${libarchive_SOURCE_DIR}/libarchive
        ${libarchive_BINARY_DIR}
        ${Python_INCLUDE_DIRS}
-       ${RAPIDJSON_INCLUDE_DIR}  # Use system-installed RapidJSON
+       ${RAPIDJSON_INCLUDE_DIR}
 )
 
 # Link libraries
-target_link_libraries(iso_analyzer 
+target_link_libraries(LinuxISOPro 
    PRIVATE
        wx::core
        wx::base
        archive_static
        yaml-cpp
        ${PLATFORM_LIBS}
-       CURL::libcurl  # Link libcurl
-       ${Python_LIBRARIES}  # Link Python
+       CURL::libcurl
+       ${Python_LIBRARIES}
 )
 
 # Windows-specific settings
 if(WIN32)
-   target_compile_definitions(iso_analyzer 
+   target_compile_definitions(LinuxISOPro 
        PRIVATE
            WIN32_LEAN_AND_MEAN
            UNICODE
@@ -193,7 +198,7 @@ if(WIN32)
    )
 
    # Set static runtime
-   set_property(TARGET iso_analyzer PROPERTY
+   set_property(TARGET LinuxISOPro PROPERTY
        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
@@ -218,10 +223,6 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/scripts/docker_operations.py
               ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/docker_operations.py COPYONLY)
 
 # Copy resource files
-file(GLOB RESOURCE_FILES
-   "${CMAKE_CURRENT_SOURCE_DIR}/resources/*.png"
-   "${CMAKE_CURRENT_SOURCE_DIR}/resources/*.ico"
-)
 file(COPY ${RESOURCE_FILES} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 # Copy themes file
@@ -230,7 +231,7 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/themes.json
               COPYONLY)
 
 # Install configuration
-install(TARGETS iso_analyzer
+install(TARGETS LinuxISOPro
    RUNTIME DESTINATION bin
 )
 
@@ -238,7 +239,7 @@ install(FILES
    ${CMAKE_CURRENT_SOURCE_DIR}/config.yaml
    ${CMAKE_CURRENT_SOURCE_DIR}/themes.json
    ${SCRIPT_FILES}
-   ${RESOURCE_FILES}
+   ${RESOURCE_FILES}  # Includes linuxisopro.ico
    DESTINATION bin
 )
 

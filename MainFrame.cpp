@@ -31,6 +31,15 @@ MainFrame::MainFrame(const wxString& title)
     Create(NULL, wxID_ANY, title, wxDefaultPosition, wxDefaultSize,
            wxNO_BORDER | wxCLIP_CHILDREN);
 
+    // Load and set the application icon
+    wxIcon icon;
+    icon.LoadFile(wxT("IDI_MAIN_ICON"), wxBITMAP_TYPE_ICO_RESOURCE);
+    if (icon.IsOk()) {
+        SetIcon(icon);
+    } else {
+        wxLogWarning("Failed to load application icon 'linuxisopro.ico'. Check if the file is in the correct directory.");
+    }
+
     SetBackgroundStyle(wxBG_STYLE_PAINT);
 
     // Load the themes first
