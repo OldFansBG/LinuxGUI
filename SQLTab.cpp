@@ -9,7 +9,6 @@ wxBEGIN_EVENT_TABLE(SQLTab, wxPanel)
     EVT_BUTTON(ID_SQL_APPS, SQLTab::OnSQLTabChanged)
     EVT_BUTTON(ID_SQL_SYSTEM, SQLTab::OnSQLTabChanged)
     EVT_BUTTON(ID_SQL_CUSTOMIZE, SQLTab::OnSQLTabChanged)
-    EVT_BUTTON(ID_SQL_HARDWARE, SQLTab::OnSQLTabChanged)
 wxEND_EVENT_TABLE()
 
 SQLTab::SQLTab(wxWindow* parent, const wxString& workDir) 
@@ -28,8 +27,7 @@ SQLTab::SQLTab(wxWindow* parent, const wxString& workDir)
         {"Desktop", ID_SQL_DESKTOP},
         {"Applications", ID_SQL_APPS},
         {"System", ID_SQL_SYSTEM},
-        {"Customize", ID_SQL_CUSTOMIZE},
-        {"Hardware", ID_SQL_HARDWARE}
+        {"Customize", ID_SQL_CUSTOMIZE}
     };
 
     m_sqlTabButtons.clear();
@@ -93,10 +91,6 @@ void SQLTab::ShowTab(int tabId) {
 
         case ID_SQL_CUSTOMIZE:
             CreateCustomizeTab();
-            break;
-
-        case ID_SQL_HARDWARE:
-            CreateHardwareTab();
             break;
 
         default:
@@ -203,38 +197,4 @@ void SQLTab::CreateCustomizeTab() {
     sizer->Add(customizeTab, 1, wxEXPAND);
     m_sqlContent->SetSizer(sizer);
     m_sqlContent->Layout();
-}
-
-void SQLTab::CreateHardwareTab() {
-    wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
-
-    wxStaticBox* box = new wxStaticBox(m_sqlContent, wxID_ANY, "Display");
-    box->SetForegroundColour(*wxWHITE);
-    wxStaticBoxSizer* displaySizer = new wxStaticBoxSizer(box, wxVERTICAL);
-
-    wxFlexGridSizer* grid = new wxFlexGridSizer(2, 2, 10, 10);
-    grid->AddGrowableCol(1, 1);
-
-    auto resLabel = new wxStaticText(m_sqlContent, wxID_ANY, "Resolution");
-    resLabel->SetForegroundColour(*wxWHITE);
-    wxChoice* res = new wxChoice(m_sqlContent, wxID_ANY);
-    res->Append({"3840 x 2160", "2560 x 1440", "1920 x 1080"});
-    res->SetSelection(2);
-
-    grid->Add(resLabel, 0, wxALIGN_CENTER_VERTICAL);
-    grid->Add(res, 1, wxEXPAND);
-
-    auto rateLabel = new wxStaticText(m_sqlContent, wxID_ANY, "Refresh Rate");
-    rateLabel->SetForegroundColour(*wxWHITE);
-    wxChoice* rate = new wxChoice(m_sqlContent, wxID_ANY);
-    rate->Append({"144 Hz", "120 Hz", "60 Hz"});
-    rate->SetSelection(2);
-
-    grid->Add(rateLabel, 0, wxALIGN_CENTER_VERTICAL);
-    grid->Add(rate, 1, wxEXPAND);
-
-    displaySizer->Add(grid, 1, wxEXPAND | wxALL, 5);
-    sizer->Add(displaySizer, 0, wxEXPAND | wxALL, 10);
-
-    m_sqlContent->SetSizer(sizer);
 }
