@@ -3,7 +3,7 @@
 
 #include <wx/wx.h>
 #include "DesktopTab.h"
-#include "SQLTab.h"
+#include "ConfigTab.h"
 #include "LinuxTerminalPanel.h"
 #include "OSDetector.h"
 #include "ContainerManager.h"

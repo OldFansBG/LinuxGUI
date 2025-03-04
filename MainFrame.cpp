@@ -392,27 +392,6 @@ void MainFrame::OnSettings(wxCommandEvent& event) {
     dialog->Destroy();
 }
 
-void MainFrame::UpdateExtractionProgress(int progress, const wxString& status) {
-    m_progressGauge->SetValue(progress);
-    m_statusText->SetLabel(status);
-    
-    if (progress == 100) {
-        FindWindow(ID_NEXT)->Enable(true);
-        FindWindow(ID_CANCEL)->Enable(false);
-        SetStatusText("Extraction completed successfully");
-        
-        SecondWindow* secondWindow = new SecondWindow(this, "Analyzer", 
-                                                     m_currentISOPath, 
-                                                     m_workDirCtrl->GetValue(),
-                                                     m_desktopTab); // Add this
-        this->Hide();
-        secondWindow->Show(true);
-    } else if (progress == 0) {
-        FindWindow(ID_NEXT)->Enable(true);
-        FindWindow(ID_CANCEL)->Enable(false);
-    }
-}
-
 bool MainFrame::LoadConfig() {
     try {
         std::filesystem::path exePath = std::filesystem::current_path() / "config.yaml";

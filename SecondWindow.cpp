@@ -394,7 +394,7 @@ void SecondWindow::CreateControls() {
     wxStaticLine* separator = new wxStaticLine(tabPanel, wxID_ANY,
         wxDefaultPosition, wxDefaultSize, wxLI_VERTICAL);
 
-    wxButton* sqlButton = new wxButton(tabPanel, ID_SQL_TAB, "SQL",
+    wxButton* sqlButton = new wxButton(tabPanel, ID_SQL_TAB, "CONFIG",
         wxDefaultPosition, wxSize(100, 40), wxBORDER_NONE);
     sqlButton->SetBackgroundColour(wxColour(30, 30, 30));
     sqlButton->SetForegroundColour(wxColour(128, 128, 128));

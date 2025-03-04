@@ -44,7 +44,6 @@ private:
    void OnNextButton(wxCommandEvent& event);
    void OnCancel(wxCommandEvent& event);
    void OnSettings(wxCommandEvent& event);
-   void UpdateExtractionProgress(int progress, const wxString& status);
 
    bool SearchReleaseFile(const wxString& isoPath, wxString& releaseContent);
    bool SearchGrubEnv(const wxString& isoPath, wxString& distributionName);
