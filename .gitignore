@@ -20,3 +20,6 @@ tesr.py
 *.spec
 *.spec
 test.py
+mongo-c-driver/
+conanfile.txt
+New folder/DiplomenProekt.pdf

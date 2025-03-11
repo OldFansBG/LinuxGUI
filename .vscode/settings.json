@@ -93,5 +93,35 @@
         "xtr1common": "cpp",
         "xtree": "cpp",
         "xutility": "cpp"
-    }
+    },
+    "cmake.configureSettings": {
+        "CMAKE_TOOLCHAIN_FILE": "C:/Users/PC/Desktop/LinuxGUI/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+        "CMAKE_PREFIX_PATH": [
+            "C:/mongo-c-driver",
+            "C:/mongocxx"
+        ]
+    },
+    "cmake.generator": "Ninja",  // Optional: Requires Ninja installed
+    "cmake.configureOnOpen": true,  // Automatically configure CMake when opening the project
+    "C_Cpp.default.cppStandard": "c++17",  // Matches your project's C++ standard
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/**",
+        "C:/mongo-c-driver/include/libmongoc-1.0",
+        "C:/mongocxx/include/mongocxx/v_noabi",
+        "C:/mongocxx/include/bsoncxx/v_noabi",
+        "C:/Users/PC/anaconda3/envs/myenv/include"  // Optional: Python include path
+    ],
+    "C_Cpp.default.defines": [
+        "WIN32_LEAN_AND_MEAN",
+        "UNICODE",
+        "_UNICODE",
+        "LIBARCHIVE_STATIC",
+        "WINVER=0x0A00",
+        "_WIN32_WINNT=0x0A00"
+    ],
+    "editor.formatOnSave": true,  // Optional: Formats code on save
+    "files.autoSave": "afterDelay",  // Optional: Autosave after a delay
+    "files.autoSaveDelay": 1000,
+    "git.ignoreLimitWarning": true // Optional: 1-second delay for autosave
 }

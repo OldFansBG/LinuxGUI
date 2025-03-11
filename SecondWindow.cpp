@@ -1,4 +1,3 @@
-// SecondWindow.cpp
 #include "SecondWindow.h"
 #include "DesktopTab.h"
 #include <wx/utils.h>
@@ -11,6 +10,12 @@
 #include <wx/log.h>
 #include <cmath>
 #include <chrono>
+#include <mongocxx/uri.hpp>
+#include <mongocxx/client.hpp>
+#include <mongocxx/collection.hpp>
+#include <bsoncxx/builder/stream/document.hpp>
+#include <bsoncxx/json.hpp>
+
 #ifdef __WXMSW__
 #include <windows.h>
 #include <dwmapi.h>
@@ -18,14 +23,14 @@
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
 
+// Initialize static member
+mongocxx::instance SecondWindow::m_mongoInstance{};
+
 //---------------------------------------------------------------------
-// Custom wxProcess subclass for Python executable
+// PythonProcess class (unchanged)
 class PythonProcess : public wxProcess {
 public:
-    PythonProcess(SecondWindow* parent)
-        : wxProcess(parent),
-          m_parent(parent)
-    {
+    PythonProcess(SecondWindow* parent) : wxProcess(parent), m_parent(parent) {
 #ifdef wxPROCESS_AUTO_DELETE
         SetExtraStyle(wxPROCESS_AUTO_DELETE);
 #endif
@@ -34,7 +39,6 @@ public:
     virtual void OnTerminate(int pid, int status) override {
         if (m_parent) {
             m_parent->CloseOverlay();
-
             wxString containerIdPath = wxFileName(m_parent->GetProjectDir(), "container_id.txt").GetFullPath();
             wxFile file;
             if (file.Open(containerIdPath)) {
@@ -42,35 +46,26 @@ public:
                 file.ReadAll(&containerId);
                 containerId.Trim();
 
-                // Update FlatpakStore using getter
                 if (m_parent->GetFlatpakStore()) {
                     m_parent->GetFlatpakStore()->SetContainerId(containerId);
                     wxLogDebug("Updated FlatpakStore container ID in SecondWindow: %s", containerId);
-                } else {
-                    wxLogDebug("FlatpakStore is null in SecondWindow");
                 }
-
-                // Update SQLTab using getter (if active)
                 if (m_parent->GetSQLTab()) {
                     m_parent->GetSQLTab()->SetContainerId(containerId);
                     wxLogDebug("Updated SQLTab container ID: %s", containerId);
-                } else {
-                    wxLogDebug("SQLTab is null in SecondWindow");
                 }
 
-                // Read detected_gui.txt from container and log it
                 wxString guiDetectCommand = wxString::Format("docker exec %s cat /root/custom_iso/detected_gui.txt", containerId);
                 wxArrayString output, errors;
                 int exitCode = wxExecute(guiDetectCommand, output, errors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE);
                 
                 if (exitCode == 0 && !output.IsEmpty()) {
                     wxString guiName = output[0];
-                    guiName.Trim(true).Trim(false); // Remove leading/trailing whitespace
-                    guiName.Replace("\n", "");      // Remove newlines
+                    guiName.Trim(true).Trim(false);
+                    guiName.Replace("\n", "");
 
                     wxLogDebug("Detected GUI environment before event: %s", guiName);
 
-                    // Save to file for reload button to use later
                     wxString localGuiPath = wxFileName(m_parent->GetProjectDir(), "detected_gui.txt").GetFullPath();
                     wxFile guiFile;
                     if (guiFile.Create(localGuiPath, true) && guiFile.IsOpened()) {
@@ -79,28 +74,15 @@ public:
                         wxLogDebug("GUI name saved to file: %s", localGuiPath);
                     }
 
-                    // Create and send event to DesktopTab
                     if (m_parent->GetDesktopTab()) {
                         wxCommandEvent* guiEvent = new wxCommandEvent(FILE_COPY_COMPLETE_EVENT);
-                        guiEvent->SetString(guiName); // Store GUI name in event
-                        
+                        guiEvent->SetString(guiName);
                         wxLogDebug("Posting event with GUI name: %s", guiName);
                         wxPostEvent(m_parent->GetDesktopTab(), *guiEvent);
                         delete guiEvent;
-                    } else {
-                        wxLogDebug("ERROR: DesktopTab pointer is NULL!");
                     }
-                } else {
-                    wxString errorMsg = wxString::Format("GUI detection failed (exit code %d). ", exitCode);
-                    if (!errors.IsEmpty()) errorMsg += "Error: " + errors[0];
-                    wxLogDebug(errorMsg);
                 }
-
-                // Execute Docker command in the terminal
                 m_parent->ExecuteDockerCommand(containerId);
-            } else {
-                wxMessageBox("Container ID not found!", "Error", wxICON_ERROR);
-                wxLogDebug("Failed to open container_id.txt at: %s", containerIdPath);
             }
         }
 #ifndef wxPROCESS_AUTO_DELETE
@@ -114,13 +96,10 @@ private:
 //---------------------------------------------------------------------
 
 //---------------------------------------------------------------------
-// Custom wxProcess subclass for Docker exec command
+// DockerExecProcess class (unchanged)
 class DockerExecProcess : public wxProcess {
 public:
-    DockerExecProcess(SecondWindow* parent)
-        : wxProcess(parent),
-          m_parent(parent)
-    {
+    DockerExecProcess(SecondWindow* parent) : wxProcess(parent), m_parent(parent) {
 #ifdef wxPROCESS_AUTO_DELETE
         SetExtraStyle(wxPROCESS_AUTO_DELETE);
 #endif
@@ -130,7 +109,6 @@ public:
         if (m_parent) {
             m_parent->CloseOverlay();
             if (status == 0) {
-                // Read container ID from container_id.txt
                 wxString containerIdPath = wxFileName(m_parent->GetProjectDir(), "container_id.txt").GetFullPath();
                 wxFile file;
                 if (file.Open(containerIdPath)) {
@@ -138,10 +116,8 @@ public:
                     file.ReadAll(&containerId);
                     containerId.Trim();
 
-                    // Copy ISO from container to host's project directory
                     wxString sourcePath = wxString::Format("%s:/root/custom_iso/custom_linuxmint.iso", containerId);
                     wxString destPath = m_parent->GetProjectDir();
-
                     wxString copyCommand = wxString::Format("docker cp \"%s\" \"%s\"", sourcePath, destPath);
                     int copyStatus = wxExecute(copyCommand, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE);
 
@@ -150,11 +126,7 @@ public:
                     } else {
                         wxMessageBox("ISO creation succeeded but failed to copy to host.", "Error", wxICON_ERROR);
                     }
-                } else {
-                    wxMessageBox("Container ID not found for copying ISO.", "Error", wxICON_ERROR);
                 }
-            } else {
-                wxMessageBox("ISO creation failed. Check logs for details.", "Error", wxICON_ERROR);
             }
         }
 #ifndef wxPROCESS_AUTO_DELETE
@@ -168,19 +140,15 @@ private:
 //---------------------------------------------------------------------
 
 //---------------------------------------------------------------------
-// OverlayFrame implementation
+// OverlayFrame class (unchanged)
 class OverlayFrame : public wxDialog {
 public:
-    OverlayFrame(wxWindow* parent)
-        : wxDialog(parent, wxID_ANY, "", wxDefaultPosition, wxDefaultSize,
-                   wxNO_BORDER | wxFRAME_FLOAT_ON_PARENT)
-    {
+    OverlayFrame(wxWindow* parent) : wxDialog(parent, wxID_ANY, "", wxDefaultPosition, wxDefaultSize, wxNO_BORDER | wxFRAME_FLOAT_ON_PARENT) {
         SetBackgroundColour(wxColour(0, 0, 0));
         SetTransparent(200);
         SetBackgroundStyle(wxBG_STYLE_PAINT);
 
         m_parentWindow = parent;
-
         UpdatePositionAndSize();
 
         m_animationAngle = 0.0;
@@ -222,14 +190,10 @@ private:
     void OnPaint(wxPaintEvent& event) {
         wxAutoBufferedPaintDC dc(this);
         dc.Clear();
-
         wxSize size = GetClientSize();
-
-        // Dim background (90% opacity)
         dc.SetBrush(wxBrush(wxColour(0, 0, 0, 230)));
         dc.SetPen(*wxTRANSPARENT_PEN);
         dc.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
-
         DrawLoadingAnimation(dc, size);
     }
 
@@ -271,6 +235,8 @@ wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)
     EVT_BUTTON(ID_TERMINAL_TAB, SecondWindow::OnTabChanged)
     EVT_BUTTON(ID_SQL_TAB, SecondWindow::OnTabChanged)
     EVT_BUTTON(ID_NEXT_BUTTON, SecondWindow::OnNext)
+    EVT_BUTTON(ID_MONGODB_BUTTON, SecondWindow::OnMongoDBButton)
+    EVT_BUTTON(ID_MONGODB_PANEL_CLOSE, SecondWindow::OnMongoDBPanelClose)
 wxEND_EVENT_TABLE()
 
 SecondWindow::SecondWindow(wxWindow* parent,
@@ -287,18 +253,18 @@ SecondWindow::SecondWindow(wxWindow* parent,
     m_projectDir(projectDir),
     m_threadRunning(false),
     m_overlay(nullptr),
-    m_desktopTab(desktopTab)
+    m_desktopTab(desktopTab),
+    m_mongoPanel(nullptr)
 #ifdef __WXMSW__
     , m_winTerminalManager(nullptr)
 #endif
 {
     wxLogDebug("SecondWindow constructor: desktopTab pointer = %p", m_desktopTab);
 
-    // Enable dark mode title bar
-    #ifdef __WXMSW__
+#ifdef __WXMSW__
     BOOL value = TRUE;
     DwmSetWindowAttribute(GetHandle(), DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
-    #endif
+#endif
 
     m_containerId = ContainerManager::Get().GetCurrentContainerId();
     CreateControls();
@@ -310,7 +276,6 @@ SecondWindow::SecondWindow(wxWindow* parent,
 
     StartPythonExecutable();
 
-    // Initialize the terminal with a clear command (optional)
 #ifdef __WXMSW__
     if (m_winTerminalManager) {
         m_winTerminalManager->SendCommand(L" ");
@@ -337,14 +302,10 @@ void SecondWindow::CloseOverlay() {
 
 void SecondWindow::StartPythonExecutable() {
     wxString pythonExePath = "script.exe";
-    wxString projectDir = m_projectDir;
-    wxString isoPath = m_isoPath;
-
     wxString command = wxString::Format("\"%s\" --project-dir \"%s\" --iso-path \"%s\"",
-                                      pythonExePath, projectDir, isoPath);
+                                      pythonExePath, m_projectDir, m_isoPath);
 
     PythonProcess* proc = new PythonProcess(this);
-
     long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);
 
     if (pid == 0) {
@@ -363,22 +324,35 @@ void SecondWindow::CleanupThread() {
 }
 
 void SecondWindow::ExecuteDockerCommand(const wxString& containerId) {
-    #ifdef __WXMSW__
-        if (m_winTerminalManager) {
-            // Enter the container FIRST, then run chroot interactively
-            wxString command = wxString::Format(
-                "cls && docker exec -it %s /bin/bash\r\n"
-                "chroot /root/custom_iso/squashfs-root /bin/bash\r\n",
-                containerId
-            );
-            m_winTerminalManager->SendCommand(command.ToStdWstring());
-        }
-    #endif
+#ifdef __WXMSW__
+    if (m_winTerminalManager) {
+        wxString command = wxString::Format(
+            "cls && docker exec -it %s /bin/bash\r\n"
+            "chroot /root/custom_iso/squashfs-root /bin/bash\r\n",
+            containerId
+        );
+        m_winTerminalManager->SendCommand(command.ToStdWstring());
+    }
+#endif
 }
 
 void SecondWindow::CreateControls() {
     m_mainPanel = new wxPanel(this);
     wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
+
+    // Top panel with MongoDB button
+    wxPanel* topPanel = new wxPanel(m_mainPanel);
+    topPanel->SetBackgroundColour(wxColour(30, 30, 30));
+    wxBoxSizer* topSizer = new wxBoxSizer(wxHORIZONTAL);
+    
+    wxButton* mongoButton = new wxButton(topPanel, ID_MONGODB_BUTTON, "MongoDB",
+        wxDefaultPosition, wxSize(80, 30), wxBORDER_NONE);
+    mongoButton->SetBackgroundColour(wxColour(44, 49, 58));
+    mongoButton->SetForegroundColour(*wxWHITE);
+    
+    topSizer->Add(mongoButton, 0, wxALL, 5);
+    topSizer->AddStretchSpacer(1);
+    topPanel->SetSizer(topSizer);
 
     // Tab Bar
     wxPanel* tabPanel = new wxPanel(m_mainPanel);
@@ -408,9 +382,10 @@ void SecondWindow::CreateControls() {
     tabSizer->AddStretchSpacer(1);
     tabPanel->SetSizer(tabSizer);
 
-    // Terminal/SQL Content
+    // Terminal/SQL/MongoDB Content
     m_terminalTab = new wxPanel(m_mainPanel);
     m_sqlTab = new SQLTab(m_mainPanel, m_projectDir);
+    m_mongoPanel = new MongoDBPanel(m_mainPanel);
 
     wxBoxSizer* terminalSizer = new wxBoxSizer(wxVERTICAL);
     m_terminalTab->SetBackgroundColour(wxColour(30, 30, 30));
@@ -437,10 +412,11 @@ void SecondWindow::CreateControls() {
 
     m_terminalTab->SetSizer(terminalSizer);
     m_sqlTab->Hide();
+    m_mongoPanel->Hide();
 
     // Flatpak Store
     m_flatpakStore = new FlatpakStore(m_mainPanel, m_projectDir);
-    m_flatpakStore->Hide(); // Initially hidden
+    m_flatpakStore->Hide();
 
     // Bottom Button Panel
     wxPanel* buttonPanel = new wxPanel(m_mainPanel);
@@ -457,9 +433,11 @@ void SecondWindow::CreateControls() {
     buttonPanel->SetSizer(buttonSizer);
 
     // Assemble Main Layout
+    mainSizer->Add(topPanel, 0, wxEXPAND);
     mainSizer->Add(tabPanel, 0, wxEXPAND);
     mainSizer->Add(m_terminalTab, 1, wxEXPAND);
     mainSizer->Add(m_sqlTab, 1, wxEXPAND);
+    mainSizer->Add(m_mongoPanel, 1, wxEXPAND);
     mainSizer->Add(m_flatpakStore, 1, wxEXPAND);
     mainSizer->Add(buttonPanel, 0, wxEXPAND);
 
@@ -469,15 +447,12 @@ void SecondWindow::CreateControls() {
 
 void SecondWindow::OnClose(wxCloseEvent& event) {
     CleanupThread();
-
     if (!m_containerId.IsEmpty()) {
         ContainerManager::Get().CleanupContainer(m_containerId);
     }
-
     if (GetParent()) {
         GetParent()->Show();
     }
-
     Destroy();
 }
 
@@ -485,7 +460,6 @@ void SecondWindow::OnNext(wxCommandEvent& event) {
     wxButton* nextButton = wxDynamicCast(FindWindow(ID_NEXT_BUTTON), wxButton);
     if (nextButton) nextButton->Disable();
 
-    // Read container ID from container_id.txt
     wxString containerId;
     wxString containerIdPath = wxFileName(m_projectDir, "container_id.txt").GetFullPath();
     wxFile file;
@@ -498,13 +472,11 @@ void SecondWindow::OnNext(wxCommandEvent& event) {
         return;
     }
 
-    // Show processing overlay
     if (m_overlay) {
         m_overlay->Destroy();
     }
     m_overlay = new OverlayFrame(this);
 
-    // Execute docker exec command
     wxString command = wxString::Format("docker exec %s /create_iso.sh", containerId);
     DockerExecProcess* proc = new DockerExecProcess(this);
     long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);
@@ -521,7 +493,8 @@ void SecondWindow::OnTabChanged(wxCommandEvent& event) {
     if (event.GetId() == ID_TERMINAL_TAB) {
         m_terminalTab->Show();
         m_sqlTab->Hide();
-        m_flatpakStore->Hide(); // Hide FlatpakStore when switching to Terminal tab
+        m_mongoPanel->Hide();
+        m_flatpakStore->Hide();
         wxButton* terminalButton = wxDynamicCast(FindWindow(ID_TERMINAL_TAB), wxButton);
         wxButton* sqlButton = wxDynamicCast(FindWindow(ID_SQL_TAB), wxButton);
         if (terminalButton) {
@@ -535,7 +508,8 @@ void SecondWindow::OnTabChanged(wxCommandEvent& event) {
     } else if (event.GetId() == ID_SQL_TAB) {
         m_terminalTab->Hide();
         m_sqlTab->Show();
-        m_flatpakStore->Hide(); // Hide FlatpakStore when switching to SQL tab
+        m_mongoPanel->Hide();
+        m_flatpakStore->Hide();
         wxButton* terminalButton = wxDynamicCast(FindWindow(ID_TERMINAL_TAB), wxButton);
         wxButton* sqlButton = wxDynamicCast(FindWindow(ID_SQL_TAB), wxButton);
         if (terminalButton) {
@@ -548,4 +522,66 @@ void SecondWindow::OnTabChanged(wxCommandEvent& event) {
         }
     }
     m_mainPanel->Layout();
+}
+
+void SecondWindow::OnMongoDBButton(wxCommandEvent& event) {
+    m_terminalTab->Hide();
+    m_sqlTab->Hide();
+    m_flatpakStore->Hide();
+    m_mongoPanel->Show();
+    m_mongoPanel->LoadMongoDBContent();
+    m_mainPanel->Layout();
+}
+
+void SecondWindow::OnMongoDBPanelClose(wxCommandEvent& event) {
+    m_mongoPanel->Hide();
+    m_terminalTab->Show();
+    m_mainPanel->Layout();
+}
+
+// MongoDBPanel implementation
+MongoDBPanel::MongoDBPanel(wxWindow* parent) : wxPanel(parent) {
+    wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
+    
+    wxButton* closeButton = new wxButton(this, ID_MONGODB_PANEL_CLOSE, "X",
+        wxDefaultPosition, wxSize(30, 30));
+    closeButton->SetBackgroundColour(wxColour(200, 50, 50));
+    closeButton->SetForegroundColour(*wxWHITE);
+    
+    m_contentDisplay = new wxTextCtrl(this, wxID_ANY, "",
+        wxDefaultPosition, wxDefaultSize,
+        wxTE_MULTILINE | wxTE_READONLY);
+    m_contentDisplay->SetBackgroundColour(wxColour(30, 30, 30));
+    m_contentDisplay->SetForegroundColour(*wxWHITE);
+    
+    sizer->Add(closeButton, 0, wxALIGN_RIGHT | wxALL, 5);
+    sizer->Add(m_contentDisplay, 1, wxEXPAND | wxALL, 5);
+    
+    SetSizer(sizer);
+}
+
+void MongoDBPanel::LoadMongoDBContent() {
+    m_contentDisplay->Clear();
+    try {
+        // Replace with your actual MongoDB Atlas connection string
+        mongocxx::uri uri("mongodb+srv://<username>:<password>@cluster0.xxx.mongodb.net/?retryWrites=true&w=majority");
+        mongocxx::client client(uri);
+        mongocxx::database db = client["testdb"];
+        mongocxx::collection coll = db["testcollection"];
+
+        mongocxx::cursor cursor = coll.find({});
+        
+        m_contentDisplay->AppendText("MongoDB Contents:\n\n");
+        for (auto&& doc : cursor) {
+            std::string json = bsoncxx::to_json(doc);
+            m_contentDisplay->AppendText(wxString(json) + "\n");
+        }
+
+        if (!m_contentDisplay->GetValue().Contains("{")) {
+            m_contentDisplay->AppendText("No documents found in collection\n");
+        }
+    } catch (const std::exception& e) {
+        m_contentDisplay->AppendText("Error: " + wxString(e.what()) + "\n");
+        m_contentDisplay->AppendText("Check MongoDB connection string and network\n");
+    }
 }

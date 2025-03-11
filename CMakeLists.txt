@@ -1,38 +1,44 @@
-cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
-project(LinuxISOPro LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.25 FATAL_ERROR)
+project(LinuxISOPro LANGUAGES CXX RC)
 
-# Disable all warnings
+# Disable all warnings (Compiler-specific)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     add_compile_options(-w)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     add_compile_options(/W0)
 endif()
 
-# Enable RC (Resource Compiler) for Windows
-if(WIN32)
-    enable_language(RC)
-    set(CMAKE_RC_COMPILER_INIT windres)  # Use windres for MinGW
-endif()
-
-include(FetchContent)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Find and link libcurl
-find_package(CURL REQUIRED)
-
-# Build output configuration
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-if(WIN32)
-   foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
-       string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
-       set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_BINARY_DIR})
-   endforeach()
+# --- Conan integration ---
+# Expects conanfile.txt to exist in the source directory
+if(EXISTS "${CMAKE_BINARY_DIR}/conanbuildinfo.cmake")
+    include("${CMAKE_BINARY_DIR}/conanbuildinfo.cmake")
+    conan_basic_setup(TARGETS)
+else()
+    message(FATAL_ERROR "The file conanbuildinfo.cmake doesn't exist, you have to run conan install first")
 endif()
 
-# wxWidgets configuration
-set(wxBUILD_SHARED OFF)
-set(wxUSE_GRAPHICS_DIRECT2D ON)
+# Find MongoDB package
+find_package(mongo-cxx-driver REQUIRED)
+
+# --- Output directory configuration ---
+if(CMAKE_BUILD_TYPE)
+  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}")
+else()
+  foreach(config ${CMAKE_CONFIGURATION_TYPES})
+    string(TOUPPER "${config}" config_upper)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${CMAKE_BINARY_DIR}/${config}")
+  endforeach()
+endif()
+
+# --- FetchContent for wxWidgets, libarchive, and yaml-cpp ---
+include(FetchContent)
+
+# wxWidgets
+set(wxBUILD_SHARED OFF CACHE BOOL "Build wxWidgets as static libraries")
+set(wxUSE_GRAPHICS_DIRECT2D ON CACHE BOOL "Use Direct2D for graphics")
 FetchContent_Declare(
   wxWidgets
   GIT_REPOSITORY https://github.com/wxWidgets/wxWidgets.git
@@ -41,15 +47,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(wxWidgets)
 
-# LibArchive configuration
-set(ENABLE_TAR OFF CACHE BOOL "")
-set(ENABLE_CPIO OFF CACHE BOOL "")
-set(ENABLE_CAT OFF CACHE BOOL "")
-set(ENABLE_XATTR OFF CACHE BOOL "")
-set(ENABLE_ACL OFF CACHE BOOL "")
-set(ENABLE_TEST OFF CACHE BOOL "")
-set(ENABLE_INSTALL OFF CACHE BOOL "")
-
+# LibArchive
+set(ENABLE_TAR OFF CACHE BOOL "Disable tar support" FORCE)
+set(ENABLE_CPIO OFF CACHE BOOL "Disable cpio support" FORCE)
+set(ENABLE_CAT OFF CACHE BOOL "Disable cat support" FORCE)
+set(ENABLE_XATTR OFF CACHE BOOL "Disable xattr support" FORCE)
+set(ENABLE_ACL OFF CACHE BOOL "Disable ACL support" FORCE)
+set(ENABLE_TEST OFF CACHE BOOL "Disable tests" FORCE)
+set(ENABLE_INSTALL OFF CACHE BOOL "Disable install target" FORCE)
 FetchContent_Declare(
    libarchive
    GIT_REPOSITORY https://github.com/libarchive/libarchive.git
@@ -58,51 +63,44 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libarchive)
 
-# yaml-cpp configuration
+# yaml-cpp
 set(YAML_CPP_BUILD_SHARED OFF CACHE BOOL "Build yaml-cpp static library" FORCE)
+set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "Disable yaml tests" FORCE)
+set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "Disable yaml tools" FORCE)
 FetchContent_Declare(
    yaml-cpp
    GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
-   GIT_TAG yaml-cpp-0.7.0
+   GIT_TAG 0.8.0
    GIT_SHALLOW ON
 )
-set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "disable yaml tests")
-set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "disable yaml tools")
 FetchContent_MakeAvailable(yaml-cpp)
 
-# RapidJSON Configuration (Using system-installed version from MSYS2)
-find_path(RAPIDJSON_INCLUDE_DIR NAMES rapidjson/document.h
-  PATHS "C:/msys64/mingw64/include"
-  NO_DEFAULT_PATH
-)
+# --- Find Packages ---
 
-if(NOT RAPIDJSON_INCLUDE_DIR)
-  message(FATAL_ERROR "RapidJSON not found! Install it with: pacman -S mingw-w64-x86_64-rapidjson")
+# Explicitly find CURL
+find_package(CURL)  # Don't use REQUIRED here
+
+if(CURL_FOUND)
+    message(STATUS "Found CURL: ${CURL_LIBRARIES}")
+else()
+    message(WARNING "CURL not found. Ensure it's installed via Conan.")
 endif()
 
-# ---------------------------------------------------------------
-# Python 3.9 Configuration (Anaconda Environment)
-# ---------------------------------------------------------------
-set(Python_FIND_REGISTRY NEVER)  # Ignore Windows registry
-set(Python_FIND_STRATEGY LOCATION)  # Prioritize explicit paths
-set(Python_ROOT_DIR "C:/Users/PC/anaconda3/envs/myenv")  # Conda environment path
-find_package(Python 3.9 EXACT REQUIRED COMPONENTS Development)
+# RapidJSON (via Conan or manual)
+if(NOT TARGET rapidjson)
+  find_path(RAPIDJSON_INCLUDE_DIR NAMES rapidjson/document.h
+    PATHS "C:/msys64/mingw64/include"
+    NO_DEFAULT_PATH
+  )
+  if(NOT RAPIDJSON_INCLUDE_DIR)
+    message(FATAL_ERROR "RapidJSON not found! Install via Conan or MSYS2.")
+  endif()
+endif()
 
-# Add Python include and library paths
-include_directories(
-    ${Python_INCLUDE_DIRS}
-    ${Python_ROOT_DIR}/include
-)
-link_directories(${Python_LIBRARY_DIRS})
-
-# Copy Python files from Anaconda environment
-file(COPY "${Python_ROOT_DIR}/python39.dll" DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-file(COPY "${Python_ROOT_DIR}/Lib" DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
-
-# Source files
+# --- Source, Header, and Resource Files ---
 set(SOURCES
    main.cpp
-   MainFrame.cpp 
+   MainFrame.cpp
    CustomTitleBar.cpp
    CustomStatusBar.cpp
    ISOReader.cpp
@@ -122,7 +120,6 @@ set(SOURCES
    CustomizeTab.cpp
 )
 
-# Header files
 set(HEADERS
    MainFrame.h
    CustomTitleBar.h
@@ -136,15 +133,13 @@ set(HEADERS
    SettingsManager.h
 )
 
-# Resource files (including the icon and RC file)
 set(RESOURCE_FILES
-   "${CMAKE_CURRENT_SOURCE_DIR}/resources/linuxisopro.ico"  # Explicitly include the icon
-   "${CMAKE_CURRENT_SOURCE_DIR}/resources.rc"               # Include the RC file
-   "${CMAKE_CURRENT_SOURCE_DIR}/resources/gear.png"         # Assuming this exists from your code
-   # Add other PNGs or ICOs here if needed
+   "${CMAKE_CURRENT_SOURCE_DIR}/resources/linuxisopro.ico"
+   "${CMAKE_CURRENT_SOURCE_DIR}/resources.rc"
+   "${CMAKE_CURRENT_SOURCE_DIR}/resources/gear.png"
 )
 
-# Platform-specific configurations
+# --- Platform-Specific Libraries and Definitions ---
 if(WIN32)
    set(PLATFORM_LIBS
        dwmapi
@@ -152,100 +147,67 @@ if(WIN32)
        d2d1
        dwrite
    )
-   
    add_compile_definitions(
        WINVER=0x0A00
        _WIN32_WINNT=0x0A00
    )
 endif()
 
-# Create executable as a Windows GUI application
+# --- Create Executable ---
 add_executable(LinuxISOPro WIN32 ${SOURCES} ${HEADERS} ${RESOURCE_FILES})
 
-# Include directories
-target_include_directories(LinuxISOPro 
+# --- Include Directories ---
+target_include_directories(LinuxISOPro
    PRIVATE
        ${CMAKE_CURRENT_SOURCE_DIR}
        ${CMAKE_CURRENT_SOURCE_DIR}/src
        ${CMAKE_CURRENT_SOURCE_DIR}/src/theme
        ${libarchive_SOURCE_DIR}/libarchive
        ${libarchive_BINARY_DIR}
-       ${Python_INCLUDE_DIRS}
        ${RAPIDJSON_INCLUDE_DIR}
 )
 
-# Link libraries
-target_link_libraries(LinuxISOPro 
-   PRIVATE
-       wx::core
-       wx::base
-       archive_static
-       yaml-cpp
-       ${PLATFORM_LIBS}
-       CURL::libcurl
-       ${Python_LIBRARIES}
+# --- Link Libraries ---
+target_link_libraries(LinuxISOPro
+    PRIVATE
+        wx::core
+        wx::base
+        archive_static
+        yaml-cpp
+        ${PLATFORM_LIBS}
+        $<$<BOOL:${CURL_FOUND}>:CURL::libcurl>
+        mongo::mongocxx_static
+        mongo::bsoncxx_static
 )
 
-# Windows-specific settings
+# --- Windows-Specific Compile Definitions ---
 if(WIN32)
-   target_compile_definitions(LinuxISOPro 
+   target_compile_definitions(LinuxISOPro
        PRIVATE
            WIN32_LEAN_AND_MEAN
            UNICODE
            _UNICODE
            LIBARCHIVE_STATIC
    )
-
-   # Set static runtime
    set_property(TARGET LinuxISOPro PROPERTY
        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-# Copy configuration files to build directory
+# --- Copy Files to Output Directory ---
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.yaml
               ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config.yaml COPYONLY)
-
-# Copy scripts to build directory with executable permissions
-foreach(SCRIPT ${SCRIPT_FILES})
-   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/${SCRIPT}
-                 ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${SCRIPT}
-                 COPYONLY)
-   if(UNIX)
-       execute_process(
-           COMMAND chmod +x ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${SCRIPT}
-       )
-   endif()
-endforeach()
-
-# Copy Python script
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/scripts/docker_operations.py
-              ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/docker_operations.py COPYONLY)
-
-# Copy resource files
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/themes.json
+              ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/themes.json COPYONLY)
 file(COPY ${RESOURCE_FILES} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
-# Copy themes file
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/themes.json
-              ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/themes.json
-              COPYONLY)
-
-# Install configuration
-install(TARGETS LinuxISOPro
-   RUNTIME DESTINATION bin
-)
-
-install(FILES 
+# --- Installation ---
+install(TARGETS LinuxISOPro RUNTIME DESTINATION bin)
+install(FILES
    ${CMAKE_CURRENT_SOURCE_DIR}/config.yaml
    ${CMAKE_CURRENT_SOURCE_DIR}/themes.json
-   ${SCRIPT_FILES}
-   ${RESOURCE_FILES}  # Includes linuxisopro.ico
    DESTINATION bin
 )
 
-# Print build configuration information
+# --- Build Information ---
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Install Prefix: ${CMAKE_INSTALL_PREFIX}")
-message(STATUS "Scripts to copy:")
-foreach(SCRIPT ${SCRIPT_FILES})
-   message(STATUS "  ${SCRIPT}")
-endforeach()
