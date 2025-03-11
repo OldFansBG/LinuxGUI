@@ -14,6 +14,7 @@ class LinuxISOProConan(ConanFile):
         self.requires("libarchive/3.7.2")
         self.requires("yaml-cpp/0.7.0")
         self.requires("rapidjson/1.1.0")
+        self.requires("mongo-cxx-driver/3.11.0")  # Add this line
 
     def layout(self):
         cmake_layout(self)
