@@ -23,3 +23,5 @@ test.py
 mongo-c-driver/
 conanfile.txt
 New folder/DiplomenProekt.pdf
+CMakeUserPresets.json
+graph.html
