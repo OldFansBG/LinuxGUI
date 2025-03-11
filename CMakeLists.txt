@@ -29,6 +29,7 @@ find_package(wxWidgets REQUIRED)
 find_package(LibArchive REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(rapidjson REQUIRED)
+find_package(mongocxx REQUIRED)  # This will automatically find bsoncxx too
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -121,6 +122,9 @@ target_link_libraries(LinuxISOPro
        wxWidgets::wxWidgets
        LibArchive::LibArchive
        yaml-cpp::yaml-cpp
+       # Use these specific targets for MongoDB:
+       mongo::mongocxx_static
+       mongo::bsoncxx_static
        ${PLATFORM_LIBS}
 )
 
