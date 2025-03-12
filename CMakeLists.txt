@@ -1,10 +1,4 @@
-cmake_minimum_required(VERSION 3.17 FATAL_ERROR)
-
-# Set CMP0091 policy to NEW
-if(POLICY CMP0091)
-    cmake_policy(SET CMP0091 NEW)
-endif()
-
+cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 project(LinuxISOPro LANGUAGES CXX)
 
 # Disable all warnings
@@ -20,19 +14,12 @@ if(WIN32)
     set(CMAKE_RC_COMPILER_INIT windres)  # Use windres for MinGW
 endif()
 
-# Include Conan-generated files
-include(${CMAKE_BINARY_DIR}/generators/conan_toolchain.cmake)
-
-# Find the packages
-find_package(CURL REQUIRED)
-find_package(wxWidgets REQUIRED)
-find_package(LibArchive REQUIRED)
-find_package(yaml-cpp REQUIRED)
-find_package(rapidjson REQUIRED)
-find_package(mongocxx REQUIRED)  # This will automatically find bsoncxx too
-
+include(FetchContent)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find and link libcurl
+find_package(CURL REQUIRED)
 
 # Build output configuration
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -41,6 +28,56 @@ if(WIN32)
        string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_BINARY_DIR})
    endforeach()
+endif()
+
+# wxWidgets configuration
+set(wxBUILD_SHARED OFF)
+set(wxUSE_GRAPHICS_DIRECT2D ON)
+FetchContent_Declare(
+  wxWidgets
+  GIT_REPOSITORY https://github.com/wxWidgets/wxWidgets.git
+  GIT_TAG v3.2.2.1
+  GIT_SHALLOW ON
+)
+FetchContent_MakeAvailable(wxWidgets)
+
+# LibArchive configuration
+set(ENABLE_TAR OFF CACHE BOOL "")
+set(ENABLE_CPIO OFF CACHE BOOL "")
+set(ENABLE_CAT OFF CACHE BOOL "")
+set(ENABLE_XATTR OFF CACHE BOOL "")
+set(ENABLE_ACL OFF CACHE BOOL "")
+set(ENABLE_TEST OFF CACHE BOOL "")
+set(ENABLE_INSTALL OFF CACHE BOOL "")
+
+FetchContent_Declare(
+   libarchive
+   GIT_REPOSITORY https://github.com/libarchive/libarchive.git
+   GIT_TAG v3.7.2
+   GIT_SHALLOW ON
+)
+FetchContent_MakeAvailable(libarchive)
+
+# yaml-cpp configuration
+set(YAML_CPP_BUILD_SHARED OFF CACHE BOOL "Build yaml-cpp static library" FORCE)
+FetchContent_Declare(
+   yaml-cpp
+   GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+   GIT_TAG yaml-cpp-0.7.0
+   GIT_SHALLOW ON
+)
+set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "disable yaml tests")
+set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "disable yaml tools")
+FetchContent_MakeAvailable(yaml-cpp)
+
+# RapidJSON Configuration (Using system-installed version from MSYS2)
+find_path(RAPIDJSON_INCLUDE_DIR NAMES rapidjson/document.h
+  PATHS "C:/msys64/mingw64/include"
+  NO_DEFAULT_PATH
+)
+
+if(NOT RAPIDJSON_INCLUDE_DIR)
+  message(FATAL_ERROR "RapidJSON not found! Install it with: pacman -S mingw-w64-x86_64-rapidjson")
 endif()
 
 # Source files
@@ -112,20 +149,20 @@ target_include_directories(LinuxISOPro
        ${CMAKE_CURRENT_SOURCE_DIR}
        ${CMAKE_CURRENT_SOURCE_DIR}/src
        ${CMAKE_CURRENT_SOURCE_DIR}/src/theme
-       ${RAPIDJSON_INCLUDE_DIRS}
+       ${libarchive_SOURCE_DIR}/libarchive
+       ${libarchive_BINARY_DIR}
+       ${RAPIDJSON_INCLUDE_DIR}
 )
 
 # Link libraries
 target_link_libraries(LinuxISOPro 
    PRIVATE
-       CURL::libcurl
-       wxWidgets::wxWidgets
-       LibArchive::LibArchive
-       yaml-cpp::yaml-cpp
-       # Use these specific targets for MongoDB:
-       mongo::mongocxx_static
-       mongo::bsoncxx_static
+       wx::core
+       wx::base
+       archive_static
+       yaml-cpp
        ${PLATFORM_LIBS}
+       CURL::libcurl
 )
 
 # Windows-specific settings
@@ -159,10 +196,6 @@ foreach(SCRIPT ${SCRIPT_FILES})
    endif()
 endforeach()
 
-# Copy Python script
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/scripts/docker_operations.py
-              ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/docker_operations.py COPYONLY)
-
 # Copy resource files
 file(COPY ${RESOURCE_FILES} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
@@ -191,6 +224,3 @@ message(STATUS "Scripts to copy:")
 foreach(SCRIPT ${SCRIPT_FILES})
    message(STATUS "  ${SCRIPT}")
 endforeach()
-
-find_path(RAPIDJSON_INCLUDE_DIR rapidjson/document.h)
-target_include_directories(LinuxISOPro PRIVATE ${RAPIDJSON_INCLUDE_DIR})
