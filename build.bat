@@ -13,7 +13,8 @@ cd build
 cmake .. -G "MinGW Makefiles" ^
     -DCMAKE_C_COMPILER=C:/msys64/mingw64/bin/gcc.exe ^
     -DCMAKE_CXX_COMPILER=C:/msys64/mingw64/bin/g++.exe ^
-    -DCMAKE_PREFIX_PATH=C:/msys64/mingw64
+    -DCMAKE_PREFIX_PATH=C:/msys64/mingw64 ^
+    -DCMAKE_TOOLCHAIN_FILE=C:/tools/vcpkg/scripts/buildsystems/vcpkg.cmake
 
 :: Build
 mingw32-make
