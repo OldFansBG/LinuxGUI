@@ -252,13 +252,13 @@ wxDEFINE_EVENT(PYTHON_LOG_UPDATE, wxCommandEvent);
 // Event table
 wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)
     EVT_CLOSE(SecondWindow::OnClose)
-        EVT_BUTTON(ID_TERMINAL_TAB, SecondWindow::OnTabChanged)
-            EVT_BUTTON(ID_SQL_TAB, SecondWindow::OnTabChanged)
-                EVT_BUTTON(ID_NEXT_BUTTON, SecondWindow::OnNext)
-                    EVT_BUTTON(ID_MONGODB_BUTTON, SecondWindow::OnMongoDBButton)
-                        EVT_BUTTON(ID_MONGODB_PANEL_CLOSE, SecondWindow::OnMongoDBPanelClose)
-                            wxEND_EVENT_TABLE()
-
+        EVT_TIMER(wxID_ANY, SecondWindow::OnCloseTimer)
+            EVT_BUTTON(ID_TERMINAL_TAB, SecondWindow::OnTabChanged)
+                EVT_BUTTON(ID_SQL_TAB, SecondWindow::OnTabChanged)
+                    EVT_BUTTON(ID_NEXT_BUTTON, SecondWindow::OnNext)
+                        EVT_BUTTON(ID_MONGODB_BUTTON, SecondWindow::OnMongoDBButton)
+                            EVT_BUTTON(ID_MONGODB_PANEL_CLOSE, SecondWindow::OnMongoDBPanelClose)
+                                wxEND_EVENT_TABLE()
     // Add the thread class definition before SecondWindow.
     class ContainerCleanupThread : public wxThread
 {
@@ -552,55 +552,21 @@ void SecondWindow::CreateControls()
 
 void SecondWindow::OnClose(wxCloseEvent &event)
 {
-    wxLogDebug("SecondWindow::OnClose - START");
-
-    // If we're already in the process of closing, don't do anything
-    if (m_isClosing)
-    {
-        event.Skip();
-        return;
-    }
-
-    // Set the closing flag
+    // Set closing flag
     m_isClosing = true;
 
-    // Don't destroy the window immediately when closing
-    if (event.CanVeto())
+    // Hide the window first
+    Hide();
+
+    // Start async cleanup if needed
+    CleanupContainerAsync();
+
+    // Start a timer to check when it's safe to destroy
+    if (!m_closeTimer)
     {
-        event.Veto();
-
-        // Hide the window while we clean up
-        Hide();
-
-        CleanupThread(); // Ensure any previous operations are stopped
-
-        // Start asynchronous container cleanup
-        if (!m_containerId.IsEmpty())
-        {
-            wxLogDebug("SecondWindow::OnClose - Starting asynchronous container cleanup.");
-            CleanupContainerAsync(); // Start the cleanup thread
-
-            // Start a timer to check if we can close
-            if (!m_closeTimer)
-            {
-                m_closeTimer = new wxTimer(this);
-            }
-            m_closeTimer->Start(500); // Check every 500ms
-        }
-        else
-        {
-            wxLogDebug("SecondWindow::OnClose - m_containerId is empty, skipping CleanupContainer()");
-            // No container to clean up, destroy immediately
-            CallAfter(&SecondWindow::DoDestroy);
-        }
+        m_closeTimer = new wxTimer(this);
     }
-    else
-    {
-        // If we can't veto, destroy anyway
-        event.Skip();
-    }
-
-    wxLogDebug("SecondWindow::OnClose - END");
+    m_closeTimer->Start(100); // Check every 100ms
 }
 
 void SecondWindow::OnCloseTimer(wxTimerEvent &event)
