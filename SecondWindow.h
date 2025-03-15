@@ -67,11 +67,13 @@ private:
 
     static mongocxx::instance m_mongoInstance;
 
-    wxThread *m_cleanupThread;    // ADD THIS LINE.  This is the thread pointer.
-    void CleanupContainerAsync(); // Forward declaration
+    wxThread *m_cleanupThread;
+    void CleanupContainerAsync();
 
     bool m_isClosing;
     wxTimer *m_closeTimer;
+
+    wxWindow *m_lastTab; // Added to track the last active tab
 
 #ifdef _WIN32
     WinTerminalManager *m_winTerminalManager;
