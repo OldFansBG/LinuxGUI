@@ -6,6 +6,7 @@
 #include <wx/msgdlg.h>
 #include <wx/tokenzr.h>
 #include <algorithm>
+#include "FilesystemSelectionDialog.h"
 #include <filesystem>
 #include <wx/artprov.h>
 #include <wx/bmpbuttn.h>
@@ -14,6 +15,7 @@
 #include <wx/filename.h>
 #include "SystemTheme.h"
 #include "DesktopTab.h"
+#include <wx/textfile.h> // Add this line
 
 BEGIN_EVENT_TABLE(MainFrame, wxFrame)
 EVT_BUTTON(ID_BROWSE_ISO, MainFrame::OnBrowseISO)
@@ -358,12 +360,72 @@ void MainFrame::OnNextButton(wxCommandEvent &event)
         return;
     }
 
-    // Log found files
-    wxString message = wxString::Format("Found %zu SquashFS/SFS files:\n", squashfsFiles.GetCount());
-    for (const wxString &file : squashfsFiles)
+    // Too many squashfs files - present user with selection dialog
+    wxString selectedFsFile;
+    if (squashfsFiles.GetCount() > 1)
     {
-        message += "\n- " + file;
+        wxArrayString prioritizedFiles;
+        wxArrayString descriptions;
+
+        // Create prioritized list with descriptions
+        for (const wxString &file : squashfsFiles)
+        {
+            wxString lowerFile = file.Lower();
+            wxString description;
+
+            // Add descriptions to help user identify files
+            if (lowerFile.Contains("airootfs.sfs"))
+                description = " (Arch Linux main filesystem)";
+            else if (lowerFile.Contains("minimal.standard") && !lowerFile.Contains("enhanced") && !lowerFile.Contains("languages"))
+                description = " (Ubuntu standard filesystem)";
+            else if (lowerFile.Contains("rootfs"))
+                description = " (Root filesystem)";
+
+            prioritizedFiles.Add(file + description);
+        }
+
+        // Show custom selection dialog
+        FilesystemSelectionDialog dialog(this,
+                                         "Multiple filesystem files found. Please select the one to use:",
+                                         prioritizedFiles);
+
+        if (dialog.ShowModal() == wxID_OK)
+        {
+            selectedFsFile = dialog.GetSelectedFilesystem(); // Directly get the sanitized filename.
+        }
+        else
+        {
+            // User canceled
+            return;
+        }
     }
+    else if (squashfsFiles.GetCount() == 1)
+    {
+        // Just one file, use it directly
+        selectedFsFile = squashfsFiles[0];
+    }
+
+    // Save the selected filesystem file path
+    wxString fsFilePath = m_workDirCtrl->GetValue() + wxFILE_SEP_PATH + projectName + "_selected_fs.txt";
+    wxTextFile file(fsFilePath);
+
+    if (file.Exists())
+        file.Open();
+    else
+        file.Create();
+
+    file.Clear();
+    file.AddLine(selectedFsFile);
+
+    if (!file.Write())
+    {
+        wxMessageBox("Failed to save selected filesystem file path!", "Warning", wxOK | wxICON_WARNING);
+    }
+    file.Close();
+
+    // Log what was found and selected
+    wxString message = wxString::Format("Found %zu filesystem files. Selected: %s",
+                                        squashfsFiles.GetCount(), selectedFsFile);
     SetStatusText(message);
 
     // Store current ISO path and proceed
