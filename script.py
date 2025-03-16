@@ -8,11 +8,10 @@ import io
 import argparse
 import logging
 from datetime import datetime
-import json  # Added for JSON parsing
-import re  # Added for sanitizing container names
+import json
+import re
 
 def setup_logging():
-    """Set up logging configuration."""
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
     
@@ -30,10 +29,6 @@ def setup_logging():
     return log_file
 
 def get_project_name(project_dir):
-    """
-    Read the project name from settings.json located in the provided project directory.
-    If the file is missing or the JSON is malformed, defaults to "default_project".
-    """
     try:
         settings_path = os.path.join(project_dir, "settings.json")
         with open(settings_path, "r") as f:
@@ -44,51 +39,59 @@ def get_project_name(project_dir):
         return "default_project"
 
 def sanitize_container_name(name):
-    """Sanitize the container name to meet Docker naming rules."""
-    # Docker allows: [a-zA-Z0-9][a-zA-Z0-9_.-]
     sanitized = re.sub(r'[^a-zA-Z0-9_.-]', '_', name)
     
-    # Ensure it starts with alphanumeric
     if not sanitized[0].isalnum():
         sanitized = "project_" + sanitized
     
-    # Truncate to 64 chars (Docker limit)
     return sanitized[:64]
 
 def create_setup_scripts(project_dir):
-    """Create necessary shell scripts with proper permissions and Unix line endings."""
     try:
         logging.info("Creating setup scripts in: %s", project_dir)
         
-        # setup_output.sh content
+        project_name = get_project_name(project_dir)
+        fs_file_path = os.path.join(project_dir, f"{project_name}_selected_fs.txt")
+        selected_fs = "casper/filesystem.squashfs"
+                
+        if os.path.exists(fs_file_path):
+            with open(fs_file_path, 'r') as f:
+                selected_fs = f.readline().strip()
+                if " (" in selected_fs:
+                    selected_fs = selected_fs.split(" (")[0].strip()
+                selected_fs = selected_fs.replace("\\", "/")
+                logging.info(f"Using selected filesystem: {selected_fs}")
+        else:
+            logging.warning(f"No filesystem selection file found at {fs_file_path}, using default")
+                
         setup_output_content = """#!/bin/bash
 
-# Create working directory if it doesn't exist 
 mkdir -p ~/custom_iso
 
-# Update package lists and install necessary tools 
 apt-get update
 apt-get install -y squashfs-tools xorriso isolinux syslinux-utils genisoimage
 """
 
-        # setup_chroot.sh content (removed sudo and enforced Unix line endings)
-        setup_chroot_content = """#!/bin/bash
+        setup_chroot_content = f"""#!/bin/bash
 
-# Log the start of the script
 echo "Starting setup_chroot.sh..."
 
-# Mount the ISO file
 mkdir -p /mnt/iso
 mount -o loop base.iso /mnt/iso
 
-# Copy ISO contents to working directory
 cp -av /mnt/iso/* ~/custom_iso/
 
-# Extract squashfs filesystem
-cd ~/custom_iso
-unsquashfs -d squashfs-root casper/filesystem.squashfs
+SQUASHFS_PATH="/root/custom_iso/{selected_fs}"
+echo "Using filesystem: $SQUASHFS_PATH"
 
-# Prepare chroot environment
+if [ ! -f "$SQUASHFS_PATH" ]; then
+    echo "ERROR: Selected filesystem $SQUASHFS_PATH not found!"
+    find . -name "*.squashfs" -o -name "*.sfs" | sort
+    exit 1
+fi
+
+unsquashfs -d squashfs-root "$SQUASHFS_PATH"
+
 mount -t proc none squashfs-root/proc
 mount -t sysfs none squashfs-root/sys
 mount -o bind /dev squashfs-root/dev
@@ -96,19 +99,14 @@ mount -o bind /dev/pts squashfs-root/dev/pts
 
 mkdir -p squashfs-root/output
 
-# Bind mount working directory
 mount --bind ~/custom_iso squashfs-root/output
 
-# Copy resolv.conf
 cp /etc/resolv.conf squashfs-root/etc/
 
-# Install Flatpak inside the chroot environment
 chroot squashfs-root /bin/bash -c "apt-get update && apt-get install -y flatpak"
 
-# Add Flathub repository
 chroot squashfs-root /bin/bash -c "flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo"
 
-# Detect the GUI environment in the chroot and save the output outside the chroot
 echo "Detecting the GUI environment in the chroot environment..."
 chroot squashfs-root /bin/bash -c '
     declare -A GUI_ENV_MAP=(
@@ -121,8 +119,8 @@ chroot squashfs-root /bin/bash -c '
 
     SESSION_NAME="Unknown"
 
-    for ENV in "${!GUI_ENV_MAP[@]}"; do
-        DETECT_PATH=${GUI_ENV_MAP[$ENV]}
+    for ENV in "${{!GUI_ENV_MAP[@]}}"; do
+        DETECT_PATH=${{GUI_ENV_MAP[$ENV]}}
         if [ -f "$DETECT_PATH" ]; then
             SESSION_NAME=$ENV
             break
@@ -139,57 +137,47 @@ chroot squashfs-root /bin/bash -c '
     echo "$SESSION_NAME" > /output/detected_gui.txt
 '
 
-# Display and save process ID
 chroot squashfs-root /bin/bash -c "echo 'Process ID inside chroot: $$'; echo $$ > /process_id.txt"
 
 echo "Ready"
 
-# Check if a command is provided
 if [ -n "$1" ]; then
-    # Execute the command and then start an interactive shell
     exec chroot squashfs-root /bin/bash -c "$1; exec /bin/bash"
-else
-    # Start an interactive shell
+else:
     exec chroot squashfs-root /bin/bash
 fi
 """
 
-        # create_iso.sh content (removed sudo from umount commands)
-        create_iso_content = """#!/bin/bash
+        create_iso_content = f"""#!/bin/bash
 
-# Log the start of the script
 echo "Starting create_iso.sh..."
 
-# Remove the sentinel file if it exists (to avoid false positives)
 rm -f ~/custom_iso/creation_complete
 
-# Change to the working directory
 WORKDIR=~/custom_iso
 echo "Changing to the working directory: $WORKDIR"
-cd "$WORKDIR" || { echo "Failed to change to $WORKDIR"; exit 1; }
+cd "$WORKDIR" || {{ echo "Failed to change to $WORKDIR"; exit 1; }}
 
-# Step 1: Unmount chroot environment
 echo "Unmounting chroot environment..."
 for mountpoint in proc sys dev/pts dev output; do
     umount "squashfs-root/$mountpoint" || echo "Failed to unmount /$mountpoint"
 done
 
-# Step 2: Rebuild squashfs filesystem
+SQUASHFS_PATH="{selected_fs}"
+echo "Rebuilding filesystem: $SQUASHFS_PATH"
+
 echo "Rebuilding squashfs filesystem..."
-if [ -f casper/filesystem.squashfs ]; then
-    rm -f casper/filesystem.squashfs || echo "Failed to remove old squashfs"
+if [ -f "$SQUASHFS_PATH" ]; then
+    rm -f "$SQUASHFS_PATH" || echo "Failed to remove old squashfs"
 fi
-mksquashfs squashfs-root casper/filesystem.squashfs -comp xz || { echo "Failed to create squashfs"; exit 1; }
+mksquashfs squashfs-root "$SQUASHFS_PATH" -comp xz || {{ echo "Failed to create squashfs"; exit 1; }}
 
-# Step 3: Update filesystem.size
 echo "Updating filesystem.size..."
-du -sx --block-size=1 squashfs-root | cut -f1 > casper/filesystem.size || { echo "Failed to update filesystem.size"; exit 1; }
+du -sx --block-size=1 squashfs-root | cut -f1 > casper/filesystem.size || {{ echo "Failed to update filesystem.size"; exit 1; }}
 
-# Step 4: Remove extracted filesystem
 echo "Removing extracted filesystem..."
-rm -rf squashfs-root || { echo "Failed to remove squashfs-root"; exit 1; }
+rm -rf squashfs-root || {{ echo "Failed to remove squashfs-root"; exit 1; }}
 
-# Step 5: Create the ISO using xorriso
 echo "Creating the ISO using xorriso..."
 xorriso -as mkisofs \\
     -r -V "Custom Linux Mint" \\
@@ -198,9 +186,8 @@ xorriso -as mkisofs \\
     -no-emul-boot -boot-load-size 4 -boot-info-table \\
     -eltorito-alt-boot \\
     -e EFI/boot/bootx64.efi -no-emul-boot \\
-    -o custom_linuxmint.iso . || { echo "Failed to create ISO"; exit 1; }
+    -o custom_linuxmint.iso . || {{ echo "Failed to create ISO"; exit 1; }}
 
-# Step 6: Verify the ISO file
 echo "Verifying the ISO file..."
 if [ ! -f custom_linuxmint.iso ]; then
     echo "ISO file not found."
@@ -210,30 +197,24 @@ fi
 ISO_SIZE=$(du -h custom_linuxmint.iso | cut -f1)
 echo "ISO file created successfully. Size: $ISO_SIZE"
 
-# Step 7: (Optional) Check ISO hybrid compatibility for legacy BIOS
 if command -v isohybrid >/dev/null 2>&1; then
     echo "Making the ISO hybrid using isohybrid..."
     isohybrid --uefi custom_linuxmint.iso || echo "Failed to make ISO hybrid (optional step)."
-else
+else:
     echo "isohybrid command not found, skipping hybridization step."
 fi
 
-# Step 8: Create a sentinel file to indicate completion
 SENTINEL_FILE=~/custom_iso/creation_complete
-touch "$SENTINEL_FILE" || { echo "Failed to create sentinel file"; exit 1; }
+touch "$SENTINEL_FILE" || {{ echo "Failed to create sentinel file"; exit 1; }}
 echo "Sentinel file created at: $SENTINEL_FILE"
 
-# Wait for file system sync
 sleep 2
 
-# Log the completion of the script
 echo "create_iso.sh completed successfully."
 """
 
-        # Create directory if it doesn't exist
         os.makedirs(project_dir, exist_ok=True)
 
-        # Create and set permissions for each script, enforcing Unix LF line endings.
         scripts = {
             "setup_output.sh": setup_output_content,
             "setup_chroot.sh": setup_chroot_content,
@@ -242,11 +223,9 @@ echo "create_iso.sh completed successfully."
 
         for script_name, content in scripts.items():
             script_path = os.path.join(project_dir, script_name)
-            # Replace any CRLF with LF and write with newline='\n'
             fixed_content = content.replace("\r\n", "\n")
             with open(script_path, 'w', newline='\n') as f:
                 f.write(fixed_content)
-            # Set executable permissions (equivalent to chmod +x)
             os.chmod(script_path, 0o755)
             logging.debug(f"Created and set permissions for {script_name}")
             
@@ -264,7 +243,6 @@ def parse_arguments():
     return parser.parse_args()
 
 def copy_iso_to_container(container, host_path, container_dest_path):
-    """Copy ISO file into container using a tar archive."""
     try:
         logging.info(f"Copying ISO: {os.path.basename(host_path)}")
         
@@ -286,7 +264,6 @@ def copy_iso_to_container(container, host_path, container_dest_path):
         return False
 
 def validate_scripts(base_dir):
-    """Validate required scripts exist and are executable."""
     try:
         required_scripts = ["setup_output.sh", "setup_chroot.sh", "create_iso.sh"]
         for script in required_scripts:
@@ -311,7 +288,6 @@ def main():
         logging.info("Starting ISO builder process")
         args = parse_arguments()
         
-        # Create and set up scripts
         logging.info("Creating setup scripts")
         if not create_setup_scripts(args.project_dir):
             raise RuntimeError("Failed to create setup scripts")
@@ -320,12 +296,10 @@ def main():
         client = docker.from_env()
         client.ping()
 
-        # Get project name from settings.json (located in project-dir) and sanitize it
         project_name = get_project_name(args.project_dir)
         container_name = sanitize_container_name(project_name)
         logging.info(f"Using container name: {container_name}")
 
-        # Remove old container if it exists
         try:
             old_container = client.containers.get(container_name)
             logging.info("Removing old container")
@@ -334,12 +308,11 @@ def main():
         except docker.errors.NotFound:
             logging.debug("No existing container found")
 
-        # Create new container
         logging.info("Creating new container")
         container = client.containers.run(
             "ubuntu:latest",
             command="sleep infinity",
-            name=container_name,  # Use sanitized container name
+            name=container_name,
             detach=True,
             privileged=True
         )
@@ -347,7 +320,6 @@ def main():
         if container.status != "running":
             raise RuntimeError(f"Container failed to start. Status: {container.status}")
 
-        # Save container ID to file in the project directory
         container_id_path = os.path.join(args.project_dir, "container_id.txt")
         with open(container_id_path, "w") as f:
             f.write(container.id)
