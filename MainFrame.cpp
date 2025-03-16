@@ -409,6 +409,11 @@ void MainFrame::OnNextButton(wxCommandEvent &event)
     wxString fsFilePath = m_workDirCtrl->GetValue() + wxFILE_SEP_PATH + projectName + "_selected_fs.txt";
     wxTextFile file(fsFilePath);
 
+    if (selectedFsFile.StartsWith("/"))
+    {
+        selectedFsFile = selectedFsFile.Mid(1); // Remove leading slash
+    }
+
     if (file.Exists())
         file.Open();
     else
