@@ -101,20 +101,76 @@ mkdir -p squashfs-root/output
 
 mount --bind ~/custom_iso squashfs-root/output
 
-cp /etc/resolv.conf squashfs-root/etc/
+if [ -L "squashfs-root/etc/resolv.conf" ]; then
+    rm -f squashfs-root/etc/resolv.conf
+    cp /etc/resolv.conf squashfs-root/etc/
+else
+    cp /etc/resolv.conf squashfs-root/etc/
+fi
 
-chroot squashfs-root /bin/bash -c "apt-get update && apt-get install -y flatpak"
+cat > squashfs-root/tmp/install_flatpak.sh << 'EOF'
+#!/bin/bash
+set -e
 
-chroot squashfs-root /bin/bash -c "flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo"
+echo "Detecting package manager..."
+if command -v apt-get >/dev/null 2>&1; then
+    echo "Detected apt-get (Debian/Ubuntu/Mint)"
+    apt-get update
+    apt-get install -y flatpak || echo "Failed to install flatpak, continuing anyway"
+elif command -v pacman >/dev/null 2>&1; then
+    echo "Detected pacman (Arch/Manjaro)"
+    mkdir -p /var/cache/pacman/pkg
+    if ! pacman-key --list-keys >/dev/null 2>&1; then
+        pacman-key --init
+        pacman-key --populate archlinux
+    fi
+    pacman -Sy --needed --noconfirm flatpak || echo "Failed to install flatpak, continuing anyway"
+elif command -v dnf >/dev/null 2>&1; then
+    echo "Detected dnf (Fedora/RHEL)"
+    dnf -y install flatpak || echo "Failed to install flatpak, continuing anyway"
+elif command -v zypper >/dev/null 2>&1; then
+    echo "Detected zypper (openSUSE)"
+    zypper --non-interactive install flatpak || echo "Failed to install flatpak, continuing anyway"
+elif command -v apk >/dev/null 2>&1; then
+    echo "Detected apk (Alpine)"
+    apk add flatpak || echo "Failed to install flatpak, continuing anyway"
+elif command -v xbps-install >/dev/null 2>&1; then
+    echo "Detected xbps-install (Void)"
+    xbps-install -y flatpak || echo "Failed to install flatpak, continuing anyway"
+else
+    echo "Unknown package manager. Cannot install packages."
+fi
+
+if command -v flatpak >/dev/null 2>&1; then
+    echo "Setting up Flathub repository..."
+    flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo || \
+    echo "Failed to add Flathub, continuing anyway"
+else
+    echo "Flatpak not found, skipping Flathub setup"
+fi
+EOF
+
+chmod +x squashfs-root/tmp/install_flatpak.sh
+
+echo "Attempting to install flatpak..."
+chroot squashfs-root /tmp/install_flatpak.sh || echo "Package installation failed, continuing anyway"
 
 echo "Detecting the GUI environment in the chroot environment..."
 chroot squashfs-root /bin/bash -c '
     declare -A GUI_ENV_MAP=(
         ["GNOME"]="/usr/bin/gnome-shell"
         ["KDE"]="/usr/bin/plasmashell"
+        ["Plasma"]="/usr/bin/plasmashell"
         ["XFCE"]="/usr/bin/xfwm4"
         ["LXDE"]="/usr/bin/lxsession"
+        ["LXQt"]="/usr/bin/lxqt-session"
         ["Cinnamon"]="/usr/bin/cinnamon-session"
+        ["MATE"]="/usr/bin/mate-session"
+        ["Enlightenment"]="/usr/bin/enlightenment"
+        ["i3"]="/usr/bin/i3"
+        ["Sway"]="/usr/bin/sway"
+        ["Awesome"]="/usr/bin/awesome"
+        ["bspwm"]="/usr/bin/bspwm"
     )
 
     SESSION_NAME="Unknown"
@@ -128,10 +184,24 @@ chroot squashfs-root /bin/bash -c '
     done
 
     if [ "$SESSION_NAME" == "Unknown" ]; then
-        echo "No GUI binary detected, checking /usr/share/xsessions/*.desktop..."
-        SESSION_NAME=$(grep -m 1 "Name=" /usr/share/xsessions/*.desktop | cut -d"=" -f2 | head -n 1)
-        [ -z "$SESSION_NAME" ] && SESSION_NAME="Unknown"
+        for xsessions_dir in /usr/share/xsessions /etc/X11/sessions /usr/local/share/xsessions; do
+            if [ -d "$xsessions_dir" ] && [ "$(ls -A $xsessions_dir 2>/dev/null)" ]; then
+                SESSION_NAME=$(grep -m 1 "Name=" $xsessions_dir/*.desktop 2>/dev/null | cut -d"=" -f2 | head -n 1)
+                [ -n "$SESSION_NAME" ] && break
+            fi
+        done
     fi
+    
+    if [ "$SESSION_NAME" == "Unknown" ]; then
+        for wm in i3 sway dwm spectrwm openbox fluxbox icewm jwm; do
+            if command -v $wm >/dev/null 2>&1; then
+                SESSION_NAME=$wm
+                break
+            fi
+        done
+    fi
+
+    [ -z "$SESSION_NAME" ] && SESSION_NAME="Unknown"
 
     echo "Detected GUI environment: $SESSION_NAME"
     echo "$SESSION_NAME" > /output/detected_gui.txt
@@ -143,9 +213,8 @@ echo "Ready"
 
 if [ -n "$1" ]; then
     exec chroot squashfs-root /bin/bash -c "$1; exec /bin/bash"
-else:
+else
     exec chroot squashfs-root /bin/bash
-fi
 """
 
         create_iso_content = f"""#!/bin/bash
