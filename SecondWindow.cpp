@@ -517,8 +517,8 @@ void SecondWindow::CreateControls()
     m_mongoPanel->Hide();
 
     // Flatpak Store
-    m_flatpakStore = new FlatpakStore(m_mainPanel, m_projectDir);
-    m_flatpakStore->Hide();
+    m_flatpakStore = nullptr; // Initialize as nullptr
+    // m_flatpakStore->Hide(); // Removed
 
     // Bottom Button Panel
     wxPanel *buttonPanel = new wxPanel(m_mainPanel);
@@ -543,7 +543,7 @@ void SecondWindow::CreateControls()
     mainSizer->Add(m_terminalTab, 1, wxEXPAND);
     mainSizer->Add(m_sqlTab, 1, wxEXPAND);
     mainSizer->Add(m_mongoPanel, 1, wxEXPAND);
-    mainSizer->Add(m_flatpakStore, 1, wxEXPAND);
+    // mainSizer->Add(m_flatpakStore, 1, wxEXPAND); // Removed
     mainSizer->Add(buttonPanel, 0, wxEXPAND);
 
     m_mainPanel->SetSizer(mainSizer);
@@ -687,7 +687,10 @@ void SecondWindow::OnTabChanged(wxCommandEvent &event)
     m_terminalTab->Hide();
     m_sqlTab->Hide();
     m_mongoPanel->Hide();
-    m_flatpakStore->Hide();
+    if (m_flatpakStore)
+    {
+        m_flatpakStore->Hide();
+    }
 
     if (event.GetId() == ID_TERMINAL_TAB)
     {
@@ -728,7 +731,10 @@ void SecondWindow::OnMongoDBButton(wxCommandEvent &event)
     m_sqlTab->Hide();
     m_mongoPanel->Show();
     m_mongoPanel->LoadMongoDBContent();
-    m_flatpakStore->Hide();
+    if (m_flatpakStore)
+    {
+        m_flatpakStore->Hide();
+    }
 
     wxButton *mongoButton = wxDynamicCast(FindWindow(ID_MONGODB_BUTTON), wxButton);
     if (mongoButton)
@@ -750,7 +756,10 @@ void SecondWindow::OnMongoDBPanelClose(wxCommandEvent &event)
     {
         m_terminalTab->Show();
     }
-    m_flatpakStore->Hide();
+    if (m_flatpakStore)
+    {
+        m_flatpakStore->Hide();
+    }
 
     wxButton *mongoButton = wxDynamicCast(FindWindow(ID_MONGODB_BUTTON), wxButton);
     if (mongoButton)
