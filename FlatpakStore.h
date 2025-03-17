@@ -34,7 +34,7 @@
 #include <algorithm>
 #include <atomic>
 #include <memory>
-#include <map>  // Added for std::map
+#include <map> // Added for std::map
 
 // Forward declarations
 class AppCard;
@@ -55,13 +55,14 @@ wxDECLARE_EVENT(INSTALL_COMPLETE_EVENT, wxCommandEvent);
 wxDECLARE_EVENT(INSTALL_CANCEL_EVENT, wxCommandEvent);
 
 // ThreadPool class declaration
-class ThreadPool {
+class ThreadPool
+{
 public:
     ThreadPool(size_t threads);
     ~ThreadPool();
 
-    template<class F>
-    void Enqueue(F&& f);
+    template <class F>
+    void Enqueue(F &&f);
 
     void CancelAll();
 
@@ -74,54 +75,57 @@ private:
 };
 
 // RoundedSearchPanel class declaration
-class RoundedSearchPanel : public wxPanel {
+class RoundedSearchPanel : public wxPanel
+{
 public:
-    RoundedSearchPanel(wxWindow* parent, wxWindowID id = wxID_ANY,
-                       const wxPoint& pos = wxDefaultPosition,
-                       const wxSize& size = wxDefaultSize);
+    RoundedSearchPanel(wxWindow *parent, wxWindowID id = wxID_ANY,
+                       const wxPoint &pos = wxDefaultPosition,
+                       const wxSize &size = wxDefaultSize);
 
 private:
-    void OnPaint(wxPaintEvent& event);
-    
+    void OnPaint(wxPaintEvent &event);
+
     DECLARE_EVENT_TABLE()
 };
 
 // AppCard class declaration
-class AppCard : public wxPanel {
+class AppCard : public wxPanel
+{
 public:
-    AppCard(wxWindow* parent, const wxString& name, const wxString& summary, const wxString& appId);
+    AppCard(wxWindow *parent, const wxString &name, const wxString &summary, const wxString &appId);
     virtual ~AppCard();
 
-    void SetIcon(const wxBitmap& bitmap);
+    void SetIcon(const wxBitmap &bitmap);
     wxString GetAppId() const { return m_appId; }
-    wxGauge* GetProgressGauge() { return m_progressGauge; }
-    wxButton* GetCancelButton() { return m_cancelButton; }
+    wxGauge *GetProgressGauge() { return m_progressGauge; }
+    wxButton *GetCancelButton() { return m_cancelButton; }
     void ShowInstalling(bool show);
-    void SetInstallButtonLabel(const wxString& label);
+    void SetInstallButtonLabel(const wxString &label);
     void DisableInstallButton();
 
 private:
-    wxStaticBitmap* m_iconBitmap;
-    wxStaticText* m_nameText;
-    wxStaticText* m_summaryText;
-    wxButton* m_installButton;
-    wxGauge* m_progressGauge;
-    wxButton* m_cancelButton;
-    wxBoxSizer* m_controlSizer;
+    wxStaticBitmap *m_iconBitmap;
+    wxStaticText *m_nameText;
+    wxStaticText *m_summaryText;
+    wxButton *m_installButton;
+    wxGauge *m_progressGauge;
+    wxButton *m_cancelButton;
+    wxBoxSizer *m_controlSizer;
     wxString m_appId;
     bool m_isLoading;
 
-    void OnPaint(wxPaintEvent& event);
-    void OnMouseEnter(wxMouseEvent& event);
-    void OnMouseLeave(wxMouseEvent& event);
+    void OnPaint(wxPaintEvent &event);
+    void OnMouseEnter(wxMouseEvent &event);
+    void OnMouseLeave(wxMouseEvent &event);
 
     DECLARE_EVENT_TABLE()
 };
 
 // SearchThread class declaration
-class SearchThread : public wxThread {
+class SearchThread : public wxThread
+{
 public:
-    SearchThread(FlatpakStore* store, const std::string& query, int searchId, std::atomic<bool>& stopFlag)
+    SearchThread(FlatpakStore *store, const std::string &query, int searchId, std::atomic<bool> &stopFlag)
         : wxThread(wxTHREAD_DETACHED), m_store(store), m_query(query),
           m_searchId(searchId), m_stopFlag(stopFlag) {}
 
@@ -129,79 +133,86 @@ protected:
     virtual ExitCode Entry();
 
 private:
-    FlatpakStore* m_store;
+    FlatpakStore *m_store;
     std::string m_query;
     int m_searchId;
-    std::atomic<bool>& m_stopFlag;
+    std::atomic<bool> &m_stopFlag;
 };
 
 // InitialLoadThread class declaration
-class InitialLoadThread : public wxThread {
+class InitialLoadThread : public wxThread
+{
 public:
-    InitialLoadThread(FlatpakStore* store, std::atomic<bool>& stopFlag)
+    InitialLoadThread(FlatpakStore *store, std::atomic<bool> &stopFlag)
         : wxThread(wxTHREAD_DETACHED), m_store(store), m_stopFlag(stopFlag) {}
 
 protected:
     virtual ExitCode Entry();
 
 private:
-    FlatpakStore* m_store;
-    std::atomic<bool>& m_stopFlag;
+    FlatpakStore *m_store;
+    std::atomic<bool> &m_stopFlag;
 };
 
 // InstallState structure
-struct InstallState {
-    AppCard* card;
+struct InstallState
+{
+    AppCard *card;
     std::atomic<bool> cancelFlag;
-    wxProcess* process;
+    wxProcess *process;
     long pid;
-    InstallState(AppCard* c) : card(c), cancelFlag(false), process(nullptr), pid(0) {}
+    InstallState(AppCard *c) : card(c), cancelFlag(false), process(nullptr), pid(0) {}
 };
 
 // InstallThread class declaration
-class InstallThread : public wxThread {
+class InstallThread : public wxThread
+{
 public:
-    InstallThread(FlatpakStore* store, const wxString& appId, InstallState* state)
+    InstallThread(FlatpakStore *store, const wxString &appId, InstallState *state)
         : wxThread(wxTHREAD_DETACHED), m_store(store), m_appId(appId), m_state(state) {}
 
 protected:
     virtual ExitCode Entry() override;
 
 private:
-    FlatpakStore* m_store;
+    FlatpakStore *m_store;
     wxString m_appId;
-    InstallState* m_state;
+    InstallState *m_state;
 };
 
 // FlatpakStore class declaration
-class FlatpakStore : public wxPanel {
+class FlatpakStore : public wxPanel
+{
 public:
-    FlatpakStore(wxWindow* parent, const wxString& workDir);
+    FlatpakStore(wxWindow *parent, const wxString &workDir);
     virtual ~FlatpakStore();
 
     void SetTotalResults(int total) { totalResults = total; }
-    void SetContainerId(const wxString& containerId);
+    void SetContainerId(const wxString &containerId);
     wxString GetContainerId() const;
 
     // Timer IDs
-    enum {
+    enum
+    {
         ID_BATCH_TIMER = wxID_HIGHEST + 1,
-        ID_LAYOUT_TIMER
+        ID_LAYOUT_TIMER,
+        ID_SHOW_INSTALLED_BUTTON // Add new button ID
     };
 
 private:
     // UI elements
-    wxTextCtrl* m_searchBox;
-    wxButton* m_searchButton;
-    wxScrolledWindow* m_resultsPanel;
-    wxBoxSizer* m_mainSizer;
-    wxGauge* m_progressBar;
-    wxWrapSizer* m_gridSizer;
-    wxPanel* m_progressPanel;
-    wxStaticText* m_progressText;
-    wxTimer* m_layoutTimer;
-    wxTimer* m_batchTimer;
-    
+    wxTextCtrl *m_searchBox;
+    wxButton *m_searchButton;
+    wxScrolledWindow *m_resultsPanel;
+    wxBoxSizer *m_mainSizer;
+    wxGauge *m_progressBar;
+    wxWrapSizer *m_gridSizer;
+    wxPanel *m_progressPanel;
+    wxStaticText *m_progressText;
+    wxTimer *m_layoutTimer;
+    wxTimer *m_batchTimer;
+    wxButton *m_showInstalledButton; // Add new button declaration
+
     // Batch processing members
     std::vector<wxString> m_pendingResults;
     std::mutex m_resultsMutex;
@@ -222,27 +233,30 @@ private:
     std::unique_ptr<ThreadPool> m_threadPool;
 
     // Data structures
-    struct IconData {
-        AppCard* card;
+    struct IconData
+    {
+        AppCard *card;
         wxBitmap bitmap;
     };
 
     // Active installations tracking
-    std::map<long, InstallState*> m_activeInstalls;  // Added declaration
+    std::map<long, InstallState *> m_activeInstalls; // Added declaration
 
     // Event handlers
-    void OnSearch(wxCommandEvent& event);
-    void OnSearchComplete(wxCommandEvent& event);
-    void OnResultReady(wxCommandEvent& event);
-    void OnImageReady(wxCommandEvent& event);
-    void OnUpdateProgress(wxCommandEvent& event);
-    void OnInstallButtonClicked(wxCommandEvent& event);
-    void OnInstallStart(wxCommandEvent& event);
-    void OnInstallComplete(wxCommandEvent& event);
-    void OnInstallCancel(wxCommandEvent& event);
-    void OnProcessTerminated(wxProcessEvent& event);
-    void OnLayoutTimer(wxTimerEvent& event);
-    void OnBatchTimer(wxTimerEvent& event);
+    void OnSearch(wxCommandEvent &event);
+    void OnSearchComplete(wxCommandEvent &event);
+    void OnResultReady(wxCommandEvent &event);
+    void OnImageReady(wxCommandEvent &event);
+    void OnUpdateProgress(wxCommandEvent &event);
+    void OnInstallButtonClicked(wxCommandEvent &event);
+    void OnInstallStart(wxCommandEvent &event);
+    void OnInstallComplete(wxCommandEvent &event);
+    void OnInstallCancel(wxCommandEvent &event);
+    void OnProcessTerminated(wxProcessEvent &event);
+    void OnLayoutTimer(wxTimerEvent &event);
+    void OnBatchTimer(wxTimerEvent &event);
+    void OnShowInstalledButtonClicked(wxCommandEvent &event); // Add new event handler declaration
+    void OnSearchButtonClicked(wxCommandEvent &event);        // Add new event handler declaration
 
     // Helper methods
     void ClearResults();
@@ -253,11 +267,13 @@ private:
 };
 
 // ThreadPool template method implementation
-template<class F>
-void ThreadPool::Enqueue(F&& f) {
+template <class F>
+void ThreadPool::Enqueue(F &&f)
+{
     {
         std::unique_lock<std::mutex> lock(queueMutex);
-        if (stop) throw std::runtime_error("Enqueue on stopped ThreadPool");
+        if (stop)
+            throw std::runtime_error("Enqueue on stopped ThreadPool");
         tasks.emplace(std::forward<F>(f));
     }
     condition.notify_one();
