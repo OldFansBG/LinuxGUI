@@ -1142,15 +1142,25 @@ void FlatpakStore::OnInstallComplete(wxCommandEvent &event)
         card->DisableInstallButton();
         wxLogDebug("Installation successful for app: %s", card->GetAppId());
     }
+    else if (result == 125) // new handling for exit code 125
+    {
+        wxLogDebug("Installation failed for app: %s with exit code: %d (Possible Docker or Flatpak configuration issue)", card->GetAppId(), result);
+        wxMessageBox("Installation failed for " + card->GetAppId() +
+                         ". Please check Docker and Flatpak configurations. (Exit code: " +
+                         wxString::Format("%d", result) + ")",
+                     "Error", wxICON_ERROR);
+    }
     else if (result != -1)
     {
         wxLogDebug("Installation failed for app: %s with exit code: %d", card->GetAppId(), result);
-        wxMessageBox("Installation failed for " + card->GetAppId(), "Error", wxICON_ERROR);
+        wxMessageBox("Installation failed for " + card->GetAppId(),
+                     "Error", wxICON_ERROR);
     }
     else
     {
         wxLogDebug("Installation failed to start for app: %s", card->GetAppId());
-        wxMessageBox("Failed to start installation for " + card->GetAppId(), "Error", wxICON_ERROR);
+        wxMessageBox("Failed to start installation for " + card->GetAppId(),
+                     "Error", wxICON_ERROR);
     }
 
     delete state->process;
