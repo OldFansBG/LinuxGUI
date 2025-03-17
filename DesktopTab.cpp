@@ -12,18 +12,23 @@
 wxDEFINE_EVENT(FILE_COPY_COMPLETE_EVENT, wxCommandEvent);
 
 // Custom wxProcess subclass for async Docker commands
-class DesktopInstallProcess : public wxProcess {
+class DesktopInstallProcess : public wxProcess
+{
 public:
-    DesktopInstallProcess(DesktopTab* parent, const wxString& newEnv, wxButton* button)
+    DesktopInstallProcess(DesktopTab *parent, const wxString &newEnv, wxButton *button)
         : wxProcess(parent), m_parent(parent), m_newEnv(newEnv), m_button(button) {}
 
-    virtual void OnTerminate(int pid, int status) override {
-        if (m_parent) {
-            if (status == 0) {
+    virtual void OnTerminate(int pid, int status) override
+    {
+        if (m_parent)
+        {
+            if (status == 0)
+            {
                 wxLogDebug("DesktopInstallProcess::OnTerminate - Successfully installed %s", m_newEnv);
                 wxString guiFilePath = m_parent->GetGuiFilePath();
                 wxFile guiFile;
-                if (guiFile.Create(guiFilePath, true) && guiFile.IsOpened()) {
+                if (guiFile.Create(guiFilePath, true) && guiFile.IsOpened())
+                {
                     guiFile.Write(m_newEnv);
                     guiFile.Close();
                     wxLogDebug("DesktopInstallProcess::OnTerminate - Updated detected_gui.txt with %s", m_newEnv);
@@ -33,24 +38,26 @@ public:
                     wxString::Format("%s installed successfully!", m_newEnv),
                     "Success",
                     wxOK | wxICON_INFORMATION,
-                    m_parent
-                );
-            } else {
+                    m_parent);
+            }
+            else
+            {
                 wxLogDebug("DesktopInstallProcess::OnTerminate - Failed to install %s, status: %d", m_newEnv, status);
                 wxMessageBox("Failed to install new environment! Check logs.", "Error", wxICON_ERROR, m_parent);
             }
-            if (m_button) m_button->Enable();
+            if (m_button)
+                m_button->Enable();
             delete this; // Clean up process object
         }
     }
 
 private:
-    DesktopTab* m_parent;
+    DesktopTab *m_parent;
     wxString m_newEnv;
-    wxButton* m_button;
+    wxButton *m_button;
 };
 
-DesktopTab::DesktopTab(wxWindow* parent)
+DesktopTab::DesktopTab(wxWindow *parent)
     : wxPanel(parent), m_gridSizer(nullptr)
 {
     CreateDesktopTab();
@@ -58,20 +65,24 @@ DesktopTab::DesktopTab(wxWindow* parent)
     Bind(FILE_COPY_COMPLETE_EVENT, &DesktopTab::OnFileCopyComplete, this);
 }
 
-wxBitmap DesktopTab::LoadImage(const wxString& imageName) {
+wxBitmap DesktopTab::LoadImage(const wxString &imageName)
+{
     wxFileName path(wxFileName::GetCwd(), imageName);
     path.AppendDir("desktopenvs");
     wxLogDebug("DesktopTab::LoadImage - Loading image from: %s", path.GetFullPath());
-    if (path.FileExists()) {
+    if (path.FileExists())
+    {
         return wxBitmap(path.GetFullPath(), wxBITMAP_TYPE_PNG);
     }
     wxLogDebug("DesktopTab::LoadImage - Image not found: %s", path.GetFullPath());
     return wxNullBitmap;
 }
 
-wxBitmap DesktopTab::ConvertToGrayscale(const wxBitmap& original) {
+wxBitmap DesktopTab::ConvertToGrayscale(const wxBitmap &original)
+{
     wxImage image = original.ConvertToImage();
-    if (!image.IsOk()) {
+    if (!image.IsOk())
+    {
         wxLogDebug("DesktopTab::ConvertToGrayscale - Failed to convert bitmap to image");
         return original;
     }
@@ -79,40 +90,52 @@ wxBitmap DesktopTab::ConvertToGrayscale(const wxBitmap& original) {
     return wxBitmap(image);
 }
 
-void DesktopTab::ApplyGrayscaleToCards(const wxString& detectedEnv) {
+void DesktopTab::ApplyGrayscaleToCards(const wxString &detectedEnv)
+{
     wxLogDebug("DesktopTab::ApplyGrayscaleToCards - Applying grayscale for detected env: %s", detectedEnv);
-    
-    wxWindowList& children = m_scrolledWindow->GetChildren();
-    for (wxWindowList::iterator it = children.begin(); it != children.end(); ++it) {
-        wxPanel* card = wxDynamicCast(*it, wxPanel);
-        if (!card || !card->GetSizer()) continue;
-        
+
+    wxWindowList &children = m_scrolledWindow->GetChildren();
+    for (wxWindowList::iterator it = children.begin(); it != children.end(); ++it)
+    {
+        wxPanel *card = wxDynamicCast(*it, wxPanel);
+        if (!card || !card->GetSizer())
+            continue;
+
         wxString cardName = card->GetName();
         bool isDetectedEnv = (cardName == detectedEnv);
         wxLogDebug("DesktopTab::ApplyGrayscaleToCards - Card: %s, is detected: %d", cardName, isDetectedEnv);
-        
-        wxWindowList& cardChildren = card->GetChildren();
-        for (wxWindowList::iterator childIt = cardChildren.begin(); childIt != cardChildren.end(); ++childIt) {
-            wxPanel* imageContainer = wxDynamicCast(*childIt, wxPanel);
-            if (!imageContainer || !imageContainer->GetClientData()) continue;
-            
-            wxBitmap* storedBitmap = static_cast<wxBitmap*>(imageContainer->GetClientData());
-            if (storedBitmap && storedBitmap->IsOk()) {
-                if (!isDetectedEnv) {
+
+        wxWindowList &cardChildren = card->GetChildren();
+        for (wxWindowList::iterator childIt = cardChildren.begin(); childIt != cardChildren.end(); ++childIt)
+        {
+            wxPanel *imageContainer = wxDynamicCast(*childIt, wxPanel);
+            if (!imageContainer || !imageContainer->GetClientData())
+                continue;
+
+            wxBitmap *storedBitmap = static_cast<wxBitmap *>(imageContainer->GetClientData());
+            if (storedBitmap && storedBitmap->IsOk())
+            {
+                if (!isDetectedEnv)
+                {
                     *storedBitmap = ConvertToGrayscale(*storedBitmap);
                     wxLogDebug("DesktopTab::ApplyGrayscaleToCards - Applied grayscale to %s", cardName);
                 }
                 imageContainer->Refresh();
             }
         }
-        
-        wxWindowList& grandChildren = card->GetChildren();
-        for (wxWindowList::iterator gcIt = grandChildren.begin(); gcIt != grandChildren.end(); ++gcIt) {
-            wxButton* button = wxDynamicCast(*gcIt, wxButton);
-            if (button) {
-                if (isDetectedEnv) {
+
+        wxWindowList &grandChildren = card->GetChildren();
+        for (wxWindowList::iterator gcIt = grandChildren.begin(); gcIt != grandChildren.end(); ++gcIt)
+        {
+            wxButton *button = wxDynamicCast(*gcIt, wxButton);
+            if (button)
+            {
+                if (isDetectedEnv)
+                {
                     button->SetBackgroundColour(wxColour(0, 120, 215));
-                } else {
+                }
+                else
+                {
                     button->SetBackgroundColour(wxColour(80, 80, 80));
                 }
                 button->Refresh();
@@ -122,31 +145,38 @@ void DesktopTab::ApplyGrayscaleToCards(const wxString& detectedEnv) {
     m_scrolledWindow->Refresh();
 }
 
-void DesktopTab::OnSize(wxSizeEvent& event) {
+void DesktopTab::OnSize(wxSizeEvent &event)
+{
     wxSize size = event.GetSize();
     wxLogDebug("DesktopTab::OnSize - Window size changed: %d x %d", size.GetWidth(), size.GetHeight());
     RecalculateLayout(size.GetWidth());
     event.Skip();
 }
 
-void DesktopTab::RecalculateLayout(int windowWidth) {
-    if (!m_gridSizer) return;
+void DesktopTab::RecalculateLayout(int windowWidth)
+{
+    if (!m_gridSizer)
+        return;
 
     int availableWidth = windowWidth - 40;
     int cardWithSpacing = 220;
     int columns = std::max(1, availableWidth / cardWithSpacing);
     wxLogDebug("DesktopTab::RecalculateLayout - Window width: %d, Columns: %d", windowWidth, columns);
 
-    if (m_gridSizer->GetCols() != columns) {
+    if (m_gridSizer->GetCols() != columns)
+    {
         m_gridSizer->SetCols(columns);
 
-        for (int i = 0; i < m_gridSizer->GetCols(); i++) {
-            if (m_gridSizer->IsColGrowable(i)) {
+        for (int i = 0; i < m_gridSizer->GetCols(); i++)
+        {
+            if (m_gridSizer->IsColGrowable(i))
+            {
                 m_gridSizer->RemoveGrowableCol(i);
             }
         }
 
-        for (int i = 0; i < columns; i++) {
+        for (int i = 0; i < columns; i++)
+        {
             m_gridSizer->AddGrowableCol(i, 1);
         }
 
@@ -155,90 +185,94 @@ void DesktopTab::RecalculateLayout(int windowWidth) {
     }
 }
 
-wxString DesktopTab::GetGuiFilePath() {
+wxString DesktopTab::GetGuiFilePath()
+{
     wxString guiFilePath;
-    wxWindow* parent = GetParent();
-    while (parent) {
-        SecondWindow* secondWindow = wxDynamicCast(parent, SecondWindow);
-        if (secondWindow) {
+    wxWindow *parent = GetParent();
+    while (parent)
+    {
+        SecondWindow *secondWindow = wxDynamicCast(parent, SecondWindow);
+        if (secondWindow)
+        {
             guiFilePath = wxFileName(secondWindow->GetProjectDir(), "detected_gui.txt").GetFullPath();
             wxLogDebug("DesktopTab::GetGuiFilePath - Found SecondWindow, gui path: %s", guiFilePath);
             break;
         }
         parent = parent->GetParent();
     }
-    if (guiFilePath.IsEmpty()) {
+    if (guiFilePath.IsEmpty())
+    {
         guiFilePath = wxFileName(wxGetCwd(), "detected_gui.txt").GetFullPath();
         wxLogDebug("DesktopTab::GetGuiFilePath - No SecondWindow, using cwd: %s", guiFilePath);
     }
     return guiFilePath;
 }
 
-void DesktopTab::CreateDesktopTab() {
-    wxBoxSizer* mainSizer = new wxBoxSizer(wxVERTICAL);
+void DesktopTab::CreateDesktopTab()
+{
+    wxBoxSizer *mainSizer = new wxBoxSizer(wxVERTICAL);
     m_scrolledWindow = new wxScrolledWindow(this, wxID_ANY);
     m_scrolledWindow->SetScrollRate(0, 10);
     m_scrolledWindow->SetBackgroundColour(wxColour(18, 18, 18));
 
-    wxBoxSizer* scrolledSizer = new wxBoxSizer(wxVERTICAL);
+    wxBoxSizer *scrolledSizer = new wxBoxSizer(wxVERTICAL);
     m_scrolledWindow->SetSizer(scrolledSizer);
 
-    wxBoxSizer* headerSizer = new wxBoxSizer(wxHORIZONTAL);
+    wxBoxSizer *headerSizer = new wxBoxSizer(wxHORIZONTAL);
     m_textDisplay = new wxStaticText(m_scrolledWindow, wxID_ANY, "GUI Environment: Not detected");
     m_textDisplay->SetForegroundColour(*wxWHITE);
     m_textDisplay->SetFont(wxFont(12, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
     headerSizer->Add(m_textDisplay, 1, wxALIGN_LEFT | wxALL, 10);
 
-    m_reloadButton = new wxButton(m_scrolledWindow, wxID_ANY, "Reload UI", 
-                                 wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+    m_reloadButton = new wxButton(m_scrolledWindow, wxID_ANY, "Reload UI",
+                                  wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
     m_reloadButton->SetForegroundColour(*wxWHITE);
     m_reloadButton->SetBackgroundColour(wxColour(60, 60, 60));
     headerSizer->Add(m_reloadButton, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
 
-    m_reloadButton->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
-        UpdateTextFromFile();
-    });
+    m_reloadButton->Bind(wxEVT_BUTTON, [this](wxCommandEvent &)
+                         { UpdateTextFromFile(); });
 
     scrolledSizer->Add(headerSizer, 0, wxEXPAND);
 
     const std::array<wxString, 9> environments = {
         "GNOME", "KDE Plasma", "XFCE",
         "Cinnamon", "MATE", "LXQt",
-        "Budgie", "Deepin", "Pantheon"
-    };
+        "Budgie", "Deepin", "Pantheon"};
 
     const std::array<wxString, 9> imageFiles = {
         "GNOME.png", "KDE.png", "Xfce.png",
         "Cinnamon.png", "MATE.png", "LXQt.png",
-        "Budgie.png", "Deepin.png", "Pantheon.png"
-    };
+        "Budgie.png", "Deepin.png", "Pantheon.png"};
 
     const std::array<wxString, 9> packageNames = {
         "gnome-session", "plasma-desktop", "xfce4",
         "cinnamon", "mate-desktop", "lxqt",
-        "budgie-desktop", "deepin-desktop-environment", "pantheon-desktop"
-    };
+        "budgie-desktop", "deepin-desktop-environment", "pantheon-desktop"};
 
     m_gridSizer = new wxFlexGridSizer(3, 20, 20);
     m_gridSizer->SetFlexibleDirection(wxBOTH);
 
-    for (size_t i = 0; i < environments.size(); ++i) {
-        wxPanel* card = new wxPanel(m_scrolledWindow);
+    for (size_t i = 0; i < environments.size(); ++i)
+    {
+        wxPanel *card = new wxPanel(m_scrolledWindow);
         card->SetBackgroundColour(wxColour(32, 32, 32));
         card->SetMinSize(wxSize(200, 300));
         card->SetName(environments[i]);
 
-        wxBoxSizer* cardSizer = new wxBoxSizer(wxVERTICAL);
+        wxBoxSizer *cardSizer = new wxBoxSizer(wxVERTICAL);
 
-        wxPanel* imageContainer = new wxPanel(card, wxID_ANY);
+        wxPanel *imageContainer = new wxPanel(card, wxID_ANY);
         imageContainer->SetMinSize(wxSize(180, 240));
         imageContainer->SetBackgroundColour(wxColour(32, 32, 32));
 
         wxBitmap bitmap = LoadImage(imageFiles[i]);
-        if (bitmap.IsOk()) {
+        if (bitmap.IsOk())
+        {
             imageContainer->SetClientData(new wxBitmap(bitmap));
-            
-            imageContainer->Bind(wxEVT_PAINT, [this](wxPaintEvent& evt) {
+
+            imageContainer->Bind(wxEVT_PAINT, [this](wxPaintEvent &evt)
+                                 {
                 wxPanel* panel = dynamic_cast<wxPanel*>(evt.GetEventObject());
                 if (!panel) return;
                 
@@ -266,29 +300,29 @@ void DesktopTab::CreateDesktopTab() {
                 dc.DrawBitmap(
                     wxBitmap(img.Scale(newWidth, newHeight, wxIMAGE_QUALITY_HIGH)),
                     x, y
-                );
-            });
+                ); });
         }
 
         cardSizer->Add(imageContainer, 1, wxEXPAND | wxALL, 10);
 
-        wxStaticText* title = new wxStaticText(card, wxID_ANY, environments[i]);
+        wxStaticText *title = new wxStaticText(card, wxID_ANY, environments[i]);
         title->SetForegroundColour(*wxWHITE);
         title->SetFont(wxFont(12, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
         cardSizer->Add(title, 0, wxALIGN_LEFT | wxLEFT | wxRIGHT, 10);
 
-        wxStaticText* info = new wxStaticText(card, wxID_ANY, "0/100 Achievements");
+        wxStaticText *info = new wxStaticText(card, wxID_ANY, "0/100 Achievements");
         info->SetForegroundColour(wxColour(180, 180, 180));
         info->SetFont(wxFont(10, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
         cardSizer->Add(info, 0, wxALIGN_LEFT | wxLEFT | wxRIGHT | wxTOP, 10);
 
-        wxButton* installButton = new wxButton(card, wxID_ANY, "Install");
+        wxButton *installButton = new wxButton(card, wxID_ANY, "Install");
         installButton->SetMinSize(wxSize(80, 30));
         installButton->SetBackgroundColour(wxColour(0, 120, 215));
         installButton->SetForegroundColour(*wxWHITE);
         cardSizer->Add(installButton, 0, wxALIGN_LEFT | wxALL, 10);
 
-        installButton->Bind(wxEVT_BUTTON, [this, environments, packageNames, i](wxCommandEvent& event) {
+        installButton->Bind(wxEVT_BUTTON, [this, environments, packageNames, i](wxCommandEvent &event)
+                            {
             wxString newEnv = environments[i];
             wxString newPackage = packageNames[i];
             wxLogDebug("DesktopTab::InstallButton - Installing %s (package: %s)", newEnv, newPackage);
@@ -391,8 +425,7 @@ void DesktopTab::CreateDesktopTab() {
                 if (btn) btn->Enable();
             } else {
                 wxLogDebug("DesktopTab::InstallButton - Started installation process for %s, PID: %ld", newEnv, pid);
-            }
-        });
+            } });
 
         card->SetSizer(cardSizer);
         m_gridSizer->Add(card, 1, wxEXPAND);
@@ -406,7 +439,8 @@ void DesktopTab::CreateDesktopTab() {
     wxLogDebug("DesktopTab::CreateDesktopTab - Desktop tab created and laid out");
 }
 
-void DesktopTab::UpdateGUILabel(const wxString& guiName) {
+void DesktopTab::UpdateGUILabel(const wxString &guiName)
+{
     wxLogDebug("DesktopTab::UpdateGUILabel - Setting label with GUI name: %s", guiName);
     wxString displayText = "GUI Environment: " + guiName;
     m_textDisplay->SetLabel(displayText);
@@ -420,32 +454,40 @@ void DesktopTab::UpdateGUILabel(const wxString& guiName) {
     wxLogDebug("DesktopTab::UpdateGUILabel - UI updated with %s", guiName);
 }
 
-void DesktopTab::OnFileCopyComplete(wxCommandEvent& event) {
+void DesktopTab::OnFileCopyComplete(wxCommandEvent &event)
+{
     wxString guiName = event.GetString();
     wxLogDebug("DesktopTab::OnFileCopyComplete - Event received with GUI name: %s", guiName);
-    
+
     guiName.Trim(true).Trim(false);
     UpdateGUILabel(guiName.IsEmpty() ? "Not detected" : guiName);
 }
 
-void DesktopTab::UpdateTextFromFile() {
+void DesktopTab::UpdateTextFromFile()
+{
     wxLogDebug("DesktopTab::UpdateTextFromFile - Reload UI button clicked");
-    
+
     wxString guiFilePath = GetGuiFilePath();
     wxLogDebug("DesktopTab::UpdateTextFromFile - Looking for file: %s", guiFilePath);
-    
-    if (wxFileExists(guiFilePath)) {
+
+    if (wxFileExists(guiFilePath))
+    {
         wxFile file(guiFilePath);
         wxString content;
-        if (file.ReadAll(&content)) {
+        if (file.ReadAll(&content))
+        {
             content.Trim(true).Trim(false);
             wxLogDebug("DesktopTab::UpdateTextFromFile - Read content: %s", content);
             UpdateGUILabel(content);
-        } else {
+        }
+        else
+        {
             wxLogDebug("DesktopTab::UpdateTextFromFile - Failed to read file contents");
             UpdateGUILabel("Not detected");
         }
-    } else {
+    }
+    else
+    {
         wxLogDebug("DesktopTab::UpdateTextFromFile - File not found: %s", guiFilePath);
         UpdateGUILabel("Not detected");
     }
