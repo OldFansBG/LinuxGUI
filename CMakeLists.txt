@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.14)
 project(LinuxISOPro LANGUAGES CXX)
 
 # Add after your project declaration
@@ -9,14 +9,14 @@ endif()
 set(CMAKE_TOOLCHAIN_FILE "C:/tools/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
 set(VCPKG_TARGET_TRIPLET "x64-mingw-static" CACHE STRING "")
 
-# Compiler Warnings (as in your file)
+# Compiler Warnings
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     add_compile_options(-w)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     add_compile_options(/W0)
 endif()
 
-# Windows Resource Compiler (as in your file)
+# Windows Resource Compiler
 if(WIN32)
     enable_language(RC)
     set(CMAKE_RC_COMPILER_INIT windres)
@@ -26,10 +26,10 @@ include(FetchContent)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Find libcurl (as in your file)
+# Find libcurl
 find_package(CURL REQUIRED)
 
-# Build Output (as in your file)
+# Build Output
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 if(WIN32)
    foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
@@ -43,7 +43,7 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 
-# wxWidgets (as in your file)
+# wxWidgets
 set(wxBUILD_SHARED OFF)
 set(wxUSE_GRAPHICS_DIRECT2D ON)
 FetchContent_Declare(
@@ -54,7 +54,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(wxWidgets)
 
-# LibArchive (as in your file)
+# wxSVG (prebuilt library)
+find_library(wxSVG_LIBRARY NAMES wxsvg PATHS /mingw64/lib)
+find_path(wxSVG_INCLUDE_DIR NAMES wx/svg/svg.h PATHS /mingw64/include)
+
+if(NOT wxSVG_LIBRARY OR NOT wxSVG_INCLUDE_DIR)
+    message(FATAL_ERROR "wxSVG library or headers not found!")
+endif()
+
+# LibArchive
 set(ENABLE_TAR OFF CACHE BOOL "")
 set(ENABLE_CPIO OFF CACHE BOOL "")
 set(ENABLE_CAT OFF CACHE BOOL "")
@@ -71,7 +79,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libarchive)
 
-# yaml-cpp (as in your file)
+# yaml-cpp
 set(YAML_CPP_BUILD_SHARED OFF CACHE BOOL "Build yaml-cpp static library" FORCE)
 FetchContent_Declare(
    yaml-cpp
@@ -83,7 +91,7 @@ set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "disable yaml tests")
 set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "disable yaml tools")
 FetchContent_MakeAvailable(yaml-cpp)
 
-# RapidJSON (as in your file)
+# RapidJSON
 find_path(RAPIDJSON_INCLUDE_DIR NAMES rapidjson/document.h
   PATHS "C:/msys64/mingw64/include"
   NO_DEFAULT_PATH
@@ -132,14 +140,14 @@ set(HEADERS
    SettingsManager.h
 )
 
-# Resource files (as in your file)
+# Resource files
 set(RESOURCE_FILES
    "${CMAKE_CURRENT_SOURCE_DIR}/resources/linuxisopro.ico"
    "${CMAKE_CURRENT_SOURCE_DIR}/resources.rc"
    "${CMAKE_CURRENT_SOURCE_DIR}/resources/gear.png"
 )
 
-# Platform-specific (as in your file)
+# Platform-specific
 if(WIN32)
    set(PLATFORM_LIBS
        dwmapi
@@ -154,7 +162,7 @@ if(WIN32)
    )
 endif()
 
-# Create executable (as in your file)
+# Create executable
 add_executable(LinuxISOPro WIN32 ${SOURCES} ${HEADERS} ${RESOURCE_FILES})
 
 # Include directories
@@ -166,7 +174,7 @@ target_include_directories(LinuxISOPro
        ${libarchive_SOURCE_DIR}/libarchive
        ${libarchive_BINARY_DIR}
        ${RAPIDJSON_INCLUDE_DIR}
-       #${mongocxx_INCLUDE_DIRS} # Include if necessary
+       ${wxSVG_INCLUDE_DIR}  # Add wxsvg include directory
 )
 
 # Add these before your find_package calls
@@ -188,10 +196,11 @@ target_link_libraries(LinuxISOPro
        ${PLATFORM_LIBS}
        CURL::libcurl
        $<IF:$<TARGET_EXISTS:mongo::bsoncxx_static>,mongo::bsoncxx_static,mongo::bsoncxx_shared>
-      $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
+       $<IF:$<TARGET_EXISTS:mongo::mongocxx_static>,mongo::mongocxx_static,mongo::mongocxx_shared>
+       ${wxSVG_LIBRARY}  # Link wxsvg
 )
 
-# Windows-specific settings (as in your file)
+# Windows-specific settings
 if(WIN32)
    target_compile_definitions(LinuxISOPro
        PRIVATE
@@ -203,16 +212,16 @@ if(WIN32)
            BSONCXX_STATIC
    )
 
-   # Set static runtime (as in your file)
+   # Set static runtime
    set_property(TARGET LinuxISOPro PROPERTY
        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-# Copy configuration files (as in your file)
+# Copy configuration files
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.yaml
               ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/config.yaml COPYONLY)
 
-# Copy scripts (as in your file)
+# Copy scripts
 foreach(SCRIPT ${SCRIPT_FILES})
    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/${SCRIPT}
                  ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${SCRIPT}
@@ -224,15 +233,15 @@ foreach(SCRIPT ${SCRIPT_FILES})
    endif()
 endforeach()
 
-# Copy resource files (as in your file)
+# Copy resource files
 file(COPY ${RESOURCE_FILES} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
-# Copy themes file (as in your file)
+# Copy themes file
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/themes.json
               ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/themes.json
               COPYONLY)
 
-# Install configuration (as in your file)
+# Install configuration
 install(TARGETS LinuxISOPro
    RUNTIME DESTINATION bin
 )
@@ -245,7 +254,7 @@ install(FILES
    DESTINATION bin
 )
 
-# Print build configuration (as in your file)
+# Print build configuration
 message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Install Prefix: ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "Scripts to copy:")
