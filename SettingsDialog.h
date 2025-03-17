@@ -2,6 +2,7 @@
 #define SETTINGSDIALOG_H
 #include <wx/wx.h>
 #include "ThemeConfig.h"
+#include <wxSVG/svg.h> // Include wxSVG headers
 class ToggleSwitch : public wxControl
 {
 public:
