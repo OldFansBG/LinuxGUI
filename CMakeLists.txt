@@ -124,6 +124,7 @@ set(SOURCES
    WinTerminalManager.cpp
    CustomizeTab.cpp
    FilesystemSelectionDialog.cpp
+   SystemTab.cpp
 )
 
 # Header files (as in your file)

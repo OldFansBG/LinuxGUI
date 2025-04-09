@@ -1,8 +1,10 @@
+// SettingsDialog.h
 #ifndef SETTINGSDIALOG_H
 #define SETTINGSDIALOG_H
 #include <wx/wx.h>
 #include "ThemeConfig.h"
 #include <wxSVG/svg.h> // Include wxSVG headers
+
 class ToggleSwitch : public wxControl
 {
 public:
@@ -20,6 +22,7 @@ private:
     void OnMouse(wxMouseEvent &event);
     wxDECLARE_EVENT_TABLE();
 };
+
 class SettingsDialog : public wxDialog
 {
 public:
@@ -54,5 +57,6 @@ private:
     wxColour m_secondaryColor = wxColour(75, 85, 99);
     DECLARE_EVENT_TABLE()
 };
+
 wxDECLARE_EVENT(EVT_TOGGLE_SWITCH, wxCommandEvent);
 #endif

@@ -2,17 +2,14 @@
 #include "CustomTitleBar.h"
 #include <wx/dcbuffer.h>
 #include <wx/graphics.h>
-#include <wxSVG/svg.h>  // Include wxSVG headers
-#include <wx/mstream.h> // Include wxMemoryInputStream header
+#include <wxSVG/svg.h>
+#include <wx/mstream.h>
 wxDEFINE_EVENT(EVT_TOGGLE_SWITCH, wxCommandEvent);
 wxBEGIN_EVENT_TABLE(ToggleSwitch, wxControl)
     EVT_PAINT(ToggleSwitch::OnPaint)
         EVT_LEFT_DOWN(ToggleSwitch::OnMouse)
             wxEND_EVENT_TABLE()
-                ToggleSwitch::ToggleSwitch(wxWindow *parent, wxWindowID id, bool initialState,
-                                           const wxPoint &pos, const wxSize &size)
-    : wxControl(parent, id, pos, size, wxBORDER_NONE),
-      m_value(initialState)
+                ToggleSwitch::ToggleSwitch(wxWindow *parent, wxWindowID id, bool initialState, const wxPoint &pos, const wxSize &size) : wxControl(parent, id, pos, size, wxBORDER_NONE), m_value(initialState)
 {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     SetMinSize(size);
@@ -29,36 +26,44 @@ void ToggleSwitch::SetValue(bool value)
         GetEventHandler()->ProcessEvent(event);
     }
 }
+
 void ToggleSwitch::OnPaint(wxPaintEvent &event)
 {
     wxBufferedPaintDC dc(this);
+    dc.SetBackground(*wxTRANSPARENT_BRUSH);
     dc.Clear();
+
     wxSize size = GetSize();
     int width = size.GetWidth();
     int height = size.GetHeight();
     int radius = height / 2;
+
     wxGraphicsContext *gc = wxGraphicsContext::Create(dc);
     if (gc)
     {
         gc->SetBrush(wxBrush(m_value ? m_trackOnColor : m_trackOffColor));
         gc->SetPen(*wxTRANSPARENT_PEN);
         gc->DrawRoundedRectangle(0, 0, width, height, radius);
+
         gc->SetBrush(wxBrush(m_thumbColor));
         int thumbPos = m_value ? width - height + 2 : 2;
         gc->DrawEllipse(thumbPos, 2, height - 4, height - 4);
         delete gc;
     }
 }
+
 void ToggleSwitch::OnMouse(wxMouseEvent &event)
 {
     SetValue(!m_value);
 }
+
 wxBEGIN_EVENT_TABLE(SettingsDialog, wxDialog)
     EVT_BUTTON(wxID_OK, SettingsDialog::OnOK)
         EVT_BUTTON(wxID_CANCEL, SettingsDialog::OnCancel)
             EVT_BUTTON(wxID_ANY, SettingsDialog::OnThemeButtonClick)
                 EVT_PAINT(SettingsDialog::OnPaint)
                     wxEND_EVENT_TABLE()
+
                         SettingsDialog::SettingsDialog(wxWindow *parent)
     : wxDialog(parent, wxID_ANY, "Settings",
                wxDefaultPosition, wxSize(500, 450),
@@ -80,11 +85,14 @@ wxBEGIN_EVENT_TABLE(SettingsDialog, wxDialog)
     }
     Centre();
 }
+
 void SettingsDialog::CreateContent()
 {
     m_mainPanel = new wxPanel(this);
     m_mainPanel->SetBackgroundColour(m_bgColor);
+
     wxBoxSizer *mainSizer = new wxBoxSizer(wxVERTICAL);
+
     wxStaticText *titleText = new wxStaticText(m_mainPanel, wxID_ANY, "Settings");
     titleText->SetForegroundColour(m_textColor);
     wxFont titleFont = titleText->GetFont();
@@ -92,12 +100,14 @@ void SettingsDialog::CreateContent()
     titleFont.SetPointSize(titleFont.GetPointSize() + 3);
     titleText->SetFont(titleFont);
     mainSizer->Add(titleText, 0, wxALL, 20);
+
     wxPanel *themePanel = new wxPanel(m_mainPanel);
     themePanel->SetBackgroundColour(m_bgColor);
     wxBoxSizer *themeSizer = new wxBoxSizer(wxVERTICAL);
     wxStaticText *themeLabel = new wxStaticText(themePanel, wxID_ANY, "Theme");
     themeLabel->SetForegroundColour(m_textColor);
     themeSizer->Add(themeLabel, 0, wxALL, 10);
+
     wxBoxSizer *themeButtonSizer = new wxBoxSizer(wxHORIZONTAL);
     m_lightButton = new wxButton(themePanel, wxID_ANY, "Light",
                                  wxDefaultPosition, wxSize(160, 45), wxBORDER_NONE);
@@ -106,7 +116,7 @@ void SettingsDialog::CreateContent()
     wxFont buttonFont = m_lightButton->GetFont();
     buttonFont.SetFaceName("Segoe UI Symbol");
     m_lightButton->SetFont(buttonFont);
-    // Load SVG for light theme button
+
     wxSVGDocument svgDoc;
     const char *svgData = R"(
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
@@ -116,49 +126,85 @@ void SettingsDialog::CreateContent()
     wxMemoryInputStream svgStream(svgData, strlen(svgData));
     if (svgDoc.Load(svgStream))
     {
-        wxImage svgImage = svgDoc.Render(24, 24);
+        wxImage svgImage = svgDoc.Render(24, 24, nullptr, true, true);
         m_lightButton->SetBitmap(wxBitmap(svgImage));
     }
-    m_lightButton->SetLabelMarkup(" Light");
+    m_lightButton->SetLabel(" Light");
+    m_lightButton->SetBitmapMargins(8, 0);
+
     m_darkButton = new wxButton(themePanel, wxID_ANY, "Dark",
                                 wxDefaultPosition, wxSize(160, 45), wxBORDER_NONE);
     m_darkButton->SetBackgroundColour(m_primaryColor);
     m_darkButton->SetForegroundColour(*wxWHITE);
     m_darkButton->SetFont(buttonFont);
-    m_darkButton->SetLabelMarkup("\u263E Dark");
+
+    // Create a separate document instance for the dark button
+    wxSVGDocument darkSvgDoc;
+    const char *darkSvgData = R"(
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512">
+            <path d="M223.5 32C100 32 0 132.3 0 256S100 480 223.5 480c60.6 0 115.5-24.2 155.8-63.4c5-4.9 6.3-12.5 3.1-18.7s-10.1-9.7-17-8.5c-9.8 1.7-19.8 2.6-30.1 2.6c-96.9 0-175.5-78.8-175.5-176c0-65.8 36-123.1 89.3-153.3c6.1-3.5 9.2-10.5 7.7-17.3s-7.3-11.9-14.3-12.5c-6.3-.5-12.6-.8-19-.8z"/>
+    </svg>
+    )";
+    wxMemoryInputStream darkSvgStream(darkSvgData, strlen(darkSvgData));
+    if (darkSvgDoc.Load(darkSvgStream))
+    {
+        wxImage darkSvgImage = darkSvgDoc.Render(24, 24, nullptr, true, true);
+        m_darkButton->SetBitmap(wxBitmap(darkSvgImage));
+    }
+    m_darkButton->SetLabel(" Dark");
+    m_darkButton->SetBitmapMargins(8, 0);
+
     themeButtonSizer->Add(m_lightButton, 1, wxEXPAND | wxRIGHT, 5);
     themeButtonSizer->Add(m_darkButton, 1, wxEXPAND | wxLEFT, 5);
     themeSizer->Add(themeButtonSizer, 0, wxEXPAND | wxALL, 10);
     themePanel->SetSizer(themeSizer);
     mainSizer->Add(themePanel, 0, wxEXPAND | wxLEFT | wxRIGHT, 20);
+
     mainSizer->AddSpacer(15);
+
     wxStaticBoxSizer *containerSizer = new wxStaticBoxSizer(wxVERTICAL, m_mainPanel, "Container Options");
     wxStaticBox *containerBox = containerSizer->GetStaticBox();
     containerBox->SetForegroundColour(m_textColor);
     containerBox->SetBackgroundColour(m_bgColor);
+
     wxPanel *dockerPanel = new wxPanel(containerBox);
     dockerPanel->SetBackgroundColour(m_bgColor);
     wxBoxSizer *dockerSizer = new wxBoxSizer(wxHORIZONTAL);
-    wxStaticText *dockerIcon = new wxStaticText(dockerPanel, wxID_ANY, "\uF31E");
-    dockerIcon->SetForegroundColour(m_textColor);
+    wxMemoryInputStream dockerSvgStream(R"(
+<svg xmlns="http://www.w3.org/2000/svg" aria-label="Docker" role="img" viewBox="0 0 512 512" fill="#000000"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"><rect width="512" height="512" rx="15%" fill="#ffffff"></rect><path stroke="#066da5" stroke-width="38" d="M296 226h42m-92 0h42m-91 0h42m-91 0h41m-91 0h42m8-46h41m8 0h42m7 0h42m-42-46h42"></path><path fill="#066da5" d="m472 228s-18-17-55-11c-4-29-35-46-35-46s-29 35-8 74c-6 3-16 7-31 7H68c-5 19-5 145 133 145 99 0 173-46 208-130 52 4 63-39 63-39"></path></g></svg>
+)",
+                                        strlen(R"(
+<svg xmlns="http://www.w3.org/2000/svg" aria-label="Docker" role="img" viewBox="0 0 512 512" fill="#000000"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"><rect width="512" height="512" rx="15%" fill="#ffffff"></rect><path stroke="#066da5" stroke-width="38" d="M296 226h42m-92 0h42m-91 0h42m-91 0h41m-91 0h42m8-46h41m8 0h42m7 0h42m-42-46h42"></path><path fill="#066da5" d="m472 228s-18-17-55-11c-4-29-35-46-35-46s-29 35-8 74c-6 3-16 7-31 7H68c-5 19-5 145 133 145 99 0 173-46 208-130 52 4 63-39 63-39"></path></g></svg>
+)"));
+    wxSVGDocument dockerSvgDoc;
+    wxStaticBitmap *dockerIcon = nullptr;
+    if (dockerSvgDoc.Load(dockerSvgStream))
+    {
+        wxImage dockerSvgImage = dockerSvgDoc.Render(24, 24, nullptr, true, true);
+        dockerIcon = new wxStaticBitmap(dockerPanel, wxID_ANY, wxBitmap(dockerSvgImage));
+        dockerSizer->Add(dockerIcon, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
+    }
     wxFont iconFont = dockerIcon->GetFont();
     iconFont.SetPointSize(iconFont.GetPointSize() + 2);
     dockerIcon->SetFont(iconFont);
     wxStaticText *dockerText = new wxStaticText(dockerPanel, wxID_ANY, "Use Docker (Recommended)");
     dockerText->SetForegroundColour(m_textColor);
     m_dockerToggle = new ToggleSwitch(dockerPanel, wxID_ANY, true);
-    dockerSizer->Add(dockerIcon, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
     dockerSizer->Add(dockerText, 1, wxALIGN_CENTER_VERTICAL);
     dockerSizer->Add(m_dockerToggle, 0, wxALIGN_CENTER_VERTICAL);
     dockerPanel->SetSizer(dockerSizer);
     containerSizer->Add(dockerPanel, 0, wxEXPAND | wxALL, 10);
-#ifdef WXMSW
+
+#ifdef __WXMSW__
     wxPanel *wslPanel = new wxPanel(containerBox);
     wslPanel->SetBackgroundColour(m_bgColor);
     wxBoxSizer *wslSizer = new wxBoxSizer(wxHORIZONTAL);
     wxStaticText *wslIcon = new wxStaticText(wslPanel, wxID_ANY, "\u2325");
     wslIcon->SetForegroundColour(m_textColor);
     wslIcon->SetFont(iconFont);
+    wslIcon->SetBackgroundStyle(wxBG_STYLE_PAINT);
+    wslIcon->SetBackgroundColour(m_bgColor);
+
     wxStaticText *wslText = new wxStaticText(wslPanel, wxID_ANY, "Use Windows Subsystem for Linux (WSL)");
     wslText->SetForegroundColour(m_textColor);
     m_wslToggle = new ToggleSwitch(wslPanel, wxID_ANY, false);
@@ -167,11 +213,14 @@ void SettingsDialog::CreateContent()
     wslSizer->Add(m_wslToggle, 0, wxALIGN_CENTER_VERTICAL);
     wslPanel->SetSizer(wslSizer);
     containerSizer->Add(wslPanel, 0, wxEXPAND | wxALL, 10);
+
     m_dockerToggle->Bind(EVT_TOGGLE_SWITCH, &SettingsDialog::OnToggleChanged, this);
     m_wslToggle->Bind(EVT_TOGGLE_SWITCH, &SettingsDialog::OnToggleChanged, this);
 #endif
+
     mainSizer->Add(containerSizer, 0, wxEXPAND | wxLEFT | wxRIGHT, 20);
     mainSizer->AddSpacer(20);
+
     wxBoxSizer *buttonSizer = new wxBoxSizer(wxHORIZONTAL);
     m_cancelButton = new wxButton(m_mainPanel, wxID_CANCEL, "Cancel",
                                   wxDefaultPosition, wxSize(100, 40), wxBORDER_NONE);
@@ -184,15 +233,18 @@ void SettingsDialog::CreateContent()
     buttonFont.SetWeight(wxFONTWEIGHT_BOLD);
     m_okButton->SetFont(buttonFont);
     m_cancelButton->SetFont(buttonFont);
+
     buttonSizer->Add(0, 0, 1, wxEXPAND);
     buttonSizer->Add(m_cancelButton, 0, wxRIGHT, 10);
     buttonSizer->Add(m_okButton, 0);
     mainSizer->Add(buttonSizer, 0, wxEXPAND | wxALL, 20);
     m_mainPanel->SetSizer(mainSizer);
+
     wxBoxSizer *dialogSizer = new wxBoxSizer(wxVERTICAL);
     dialogSizer->Add(m_mainPanel, 1, wxEXPAND);
     SetSizer(dialogSizer);
 }
+
 void SettingsDialog::OnThemeButtonClick(wxCommandEvent &event)
 {
     wxObject *obj = event.GetEventObject();
@@ -213,9 +265,10 @@ void SettingsDialog::OnThemeButtonClick(wxCommandEvent &event)
         ApplyTheme("dark");
     }
 }
+
 void SettingsDialog::OnToggleChanged(wxCommandEvent &event)
 {
-#ifdef WXMSW
+#ifdef __WXMSW__
     wxObject *obj = event.GetEventObject();
     bool value = event.GetInt() != 0;
     if (obj == m_dockerToggle && value)
@@ -233,20 +286,25 @@ void SettingsDialog::OnToggleChanged(wxCommandEvent &event)
         else
             m_dockerToggle->SetValue(true);
     }
+
 #endif
 }
+
 void SettingsDialog::ApplyTheme(const wxString &theme)
 {
 }
+
 wxString SettingsDialog::GetSelectedTheme() const
 {
     return m_lightButton->GetBackgroundColour() == m_primaryColor ? "light" : "dark";
 }
+
 void SettingsDialog::OnPaint(wxPaintEvent &event)
 {
     wxAutoBufferedPaintDC dc(this);
     dc.SetBackground(wxBrush(m_bgColor));
     dc.Clear();
+
     wxGraphicsContext *gc = wxGraphicsContext::Create(dc);
     if (gc)
     {
@@ -257,14 +315,17 @@ void SettingsDialog::OnPaint(wxPaintEvent &event)
         delete gc;
     }
 }
+
 void SettingsDialog::OnOK(wxCommandEvent &event)
 {
     wxString selectedTheme = m_lightButton->GetBackgroundColour() == m_primaryColor ? "light" : "dark";
     ThemeConfig::Get().SetCurrentTheme(selectedTheme);
+
     wxFrame *mainFrame = wxDynamicCast(GetParent(), wxFrame);
     if (mainFrame)
     {
         ThemeConfig::Get().ApplyTheme(mainFrame, selectedTheme);
+
         for (wxWindow *child : mainFrame->GetChildren())
         {
             if (CustomTitleBar *titleBar = dynamic_cast<CustomTitleBar *>(child))
@@ -276,6 +337,7 @@ void SettingsDialog::OnOK(wxCommandEvent &event)
     }
     EndModal(wxID_OK);
 }
+
 void SettingsDialog::OnCancel(wxCommandEvent &event)
 {
     EndModal(wxID_CANCEL);

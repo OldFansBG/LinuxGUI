@@ -3,6 +3,7 @@
 #include "DesktopTab.h"
 #include "CustomizeTab.h" // Add new header
 #include "SecondWindow.h" // Added to provide full definition of SecondWindow
+#include "SystemTab.h" // Add this include at the top with other includes
 
 wxBEGIN_EVENT_TABLE(SQLTab, wxPanel)
     EVT_BUTTON(ID_CONFIG_DESKTOP, SQLTab::OnConfigTabChanged)
@@ -172,42 +173,11 @@ void SQLTab::SetContainerId(const wxString &containerId)
 
 void SQLTab::CreateSystemTab()
 {
-    wxBoxSizer *sizer = new wxBoxSizer(wxVERTICAL);
-
-    wxStaticBox *box = new wxStaticBox(m_configContent, wxID_ANY, "System Configuration");
-    box->SetForegroundColour(*wxWHITE);
-    wxStaticBoxSizer *configSizer = new wxStaticBoxSizer(box, wxVERTICAL);
-
-    wxFlexGridSizer *grid = new wxFlexGridSizer(2, 2, 10, 10);
-    grid->AddGrowableCol(1, 1);
-
-    auto hostnameLabel = new wxStaticText(m_configContent, wxID_ANY, "Hostname");
-    hostnameLabel->SetForegroundColour(*wxWHITE);
-    auto hostnameInput = new wxTextCtrl(m_configContent, wxID_ANY);
-    hostnameInput->SetBackgroundColour(wxColour(31, 41, 55));
-    hostnameInput->SetForegroundColour(*wxWHITE);
-
-    grid->Add(hostnameLabel, 0, wxALIGN_CENTER_VERTICAL);
-    grid->Add(hostnameInput, 1, wxEXPAND);
-
-    auto langLabel = new wxStaticText(m_configContent, wxID_ANY, "Language");
-    langLabel->SetForegroundColour(*wxWHITE);
-    wxChoice *lang = new wxChoice(m_configContent, wxID_ANY);
-    wxArrayString languages;
-    languages.Add("English (US)");
-    languages.Add("English (UK)");
-    languages.Add("Spanish");
-    languages.Add("French");
-    lang->Append(languages);
-    lang->SetSelection(0);
-
-    grid->Add(langLabel, 0, wxALIGN_CENTER_VERTICAL);
-    grid->Add(lang, 1, wxEXPAND);
-
-    configSizer->Add(grid, 1, wxEXPAND | wxALL, 5);
-    sizer->Add(configSizer, 0, wxEXPAND | wxALL, 10);
-
+    SystemTab* systemTab = new SystemTab(m_configContent);
+    wxBoxSizer* sizer = new wxBoxSizer(wxVERTICAL);
+    sizer->Add(systemTab, 1, wxEXPAND);
     m_configContent->SetSizer(sizer);
+    m_configContent->Layout();
 }
 
 void SQLTab::CreateCustomizeTab()
