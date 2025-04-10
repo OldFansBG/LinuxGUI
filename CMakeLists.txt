@@ -125,6 +125,7 @@ set(SOURCES
    CustomizeTab.cpp
    FilesystemSelectionDialog.cpp
    SystemTab.cpp
+   MongoDBPanel.cpp
 )
 
 # Header files (as in your file)
@@ -139,6 +140,7 @@ set(HEADERS
    SettingsDialog.h
    ContainerManager.h
    SettingsManager.h
+   MongoDBPanel.h
 )
 
 # Resource files
