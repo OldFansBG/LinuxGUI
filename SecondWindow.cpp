@@ -180,6 +180,8 @@ private:
 
 //---------------------------------------------------------------------
 // OverlayFrame class
+//---------------------------------------------------------------------
+// OverlayFrame class (Copied from the OLD working version)
 class OverlayFrame : public wxDialog
 {
 public:
@@ -226,7 +228,7 @@ private:
         if (m_parentWindow)
         {
             wxRect clientRect = m_parentWindow->GetClientRect();
-            // Ensure client rect is valid before proceeding
+            // Ensure client rect is valid before proceeding (minor improvement added here)
             if (clientRect.GetWidth() > 0 && clientRect.GetHeight() > 0)
             {
                 SetPosition(m_parentWindow->ClientToScreen(clientRect.GetTopLeft()));
@@ -243,7 +245,7 @@ private:
     void OnParentMoveOrResize(wxEvent &event)
     {
         UpdatePositionAndSize();
-        event.Skip(); // Allow other handlers to process
+        event.Skip(); // Allow other handlers to process (added from new version - good practice)
     }
 
     void OnPaint(wxPaintEvent &event)
@@ -261,50 +263,34 @@ private:
         DrawLoadingAnimation(dc, size);
     }
 
+    // *** Uses the OLD DrawLoadingAnimation logic ***
     void DrawLoadingAnimation(wxDC &dc, const wxSize &size)
     {
-        // Use Graphics Context for anti-aliasing
-        wxGraphicsContext *gc = wxGraphicsContext::Create(dc.GetWindow());
-        if (!gc)
-            return; // Check if context creation failed
-
         wxPoint center(size.GetWidth() / 2, size.GetHeight() / 2);
-        int radius = std::min(size.GetWidth(), size.GetHeight()) / 8; // Adjusted radius
+        int radius = std::min(size.GetWidth(), size.GetHeight()) / 6; // Original radius calculation
         int numPoints = 8;
-        int pointRadius = std::max(3, radius / 5); // Adjusted point size
+        int pointRadius = radius / 4; // Original point radius calculation
 
-        gc->SetAntialiasMode(wxANTIALIAS_DEFAULT);
-        gc->SetBrush(wxBrush(*wxWHITE)); // Use white brush
-        gc->SetPen(*wxTRANSPARENT_PEN);
+        // Use non-transparent pen and brush for solid dots
+        dc.SetBrush(*wxWHITE_BRUSH);
+        dc.SetPen(*wxWHITE_PEN); // Original pen
 
         for (int i = 0; i < numPoints; ++i)
         {
-            // Calculate alpha based on position in the cycle for a fading effect
-            double phase = fmod(m_animationAngle + (2.0 * M_PI * i / numPoints), 2.0 * M_PI);
-            int alpha = static_cast<int>(128 + 127 * cos(phase)); // Vary alpha
-
             double angle = m_animationAngle + (2.0 * M_PI * i / numPoints);
             int x = center.x + static_cast<int>(radius * cos(angle));
             int y = center.y + static_cast<int>(radius * sin(angle));
-
-            // Apply alpha to the brush
-            wxColour pointColor = *wxWHITE;
-            pointColor.Set(pointColor.Red(), pointColor.Green(), pointColor.Blue(), alpha);
-            gc->SetBrush(wxBrush(pointColor));
-
-            // Draw the circle
-            gc->DrawEllipse(x - pointRadius, y - pointRadius, pointRadius * 2, pointRadius * 2);
+            dc.DrawCircle(x, y, pointRadius); // Original drawing call
         }
-
-        delete gc; // Clean up graphics context
     }
 
+    // *** Uses the OLD OnTimer logic ***
     void OnTimer(wxTimerEvent &event)
     {
-        m_animationAngle += 0.15; // Adjust speed
+        m_animationAngle += 0.1; // Original speed
         if (m_animationAngle > 2.0 * M_PI)
             m_animationAngle -= 2.0 * M_PI;
-        Refresh(false); // Refresh without erasing background (reduces flicker)
+        Refresh(); // Original Refresh call
     }
 
     double m_animationAngle;
