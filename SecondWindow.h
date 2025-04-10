@@ -2,33 +2,27 @@
 #define SECONDWINDOW_H
 
 #include <wx/wx.h>
-#include <wx/thread.h> // VERY IMPORTANT: Include wx/thread.h
+#include <wx/thread.h>
+// #include <wx/listctrl.h> // No longer needed directly here after separating MongoDBPanel
 #include "DesktopTab.h"
 #include "ConfigTab.h"
 #include "LinuxTerminalPanel.h"
 #include "OSDetector.h"
 #include "ContainerManager.h"
 #include "FlatpakStore.h"
-#include <mongocxx/client.hpp>
+#include "WindowIDs.h"         // <<< Make sure this is included for the IDs
+#include <mongocxx/client.hpp> // Keep MongoDB includes needed by SecondWindow itself
 #include <mongocxx/instance.hpp>
 
 #ifdef _WIN32
 #include "WinTerminalManager.h"
 #endif
 
+// Forward declarations
 class OverlayFrame;
+class MongoDBPanel; // <<< Forward Declaration
 
-enum
-{
-    ID_TERMINAL_TAB = 1001,
-    ID_SQL_TAB,
-    ID_NEXT_BUTTON,
-    ID_MONGODB_BUTTON,
-    ID_MONGODB_PANEL_CLOSE
-};
-
-class MongoDBPanel;
-
+// --- SecondWindow Definition ---
 class SecondWindow : public wxFrame
 {
 public:
@@ -53,7 +47,7 @@ private:
     SQLTab *m_sqlTab;
     LinuxTerminalPanel *m_terminalPanel;
     FlatpakStore *m_flatpakStore;
-    MongoDBPanel *m_mongoPanel;
+    MongoDBPanel *m_mongoPanel; // <<< Pointer to the panel
 
     wxString m_isoPath;
     wxString m_projectDir;
@@ -73,7 +67,7 @@ private:
     bool m_isClosing;
     wxTimer *m_closeTimer;
 
-    wxWindow *m_lastTab; // Added to track the last active tab
+    wxWindow *m_lastTab;
 
 #ifdef _WIN32
     WinTerminalManager *m_winTerminalManager;
@@ -83,25 +77,16 @@ private:
     void StartPythonExecutable();
     void CleanupThread();
 
+    // Event Handlers for SecondWindow
     void OnClose(wxCloseEvent &event);
     void OnNext(wxCommandEvent &event);
     void OnTabChanged(wxCommandEvent &event);
     void OnMongoDBButton(wxCommandEvent &event);
-    void OnMongoDBPanelClose(wxCommandEvent &event);
+    void OnMongoDBPanelClose(wxCommandEvent &event); // Handles close request
     void OnCloseTimer(wxTimerEvent &event);
     void DoDestroy();
 
     wxDECLARE_EVENT_TABLE();
-};
-
-class MongoDBPanel : public wxPanel
-{
-public:
-    MongoDBPanel(wxWindow *parent);
-    void LoadMongoDBContent();
-
-private:
-    wxTextCtrl *m_contentDisplay;
 };
 
 #endif // SECONDWINDOW_H

@@ -1,5 +1,8 @@
 #include "SecondWindow.h"
 #include "DesktopTab.h"
+#include "MongoDBPanel.h" // <<< Include the separated header
+#include "WindowIDs.h"    // <<< Ensure this includes ID_MONGODB_PANEL_CLOSE
+#include "CustomEvents.h" // <<< Include for FILE_COPY_COMPLETE_EVENT etc.
 #include <wx/utils.h>
 #include <wx/statline.h>
 #include <wx/process.h>
@@ -8,19 +11,25 @@
 #include <wx/file.h>
 #include <wx/arrstr.h>
 #include <wx/log.h>
-#include <cmath>
-#include <chrono>
-#include <mongocxx/uri.hpp>
-#include <mongocxx/client.hpp>
-#include <mongocxx/collection.hpp>
-#include <bsoncxx/builder/stream/document.hpp>
-#include <bsoncxx/json.hpp>
+#include <cmath>         // For M_PI, fmod, cos, sin in OverlayFrame
+#include <chrono>        // For std::chrono (used indirectly)
+#include <iomanip>       // For std::put_time (used indirectly)
+#include <fstream>       // For std::ifstream (used indirectly)
+#include <sstream>       // For std::stringstream (used indirectly)
+#include <string>        // For std::string
+#include <wx/graphics.h> // For wxGraphicsContext in OverlayFrame
+
+// MongoDB includes needed by SecondWindow (minimal if panel handles logic)
+#include <mongocxx/instance.hpp> // Still needed for static instance
 
 #ifdef __WXMSW__
 #include <windows.h>
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
+// Define if not present in your SDK version
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
 #endif
 
 // Initialize static member
@@ -46,6 +55,7 @@ public:
                 file.ReadAll(&containerId);
                 containerId.Trim();
 
+                // Update FlatpakStore and SQLTab if they exist
                 if (m_parent->GetFlatpakStore())
                 {
                     m_parent->GetFlatpakStore()->SetContainerId(containerId);
@@ -57,6 +67,7 @@ public:
                     wxLogDebug("Updated SQLTab container ID: %s", containerId);
                 }
 
+                // Detect GUI Environment
                 wxString guiDetectCommand = wxString::Format("docker exec %s cat /root/custom_iso/detected_gui.txt", containerId);
                 wxArrayString output, errors;
                 int exitCode = wxExecute(guiDetectCommand, output, errors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE);
@@ -65,10 +76,11 @@ public:
                 {
                     wxString guiName = output[0];
                     guiName.Trim(true).Trim(false);
-                    guiName.Replace("\n", "");
+                    guiName.Replace("\n", ""); // Clean up potential newline
 
                     wxLogDebug("Detected GUI environment before event: %s", guiName);
 
+                    // Save GUI name locally
                     wxString localGuiPath = wxFileName(m_parent->GetProjectDir(), "detected_gui.txt").GetFullPath();
                     wxFile guiFile;
                     if (guiFile.Create(localGuiPath, true) && guiFile.IsOpened())
@@ -78,16 +90,26 @@ public:
                         wxLogDebug("GUI name saved to file: %s", localGuiPath);
                     }
 
+                    // Notify DesktopTab
                     if (m_parent->GetDesktopTab())
                     {
                         wxCommandEvent *guiEvent = new wxCommandEvent(FILE_COPY_COMPLETE_EVENT);
                         guiEvent->SetString(guiName);
                         wxLogDebug("Posting event with GUI name: %s", guiName);
                         wxPostEvent(m_parent->GetDesktopTab(), *guiEvent);
-                        delete guiEvent;
+                        delete guiEvent; // Clean up the event object
                     }
                 }
+                else
+                {
+                    wxLogError("Failed to detect GUI environment or no output. ExitCode: %d", exitCode);
+                }
+                // Execute initial command in terminal if applicable
                 m_parent->ExecuteDockerCommand(containerId);
+            }
+            else
+            {
+                wxLogError("Could not open container_id.txt file: %s", containerIdPath);
             }
         }
     }
@@ -133,7 +155,21 @@ public:
                         wxMessageBox("ISO creation succeeded but failed to copy to host.", "Error", wxICON_ERROR);
                     }
                 }
+                else
+                {
+                    wxLogError("Could not open container_id.txt during ISO copy phase.");
+                    wxMessageBox("ISO creation succeeded but failed read container ID to copy.", "Error", wxICON_ERROR);
+                }
             }
+            else
+            {
+                wxLogError("ISO creation process failed with status: %d", status);
+                wxMessageBox("ISO creation process failed!", "Error", wxICON_ERROR);
+            }
+            // Re-enable the 'Next' button regardless of success/failure
+            wxButton *nextButton = wxDynamicCast(m_parent->FindWindow(ID_NEXT_BUTTON), wxButton);
+            if (nextButton)
+                nextButton->Enable();
         }
     }
 
@@ -154,32 +190,34 @@ public:
         SetBackgroundStyle(wxBG_STYLE_PAINT);
 
         m_parentWindow = parent;
-        UpdatePositionAndSize();
+        UpdatePositionAndSize(); // Set initial position/size
 
         m_animationAngle = 0.0;
 
         Bind(wxEVT_PAINT, &OverlayFrame::OnPaint, this);
         Bind(wxEVT_TIMER, &OverlayFrame::OnTimer, this);
 
+        // Bind parent move/size events to keep overlay aligned
         if (parent)
         {
             parent->Bind(wxEVT_MOVE, &OverlayFrame::OnParentMoveOrResize, this);
             parent->Bind(wxEVT_SIZE, &OverlayFrame::OnParentMoveOrResize, this);
         }
 
-        m_timer.SetOwner(this);
-        m_timer.Start(30);
+        m_timer.SetOwner(this); // Associate timer with this window
+        m_timer.Start(30);      // Animation frame rate
         Show(true);
     }
 
     ~OverlayFrame()
     {
+        // Unbind events when the overlay is destroyed
         if (m_parentWindow)
         {
             m_parentWindow->Unbind(wxEVT_MOVE, &OverlayFrame::OnParentMoveOrResize, this);
             m_parentWindow->Unbind(wxEVT_SIZE, &OverlayFrame::OnParentMoveOrResize, this);
         }
-        m_timer.Stop();
+        m_timer.Stop(); // Stop the animation timer
     }
 
 private:
@@ -188,73 +226,103 @@ private:
         if (m_parentWindow)
         {
             wxRect clientRect = m_parentWindow->GetClientRect();
-            SetPosition(m_parentWindow->ClientToScreen(clientRect.GetTopLeft()));
-            SetSize(clientRect.GetSize());
+            // Ensure client rect is valid before proceeding
+            if (clientRect.GetWidth() > 0 && clientRect.GetHeight() > 0)
+            {
+                SetPosition(m_parentWindow->ClientToScreen(clientRect.GetTopLeft()));
+                SetSize(clientRect.GetSize());
+            }
+            else
+            {
+                // Optionally hide or handle cases where parent size is zero/invalid
+                Hide();
+            }
         }
     }
 
     void OnParentMoveOrResize(wxEvent &event)
     {
         UpdatePositionAndSize();
+        event.Skip(); // Allow other handlers to process
     }
 
     void OnPaint(wxPaintEvent &event)
     {
-        wxAutoBufferedPaintDC dc(this);
-        dc.Clear();
+        wxAutoBufferedPaintDC dc(this); // Use buffered DC for flicker-free drawing
+        dc.Clear();                     // Clear background
+
         wxSize size = GetClientSize();
-        dc.SetBrush(wxBrush(wxColour(0, 0, 0, 230)));
+        // Draw semi-transparent background
+        dc.SetBrush(wxBrush(wxColour(0, 0, 0, 230))); // Adjust alpha for desired transparency
         dc.SetPen(*wxTRANSPARENT_PEN);
         dc.DrawRectangle(0, 0, size.GetWidth(), size.GetHeight());
+
+        // Draw the loading animation centered
         DrawLoadingAnimation(dc, size);
     }
 
     void DrawLoadingAnimation(wxDC &dc, const wxSize &size)
     {
-        wxPoint center(size.GetWidth() / 2, size.GetHeight() / 2);
-        int radius = std::min(size.GetWidth(), size.GetHeight()) / 6;
-        int numPoints = 8;
-        int pointRadius = radius / 4;
+        // Use Graphics Context for anti-aliasing
+        wxGraphicsContext *gc = wxGraphicsContext::Create(dc.GetWindow());
+        if (!gc)
+            return; // Check if context creation failed
 
-        dc.SetBrush(*wxWHITE_BRUSH);
-        dc.SetPen(*wxWHITE_PEN);
+        wxPoint center(size.GetWidth() / 2, size.GetHeight() / 2);
+        int radius = std::min(size.GetWidth(), size.GetHeight()) / 8; // Adjusted radius
+        int numPoints = 8;
+        int pointRadius = std::max(3, radius / 5); // Adjusted point size
+
+        gc->SetAntialiasMode(wxANTIALIAS_DEFAULT);
+        gc->SetBrush(wxBrush(*wxWHITE)); // Use white brush
+        gc->SetPen(*wxTRANSPARENT_PEN);
 
         for (int i = 0; i < numPoints; ++i)
         {
+            // Calculate alpha based on position in the cycle for a fading effect
+            double phase = fmod(m_animationAngle + (2.0 * M_PI * i / numPoints), 2.0 * M_PI);
+            int alpha = static_cast<int>(128 + 127 * cos(phase)); // Vary alpha
+
             double angle = m_animationAngle + (2.0 * M_PI * i / numPoints);
             int x = center.x + static_cast<int>(radius * cos(angle));
             int y = center.y + static_cast<int>(radius * sin(angle));
-            dc.DrawCircle(x, y, pointRadius);
+
+            // Apply alpha to the brush
+            wxColour pointColor = *wxWHITE;
+            pointColor.Set(pointColor.Red(), pointColor.Green(), pointColor.Blue(), alpha);
+            gc->SetBrush(wxBrush(pointColor));
+
+            // Draw the circle
+            gc->DrawEllipse(x - pointRadius, y - pointRadius, pointRadius * 2, pointRadius * 2);
         }
+
+        delete gc; // Clean up graphics context
     }
 
     void OnTimer(wxTimerEvent &event)
     {
-        m_animationAngle += 0.1;
+        m_animationAngle += 0.15; // Adjust speed
         if (m_animationAngle > 2.0 * M_PI)
             m_animationAngle -= 2.0 * M_PI;
-        Refresh();
+        Refresh(false); // Refresh without erasing background (reduces flicker)
     }
 
     double m_animationAngle;
     wxTimer m_timer;
-    wxWindow *m_parentWindow;
+    wxWindow *m_parentWindow; // Pointer to the window this overlay covers
 };
 //---------------------------------------------------------------------
 
-wxDEFINE_EVENT(PYTHON_TASK_COMPLETED, wxCommandEvent);
-wxDEFINE_EVENT(PYTHON_LOG_UPDATE, wxCommandEvent);
-
-// Event table
+// Event table for SecondWindow
 wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)
     EVT_CLOSE(SecondWindow::OnClose)
-        EVT_TIMER(wxID_ANY, SecondWindow::OnCloseTimer)
-            EVT_BUTTON(ID_TERMINAL_TAB, SecondWindow::OnTabChanged)
-                EVT_BUTTON(ID_SQL_TAB, SecondWindow::OnTabChanged)
-                    EVT_BUTTON(ID_MONGODB_BUTTON, SecondWindow::OnMongoDBButton)
-                        EVT_BUTTON(ID_NEXT_BUTTON, SecondWindow::OnNext)
-                            EVT_BUTTON(ID_MONGODB_PANEL_CLOSE, SecondWindow::OnMongoDBPanelClose)
-                                wxEND_EVENT_TABLE()
+        EVT_TIMER(wxID_ANY, SecondWindow::OnCloseTimer) // Catch any timer event for the close timer
+    EVT_BUTTON(ID_TERMINAL_TAB, SecondWindow::OnTabChanged)
+        EVT_BUTTON(ID_SQL_TAB, SecondWindow::OnTabChanged)
+            EVT_BUTTON(ID_MONGODB_BUTTON, SecondWindow::OnMongoDBButton)  // Handles click on main MongoDB button
+    EVT_BUTTON(ID_MONGODB_PANEL_CLOSE, SecondWindow::OnMongoDBPanelClose) // Handles close request *from* the panel
+    EVT_BUTTON(ID_NEXT_BUTTON, SecondWindow::OnNext)
+        wxEND_EVENT_TABLE()
 
     //---------------------------------------------------------------------
     // ContainerCleanupThread class
@@ -273,6 +341,7 @@ protected:
             wxLogDebug("ContainerCleanupThread::Entry - Container ID is empty, exiting thread.");
             return (ExitCode)0;
         }
+        // Use ContainerManager to perform cleanup
         ContainerManager::Get().CleanupContainer(m_containerId);
         wxLogDebug("ContainerCleanupThread::Entry - Cleanup thread finished for container: %s", m_containerId);
         return (ExitCode)0;
@@ -283,13 +352,15 @@ private:
 };
 //---------------------------------------------------------------------
 
+// --- SecondWindow Implementation ---
+
 SecondWindow::SecondWindow(wxWindow *parent,
                            const wxString &title,
                            const wxString &isoPath,
                            const wxString &projectDir,
-                           DesktopTab *desktopTab)
+                           DesktopTab *desktopTab) // Keep DesktopTab parameter
     : wxFrame(parent, wxID_ANY, title,
-              wxDefaultPosition, wxSize(800, 650),
+              wxDefaultPosition, wxSize(800, 650), // Adjusted default size
               wxDEFAULT_FRAME_STYLE | wxSYSTEM_MENU | wxCAPTION |
                   wxCLOSE_BOX | wxCLIP_CHILDREN | wxMINIMIZE_BOX |
                   wxMAXIMIZE_BOX | wxRESIZE_BORDER),
@@ -297,7 +368,11 @@ SecondWindow::SecondWindow(wxWindow *parent,
       m_projectDir(projectDir),
       m_threadRunning(false),
       m_overlay(nullptr),
-      m_desktopTab(desktopTab),
+      m_desktopTab(desktopTab), // Store the passed DesktopTab pointer
+      m_terminalTab(nullptr),   // Initialize pointers
+      m_sqlTab(nullptr),
+      m_terminalPanel(nullptr),
+      m_flatpakStore(nullptr), // Initialize FlatpakStore pointer
       m_mongoPanel(nullptr),
       m_cleanupThread(nullptr),
       m_isClosing(false),
@@ -305,30 +380,40 @@ SecondWindow::SecondWindow(wxWindow *parent,
       m_lastTab(nullptr)
 #ifdef __WXMSW__
       ,
-      m_winTerminalManager(nullptr)
+      m_winTerminalManager(nullptr) // Initialize WinTerminalManager pointer
 #endif
 {
     wxLogDebug("SecondWindow constructor: desktopTab pointer = %p", m_desktopTab);
 
 #ifdef __WXMSW__
+    // Apply dark mode hints for Windows title bar/borders if applicable
     BOOL value = TRUE;
-    DwmSetWindowAttribute(GetHandle(), DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
+    ::DwmSetWindowAttribute(GetHandle(), DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
 #endif
 
+    // Attempt to get container ID immediately if available (might be empty initially)
     m_containerId = ContainerManager::Get().GetCurrentContainerId();
-    CreateControls();
+    wxLogDebug("SecondWindow constructor initial container ID: %s", m_containerId);
+
+    CreateControls(); // Create all UI elements
     Centre();
-    SetBackgroundColour(wxColour(40, 44, 52));
-    m_lastTab = m_terminalTab; // Set initial last tab
+    SetBackgroundColour(wxColour(40, 44, 52)); // Set a base background color
+    m_lastTab = m_terminalTab;                 // Set initial last visible tab
     Show(true);
+
+    // Show overlay while Python script runs
     m_overlay = new OverlayFrame(this);
 
+    // Start the backend Python process
     StartPythonExecutable();
 
+    // Initialize Windows Terminal if on Windows
 #ifdef __WXMSW__
     if (m_winTerminalManager)
     {
-        // m_winTerminalManager->SendCommand(L" "); // Removed useless line
+        // Post-initialization command if needed after Python script provides container ID
+        // This might need to be deferred until OnTerminate of PythonProcess
+        // m_winTerminalManager->SendCommand(L"echo Terminal Ready\r\n");
     }
 #endif
 }
@@ -337,6 +422,7 @@ SecondWindow::~SecondWindow()
 {
     wxLogDebug("SecondWindow::~SecondWindow - START");
 
+    // Stop and delete the close timer if it exists
     if (m_closeTimer)
     {
         if (m_closeTimer->IsRunning())
@@ -345,90 +431,168 @@ SecondWindow::~SecondWindow()
         }
         delete m_closeTimer;
         m_closeTimer = nullptr;
+        wxLogDebug("SecondWindow::~SecondWindow - Closed timer deleted.");
     }
 
-    CleanupThread();
+    // Ensure the Python backend thread/process is signaled to stop if applicable
+    CleanupThread(); // (This function might need implementation depending on Python process management)
 
+    // Wait for the cleanup thread if it's running
     if (m_cleanupThread)
     {
-        wxLogDebug("SecondWindow::~SecondWindow - Waiting for cleanup thread to finish.");
+        wxLogDebug("SecondWindow::~SecondWindow - Waiting for container cleanup thread to finish.");
         if (m_cleanupThread->IsRunning())
-            m_cleanupThread->Wait();
-        delete m_cleanupThread;
+        {
+            m_cleanupThread->Wait(); // Block until the thread completes
+        }
+        delete m_cleanupThread; // Delete the thread object
         m_cleanupThread = nullptr;
+        wxLogDebug("SecondWindow::~SecondWindow - Container cleanup thread finished and deleted.");
     }
 
+    // Optional: Explicitly clean up the container if the thread didn't run/finish
+    // This is a fallback, the thread is the preferred way.
     if (!m_containerId.IsEmpty())
     {
-        wxLogDebug("SecondWindow::~SecondWindow - Skipping synchronous ContainerManager::CleanupContainer(). Should be handled by thread.");
+        // NOTE: Removing synchronous cleanup here as the thread *should* handle it.
+        // If issues arise where containers aren't cleaned up on close, this might be re-added
+        // with careful checks (e.g., check if thread existed and ran).
+        wxLogDebug("SecondWindow::~SecondWindow - Skipping synchronous container cleanup (handled by thread).");
     }
     else
     {
-        wxLogDebug("SecondWindow::~SecondWindow - m_containerId is empty, skipping CleanupContainer()");
+        wxLogDebug("SecondWindow::~SecondWindow - m_containerId is empty, skipping synchronous cleanup.");
     }
-    wxLogDebug("SecondWindow::~SecondWindow - END");
 
 #ifdef __WXMSW__
+    // Clean up Windows Terminal Manager
     delete m_winTerminalManager;
+    m_winTerminalManager = nullptr;
     wxLogDebug("SecondWindow::~SecondWindow - m_winTerminalManager deleted");
 #endif
+
+    wxLogDebug("SecondWindow::~SecondWindow - END");
 }
 
 void SecondWindow::CloseOverlay()
 {
     if (m_overlay)
     {
-        m_overlay->Destroy();
+        m_overlay->Hide();    // Hide it first
+        m_overlay->Destroy(); // Then destroy it
         m_overlay = nullptr;
+        wxLogDebug("Overlay closed and destroyed.");
     }
 }
 
 void SecondWindow::StartPythonExecutable()
 {
-    wxString pythonExePath = "script.exe";
+    wxString pythonExePath = "script.exe"; // Ensure this is in PATH or provide full path
+
+    // Check if the executable exists
+    if (!wxFileName::FileExists(pythonExePath))
+    {
+        pythonExePath = wxFileName::GetCwd() + wxFILE_SEP_PATH + "script.exe"; // Try current dir
+        if (!wxFileName::FileExists(pythonExePath))
+        {
+            wxMessageBox("Error: script.exe not found!\nPlease ensure it is in the application directory or system PATH.",
+                         "Executable Not Found", wxOK | wxICON_ERROR);
+            CloseOverlay(); // Close overlay if we can't start
+            // Optionally close the window or disable functionality
+            // GetParent()->Close(); // Example: Close the parent (MainFrame)
+            return;
+        }
+    }
+
+    // Ensure project and ISO paths are valid before proceeding
+    if (m_projectDir.IsEmpty() || !wxDirExists(m_projectDir))
+    {
+        wxMessageBox("Error: Project directory is invalid or does not exist.\nPath: " + m_projectDir,
+                     "Invalid Project Directory", wxOK | wxICON_ERROR);
+        CloseOverlay();
+        return;
+    }
+    if (m_isoPath.IsEmpty() || !wxFileExists(m_isoPath))
+    {
+        wxMessageBox("Error: ISO file path is invalid or the file does not exist.\nPath: " + m_isoPath,
+                     "Invalid ISO Path", wxOK | wxICON_ERROR);
+        CloseOverlay();
+        return;
+    }
+
     wxString command = wxString::Format("\"%s\" --project-dir \"%s\" --iso-path \"%s\"",
                                         pythonExePath, m_projectDir, m_isoPath);
+    wxLogDebug("Executing Python command: %s", command);
 
-    PythonProcess *proc = new PythonProcess(this);
-    long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);
+    PythonProcess *proc = new PythonProcess(this);                           // Use our custom process class
+    long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc); // Run hidden
 
     if (pid == 0)
     {
-        wxMessageBox("Failed to start Python executable!", "Error", wxICON_ERROR);
-        delete proc;
-        CloseOverlay();
+        wxLogError("Failed to start Python executable: %s", command);
+        wxMessageBox("Failed to launch the backend process (script.exe)!", "Execution Error", wxICON_ERROR);
+        delete proc;             // Clean up the process object
+        CloseOverlay();          // Close the loading overlay
+        m_threadRunning = false; // Ensure flag is reset
+        // Consider disabling further actions or closing the window here
     }
     else
     {
-        m_threadRunning = true;
+        wxLogDebug("Python executable started successfully, PID: %ld", pid);
+        m_threadRunning = true; // Indicate the process is running
     }
 }
 
+// This function might need more implementation if the Python process needs explicit stopping
 void SecondWindow::CleanupThread()
 {
     wxLogDebug("SecondWindow::CleanupThread - START");
     if (m_threadRunning)
     {
-        wxLogDebug("SecondWindow::CleanupThread - m_threadRunning is true, setting to false");
+        wxLogDebug("SecondWindow::CleanupThread - Backend process was running, setting flag to false.");
+        // If PythonProcess has a PID, you might send a signal here if graceful termination is needed
+        // e.g., if (python_pid > 0) wxKill(python_pid, wxSIGTERM);
         m_threadRunning = false;
     }
     else
     {
-        wxLogDebug("SecondWindow::CleanupThread - m_threadRunning is already false");
+        wxLogDebug("SecondWindow::CleanupThread - Backend process flag was already false.");
     }
     wxLogDebug("SecondWindow::CleanupThread - END");
 }
 
 void SecondWindow::ExecuteDockerCommand(const wxString &containerId)
 {
+    if (containerId.IsEmpty())
+    {
+        wxLogWarning("ExecuteDockerCommand called with empty container ID.");
+        return;
+    }
+
 #ifdef __WXMSW__
+    // For Windows Terminal Manager
     if (m_winTerminalManager)
     {
+        // Clear screen, execute docker command, then enter chroot
+        // Sending commands separated by '\r\n' simulates pressing Enter after each
         wxString command = wxString::Format(
-            "cls && docker exec -it %s /bin/bash\r\n"
-            "chroot /root/custom_iso/squashfs-root /bin/bash\r\n",
+            // L"cls\r\n" // Clear screen - might clear too early
+            L"docker exec -it %s /bin/bash\r\n" // Enter the container
+            // L"chroot /root/custom_iso/squashfs-root /bin/bash\r\n" // Enter chroot *after* entering container - User might need to type this
+            ,
             containerId);
+        wxLogDebug("Sending command to Windows Terminal: %s", command);
         m_winTerminalManager->SendCommand(command.ToStdWstring());
+    }
+#else // Assuming Linux Terminal Panel for non-Windows
+    if (m_terminalPanel)
+    {
+        // Linux terminal might handle this differently, possibly via the initial xterm command
+        // or by sending input directly if the terminal widget supports it.
+        // For a basic embedded xterm, the initial command is usually sufficient.
+        wxLogDebug("Linux terminal detected, initial command should handle container entry.");
+        // If you needed to send *more* commands later, you'd need a mechanism
+        // to write to the xterm's PTY (Pseudo-Terminal), which is more complex.
     }
 #endif
 }
@@ -437,181 +601,261 @@ void SecondWindow::CreateControls()
 {
     m_mainPanel = new wxPanel(this);
     wxBoxSizer *mainSizer = new wxBoxSizer(wxVERTICAL);
+    m_mainPanel->SetBackgroundColour(wxColour(40, 44, 52)); // Consistent background
 
-    // Top panel with MongoDB button
+    // --- Top panel with MongoDB button ---
     wxPanel *topPanel = new wxPanel(m_mainPanel);
-    topPanel->SetBackgroundColour(wxColour(20, 20, 20)); // Darker shade for distinction
+    topPanel->SetBackgroundColour(wxColour(20, 20, 20)); // Darker shade
     wxBoxSizer *topSizer = new wxBoxSizer(wxHORIZONTAL);
 
     wxButton *mongoButton = new wxButton(topPanel, ID_MONGODB_BUTTON, "MongoDB",
                                          wxDefaultPosition, wxSize(100, 30), wxBORDER_NONE);
+    // Style the button (Consider using ThemeConfig)
     mongoButton->SetBackgroundColour(wxColour(77, 171, 68)); // MongoDB green
     mongoButton->SetForegroundColour(*wxWHITE);
+    wxFont topButtonFont = mongoButton->GetFont();
+    topButtonFont.SetWeight(wxFONTWEIGHT_BOLD);
+    mongoButton->SetFont(topButtonFont);
 
     topSizer->AddStretchSpacer(1); // Push button to the right
     topSizer->Add(mongoButton, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
     topSizer->AddSpacer(10); // Right margin
     topPanel->SetSizer(topSizer);
 
-    // Tab Bar
+    // --- Tab Bar ---
     wxPanel *tabPanel = new wxPanel(m_mainPanel);
-    tabPanel->SetBackgroundColour(wxColour(30, 30, 30));
-    wxBoxSizer *tabSizer = new wxBoxSizer(wxHORIZONTAL);
-    wxBoxSizer *centeredTabSizer = new wxBoxSizer(wxHORIZONTAL);
+    tabPanel->SetBackgroundColour(wxColour(30, 30, 30));         // Tab bar background
+    wxBoxSizer *tabSizer = new wxBoxSizer(wxHORIZONTAL);         // Main sizer for centering
+    wxBoxSizer *centeredTabSizer = new wxBoxSizer(wxHORIZONTAL); // Holds the actual buttons
 
     wxButton *terminalButton = new wxButton(tabPanel, ID_TERMINAL_TAB, "TERMINAL",
-                                            wxDefaultPosition, wxSize(100, 40), wxBORDER_NONE);
-    terminalButton->SetBackgroundColour(wxColour(44, 49, 58));
+                                            wxDefaultPosition, wxSize(120, 40), wxBORDER_NONE); // Wider buttons
+    wxButton *sqlButton = new wxButton(tabPanel, ID_SQL_TAB, "CONFIG",                          // Renamed from SQL
+                                       wxDefaultPosition, wxSize(120, 40), wxBORDER_NONE);
+
+    // Initial styling (Terminal tab active by default)
+    terminalButton->SetBackgroundColour(wxColour(44, 49, 58)); // Active tab color
     terminalButton->SetForegroundColour(*wxWHITE);
+    sqlButton->SetBackgroundColour(wxColour(30, 30, 30));    // Inactive tab color
+    sqlButton->SetForegroundColour(wxColour(156, 163, 175)); // Dim text for inactive
 
-    wxStaticLine *separator1 = new wxStaticLine(tabPanel, wxID_ANY,
-                                                wxDefaultPosition, wxDefaultSize, wxLI_VERTICAL);
+    wxFont tabFont = terminalButton->GetFont();
+    tabFont.SetWeight(wxFONTWEIGHT_BOLD);
+    terminalButton->SetFont(tabFont);
+    sqlButton->SetFont(tabFont);
 
-    wxButton *sqlButton = new wxButton(tabPanel, ID_SQL_TAB, "CONFIG",
-                                       wxDefaultPosition, wxSize(100, 40), wxBORDER_NONE);
-    sqlButton->SetBackgroundColour(wxColour(30, 30, 30));
-    sqlButton->SetForegroundColour(wxColour(128, 128, 128));
-
+    // Add buttons to the centered sizer
     centeredTabSizer->Add(terminalButton, 0, wxEXPAND);
-    centeredTabSizer->Add(separator1, 0, wxEXPAND | wxTOP | wxBOTTOM, 5);
+    // Optional: Add a visual separator if desired
+    // wxStaticLine* separator = new wxStaticLine(tabPanel, wxID_ANY, wxDefaultPosition, wxSize(-1, 20), wxLI_VERTICAL);
+    // separator->SetBackgroundColour(wxColour(60,60,60)); // Separator color
+    // centeredTabSizer->Add(separator, 0, wxEXPAND | wxLEFT | wxRIGHT, 0);
     centeredTabSizer->Add(sqlButton, 0, wxEXPAND);
 
+    // Center the button group horizontally
     tabSizer->AddStretchSpacer(1);
     tabSizer->Add(centeredTabSizer, 0, wxALIGN_CENTER);
     tabSizer->AddStretchSpacer(1);
     tabPanel->SetSizer(tabSizer);
 
-    // Terminal/SQL/MongoDB Content
+    // --- Content Panels ---
+    // Terminal Tab Panel
     m_terminalTab = new wxPanel(m_mainPanel);
-    m_sqlTab = new SQLTab(m_mainPanel, m_projectDir);
-    m_mongoPanel = new MongoDBPanel(m_mainPanel);
-
+    m_terminalTab->SetBackgroundColour(wxColour(30, 30, 30)); // Match tab bar color or slightly different
     wxBoxSizer *terminalSizer = new wxBoxSizer(wxVERTICAL);
-    m_terminalTab->SetBackgroundColour(wxColour(30, 30, 30));
 
     OSDetector::OS currentOS = m_osDetector.GetCurrentOS();
     if (currentOS == OSDetector::OS::Linux)
     {
+#ifdef __WXGTK__ // Ensure Linux-specific code is guarded
         m_terminalPanel = new LinuxTerminalPanel(m_terminalTab);
-        m_terminalPanel->SetMinSize(wxSize(680, 400));
-        terminalSizer->Add(m_terminalPanel, 1, wxEXPAND | wxALL, 5);
+        m_terminalPanel->SetMinSize(wxSize(680, 400));               // Minimum size
+        terminalSizer->Add(m_terminalPanel, 1, wxEXPAND | wxALL, 5); // Add with padding
+#else
+        // Fallback for Linux builds without GTK or specific terminal widget
+        wxStaticText *linuxPlaceholder = new wxStaticText(m_terminalTab, wxID_ANY, "Linux Terminal Placeholder");
+        terminalSizer->Add(linuxPlaceholder, 1, wxEXPAND | wxALL, 5);
+#endif
     }
 #ifdef __WXMSW__
-    else
+    else if (currentOS == OSDetector::OS::Windows)
     {
-        wxPanel *winTerminalPanel = new wxPanel(m_terminalTab, wxID_ANY,
-                                                wxDefaultPosition, wxSize(680, 400));
-        winTerminalPanel->SetBackgroundColour(wxColour(30, 30, 30));
-        terminalSizer->Add(winTerminalPanel, 1, wxEXPAND | wxALL, 5);
+        wxPanel *winTerminalPanel = new wxPanel(m_terminalTab, wxID_ANY, wxDefaultPosition, wxDefaultSize);
+        // Let the sizer manage the size, no need for explicit size here unless required
+        winTerminalPanel->SetBackgroundColour(wxColour(12, 12, 12));  // Standard Windows Terminal black
+        terminalSizer->Add(winTerminalPanel, 1, wxEXPAND | wxALL, 0); // No padding for embedded terminal
 
         m_winTerminalManager = new WinTerminalManager(winTerminalPanel);
         if (!m_winTerminalManager->Initialize())
         {
             wxLogError("Failed to initialize Windows terminal");
+            // Optionally display an error message in the panel
+            delete m_winTerminalManager;
+            m_winTerminalManager = nullptr;
+            wxStaticText *errorText = new wxStaticText(winTerminalPanel, wxID_ANY, "Failed to initialize embedded terminal.");
+            wxBoxSizer *errorSizer = new wxBoxSizer(wxVERTICAL);
+            errorSizer->Add(errorText, 1, wxCENTER | wxALL, 10);
+            winTerminalPanel->SetSizer(errorSizer);
         }
     }
 #endif
-
+    else
+    {
+        // Placeholder for other OS or if no specific terminal is implemented
+        wxStaticText *osPlaceholder = new wxStaticText(m_terminalTab, wxID_ANY, "Terminal not available on this OS.");
+        terminalSizer->Add(osPlaceholder, 1, wxEXPAND | wxALL, 5);
+    }
     m_terminalTab->SetSizer(terminalSizer);
-    m_sqlTab->Hide();
-    m_mongoPanel->Hide();
 
-    // Flatpak Store
-    m_flatpakStore = nullptr; // Initialize as nullptr
-    // m_flatpakStore->Hide(); // Removed
+    // Config Tab Panel (using SQLTab class)
+    m_sqlTab = new SQLTab(m_mainPanel, m_projectDir); // Pass projectDir
+    m_sqlTab->Hide();                                 // Starts hidden
 
-    // Bottom Button Panel
+    // MongoDB Panel
+    m_mongoPanel = new MongoDBPanel(m_mainPanel); // Create instance
+    m_mongoPanel->Hide();                         // Starts hidden
+
+    // --- Bottom Button Panel ---
     wxPanel *buttonPanel = new wxPanel(m_mainPanel);
-    buttonPanel->SetBackgroundColour(wxColour(30, 30, 30));
+    buttonPanel->SetBackgroundColour(wxColour(30, 30, 30)); // Match tab bar
     wxBoxSizer *buttonSizer = new wxBoxSizer(wxHORIZONTAL);
 
-    wxButton *nextButton = new wxButton(buttonPanel, ID_NEXT_BUTTON, "Next",
-                                        wxDefaultPosition, wxSize(120, 35));
-    nextButton->SetBackgroundColour(wxColour(189, 147, 249));
+    wxButton *nextButton = new wxButton(buttonPanel, ID_NEXT_BUTTON, "Create ISO", // More descriptive label
+                                        wxDefaultPosition, wxSize(140, 35));       // Wider button
+    // Style the button (Consider using ThemeConfig)
+    nextButton->SetBackgroundColour(wxColour(189, 147, 249)); // A distinct accent color
     nextButton->SetForegroundColour(*wxWHITE);
+    wxFont bottomButtonFont = nextButton->GetFont();
+    bottomButtonFont.SetWeight(wxFONTWEIGHT_BOLD);
+    nextButton->SetFont(bottomButtonFont);
 
-    buttonSizer->AddStretchSpacer(1);
-    buttonSizer->Add(nextButton, 0, wxALL | wxALIGN_CENTER_VERTICAL, 5);
+    buttonSizer->AddStretchSpacer(1);                                     // Push button to the right
+    buttonSizer->Add(nextButton, 0, wxALL | wxALIGN_CENTER_VERTICAL, 10); // Add padding
     buttonPanel->SetSizer(buttonSizer);
 
-    // Assemble Main Layout with a separator
+    // --- Assemble Main Layout ---
     mainSizer->Add(topPanel, 0, wxEXPAND);
-    mainSizer->Add(new wxStaticLine(m_mainPanel, wxID_ANY, wxDefaultPosition,
-                                    wxDefaultSize, wxLI_HORIZONTAL),
-                   0, wxEXPAND);
-    mainSizer->Add(tabPanel, 0, wxEXPAND);
-    mainSizer->Add(m_terminalTab, 1, wxEXPAND);
-    mainSizer->Add(m_sqlTab, 1, wxEXPAND);
-    mainSizer->Add(m_mongoPanel, 1, wxEXPAND);
-    // mainSizer->Add(m_flatpakStore, 1, wxEXPAND); // Removed
-    mainSizer->Add(buttonPanel, 0, wxEXPAND);
+    // Optional: Add a separator line below top bar
+    // mainSizer->Add(new wxStaticLine(m_mainPanel, wxID_ANY), 0, wxEXPAND | wxLEFT | wxRIGHT, 5);
+    mainSizer->Add(tabPanel, 0, wxEXPAND);      // Add the tab bar
+    mainSizer->Add(m_terminalTab, 1, wxEXPAND); // Add terminal content panel (initially shown)
+    mainSizer->Add(m_sqlTab, 1, wxEXPAND);      // Add config content panel (initially hidden)
+    mainSizer->Add(m_mongoPanel, 1, wxEXPAND);  // Add mongo content panel (initially hidden)
+    // Add a separator line above bottom buttons
+    mainSizer->Add(new wxStaticLine(m_mainPanel, wxID_ANY), 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 5);
+    mainSizer->Add(buttonPanel, 0, wxEXPAND); // Add bottom button panel
 
     m_mainPanel->SetSizer(mainSizer);
-    SetMinSize(wxSize(800, 600));
+
+    // Set overall frame size constraints
+    SetMinSize(wxSize(800, 650)); // Adjusted minimum size
+    SetSize(wxSize(850, 700));    // Slightly larger default size
 }
 
 void SecondWindow::OnClose(wxCloseEvent &event)
 {
+    if (m_isClosing)
+    {
+        wxLogDebug("SecondWindow::OnClose - Already in closing process, skipping.");
+        event.Skip(); // Allow default processing if needed, or just return
+        return;
+    }
+    wxLogDebug("SecondWindow::OnClose - Starting close process.");
     m_isClosing = true;
-    Hide();
+    Hide(); // Hide the window immediately
+
+    // Start the asynchronous cleanup
     CleanupContainerAsync();
 
+    // Start a timer to periodically check if the cleanup thread is done
     if (!m_closeTimer)
     {
-        m_closeTimer = new wxTimer(this);
+        m_closeTimer = new wxTimer(this); // Use 'this' as the owner
     }
-    m_closeTimer->Start(100);
+    // Start timer with a reasonable interval (e.g., 200ms)
+    m_closeTimer->Start(200);
+
+    // Don't destroy the window yet, let the timer handle it
+    // event.Skip(false); // Prevent immediate destruction if default is to destroy
 }
 
 void SecondWindow::OnCloseTimer(wxTimerEvent &event)
 {
+    wxLogDebug("SecondWindow::OnCloseTimer - Check");
+    // Check if the cleanup thread exists and is still running
     if (m_cleanupThread && m_cleanupThread->IsRunning())
     {
         wxLogDebug("SecondWindow::OnCloseTimer - Cleanup thread still running, waiting...");
-        return;
+        return; // Wait for the next timer event
     }
 
-    if (m_closeTimer)
+    // If timer is running, stop it
+    if (m_closeTimer && m_closeTimer->IsRunning())
     {
         m_closeTimer->Stop();
+        wxLogDebug("SecondWindow::OnCloseTimer - Timer stopped.");
     }
 
-    wxLogDebug("SecondWindow::OnCloseTimer - Cleanup thread finished, destroying window");
+    wxLogDebug("SecondWindow::OnCloseTimer - Cleanup thread finished or not running, proceeding to destroy window.");
+    // Use CallAfter to ensure destruction happens safely outside the event handler
     CallAfter(&SecondWindow::DoDestroy);
 }
 
 void SecondWindow::DoDestroy()
 {
-    wxLogDebug("SecondWindow::DoDestroy - Actually destroying window");
-    Destroy();
+    wxLogDebug("SecondWindow::DoDestroy - Calling Destroy().");
+    Destroy(); // Actually destroy the window object
 }
 
 void SecondWindow::CleanupContainerAsync()
 {
-    if (m_cleanupThread && m_cleanupThread->IsRunning())
+    wxLogDebug("SecondWindow::CleanupContainerAsync - Attempting to start cleanup thread.");
+    if (m_containerId.IsEmpty())
     {
-        wxLogDebug("SecondWindow::CleanupContainerAsync - Cleanup thread is still running.");
+        wxLogDebug("SecondWindow::CleanupContainerAsync - No container ID, skipping cleanup thread.");
+        // If closing, ensure the close timer logic progresses IF the timer exists
+        if (m_isClosing && m_closeTimer && !m_closeTimer->IsRunning())
+        {
+            // If timer isn't running somehow, force destroy check
+            CallAfter(&SecondWindow::DoDestroy);
+        }
         return;
     }
 
-    if (m_cleanupThread)
+    // Check if thread already exists and is running
+    if (m_cleanupThread && m_cleanupThread->IsRunning())
     {
-        delete m_cleanupThread;
-        m_cleanupThread = nullptr;
+        wxLogDebug("SecondWindow::CleanupContainerAsync - Cleanup thread is already running.");
+        return; // Don't start another one
     }
 
+    // Clean up old thread object if it exists but isn't running
+    if (m_cleanupThread)
+    {
+        // No need to Wait() here, as we checked IsRunning() above
+        delete m_cleanupThread;
+        m_cleanupThread = nullptr;
+        wxLogDebug("SecondWindow::CleanupContainerAsync - Deleted previous (non-running) cleanup thread object.");
+    }
+
+    // Create and run the new cleanup thread
     m_cleanupThread = new ContainerCleanupThread(m_containerId);
     if (m_cleanupThread->Run() != wxTHREAD_NO_ERROR)
     {
-        wxLogError("SecondWindow::CleanupContainerAsync - Failed to create cleanup thread.");
-        delete m_cleanupThread;
+        wxLogError("SecondWindow::CleanupContainerAsync - Failed to create or run container cleanup thread.");
+        delete m_cleanupThread; // Clean up if Run failed
         m_cleanupThread = nullptr;
 
-        if (m_isClosing && m_closeTimer)
+        // If we are in the closing sequence, and couldn't start the thread,
+        // allow the close process to continue via the timer check.
+        if (m_isClosing && m_closeTimer && !m_closeTimer->IsRunning())
         {
-            m_closeTimer->Stop();
-            CallAfter(&SecondWindow::DoDestroy);
+            CallAfter(&SecondWindow::DoDestroy); // Force destroy check if timer isn't running
         }
+    }
+    else
+    {
+        wxLogDebug("SecondWindow::CleanupContainerAsync - Cleanup thread started successfully for container %s.", m_containerId);
     }
 }
 
@@ -619,10 +863,11 @@ void SecondWindow::OnNext(wxCommandEvent &event)
 {
     wxButton *nextButton = wxDynamicCast(FindWindow(ID_NEXT_BUTTON), wxButton);
     if (nextButton)
-        nextButton->Disable();
+        nextButton->Disable(); // Disable button immediately
 
     wxString containerId;
     wxString containerIdPath = wxFileName(m_projectDir, "container_id.txt").GetFullPath();
+    wxLogDebug("OnNext: Checking for container ID at: %s", containerIdPath);
 
     if (wxFileExists(containerIdPath))
     {
@@ -631,93 +876,140 @@ void SecondWindow::OnNext(wxCommandEvent &event)
         {
             file.ReadAll(&containerId);
             containerId.Trim();
+            wxLogDebug("OnNext: Read container ID: %s", containerId);
+            file.Close(); // Close the file
         }
         else
         {
-            wxMessageBox("Container ID file exists but could not be opened!", "Error", wxICON_ERROR);
+            wxLogError("OnNext: Container ID file exists but could not be opened!");
+            wxMessageBox("Error: Could not read container information.", "File Error", wxICON_ERROR);
             if (nextButton)
-                nextButton->Enable();
+                nextButton->Enable(); // Re-enable button on error
             return;
         }
     }
     else
     {
-        wxMessageBox("Container ID not found!", "Error", wxICON_ERROR);
+        wxLogError("OnNext: Container ID file not found!");
+        wxMessageBox("Error: Container information not found. Has the initial setup completed?", "Configuration Error", wxICON_ERROR);
+        if (nextButton)
+            nextButton->Enable(); // Re-enable button
+        return;
+    }
+
+    // Ensure container ID is not empty after reading
+    if (containerId.IsEmpty())
+    {
+        wxLogError("OnNext: Container ID is empty after reading the file!");
+        wxMessageBox("Error: Container information is invalid.", "Configuration Error", wxICON_ERROR);
         if (nextButton)
             nextButton->Enable();
         return;
     }
 
+    // Show overlay
     if (m_overlay)
-    {
+    { // Destroy existing overlay if any
         m_overlay->Destroy();
+        m_overlay = nullptr;
     }
     m_overlay = new OverlayFrame(this);
+    wxLogDebug("OnNext: Overlay shown.");
 
+    // Execute the ISO creation script
     wxString command = wxString::Format("docker exec %s /create_iso.sh", containerId);
-    DockerExecProcess *proc = new DockerExecProcess(this);
+    wxLogDebug("OnNext: Executing ISO creation command: %s", command);
+
+    DockerExecProcess *proc = new DockerExecProcess(this); // Handles OnTerminate
     long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);
 
     if (pid == 0)
     {
-        wxMessageBox("Failed to start ISO creation process!", "Error", wxICON_ERROR);
-        delete proc;
-        CloseOverlay();
+        wxLogError("OnNext: Failed to start docker exec for create_iso.sh");
+        wxMessageBox("Failed to start the ISO creation process!", "Execution Error", wxICON_ERROR);
+        delete proc;    // Clean up process object
+        CloseOverlay(); // Close the loading overlay
         if (nextButton)
-            nextButton->Enable();
+            nextButton->Enable(); // Re-enable button
+    }
+    else
+    {
+        wxLogDebug("OnNext: ISO creation process started, PID: %ld", pid);
+        // The button will be re-enabled in DockerExecProcess::OnTerminate
     }
 }
 
 void SecondWindow::OnTabChanged(wxCommandEvent &event)
 {
     wxButton *terminalButton = wxDynamicCast(FindWindow(ID_TERMINAL_TAB), wxButton);
-    wxButton *sqlButton = wxDynamicCast(FindWindow(ID_SQL_TAB), wxButton);
+    wxButton *configButton = wxDynamicCast(FindWindow(ID_SQL_TAB), wxButton); // Changed variable name
+
+    // Deactivate both buttons visually first
+    const wxColour inactiveBg(30, 30, 30);
+    const wxColour inactiveFg(156, 163, 175);
+    const wxColour activeBg(44, 49, 58);
+    const wxColour activeFg(*wxWHITE);
 
     if (terminalButton)
     {
-        terminalButton->SetBackgroundColour(wxColour(30, 30, 30));
-        terminalButton->SetForegroundColour(wxColour(128, 128, 128));
+        terminalButton->SetBackgroundColour(inactiveBg);
+        terminalButton->SetForegroundColour(inactiveFg);
+        terminalButton->Refresh(); // Apply changes
     }
-    if (sqlButton)
+    if (configButton)
     {
-        sqlButton->SetBackgroundColour(wxColour(30, 30, 30));
-        sqlButton->SetForegroundColour(wxColour(128, 128, 128));
+        configButton->SetBackgroundColour(inactiveBg);
+        configButton->SetForegroundColour(inactiveFg);
+        configButton->Refresh(); // Apply changes
     }
 
+    // Hide all main content panels initially
     m_terminalTab->Hide();
     m_sqlTab->Hide();
-    m_mongoPanel->Hide();
-    if (m_flatpakStore)
-    {
-        m_flatpakStore->Hide();
-    }
+    m_mongoPanel->Hide(); // Also hide mongo panel if it was open
 
-    if (event.GetId() == ID_TERMINAL_TAB)
+    // Show the selected tab and activate its button
+    int id = event.GetId();
+    if (id == ID_TERMINAL_TAB)
     {
         m_terminalTab->Show();
         if (terminalButton)
         {
-            terminalButton->SetBackgroundColour(wxColour(44, 49, 58));
-            terminalButton->SetForegroundColour(*wxWHITE);
+            terminalButton->SetBackgroundColour(activeBg);
+            terminalButton->SetForegroundColour(activeFg);
+            terminalButton->Refresh();
         }
-        m_lastTab = m_terminalTab;
+        m_lastTab = m_terminalTab; // Update last active tab
+        wxLogDebug("Switched to Terminal Tab");
     }
-    else if (event.GetId() == ID_SQL_TAB)
-    {
+    else if (id == ID_SQL_TAB)
+    { // Changed ID check
         m_sqlTab->Show();
-        if (sqlButton)
+        if (configButton)
         {
-            sqlButton->SetBackgroundColour(wxColour(44, 49, 58));
-            sqlButton->SetForegroundColour(*wxWHITE);
+            configButton->SetBackgroundColour(activeBg);
+            configButton->SetForegroundColour(activeFg);
+            configButton->Refresh();
         }
-        m_lastTab = m_sqlTab;
+        m_lastTab = m_sqlTab; // Update last active tab
+        wxLogDebug("Switched to Config Tab");
     }
 
-    m_mainPanel->Layout();
+    // Reset MongoDB button appearance if it was active
+    wxButton *mongoButton = wxDynamicCast(FindWindow(ID_MONGODB_BUTTON), wxButton);
+    if (mongoButton)
+    {
+        mongoButton->SetBackgroundColour(wxColour(77, 171, 68)); // Original green
+        mongoButton->Refresh();
+    }
+
+    m_mainPanel->Layout(); // Recalculate layout for the main panel
 }
 
 void SecondWindow::OnMongoDBButton(wxCommandEvent &event)
 {
+    wxLogDebug("MongoDB button clicked");
+    // Store which tab was previously visible
     if (m_terminalTab->IsShown())
     {
         m_lastTab = m_terminalTab;
@@ -726,112 +1018,64 @@ void SecondWindow::OnMongoDBButton(wxCommandEvent &event)
     {
         m_lastTab = m_sqlTab;
     }
+    else
+    {
+        m_lastTab = m_terminalTab;
+    } // Default fallback if neither known tab is shown
 
+    wxLogDebug("Last active tab stored.");
+
+    // Hide other tabs
     m_terminalTab->Hide();
     m_sqlTab->Hide();
-    m_mongoPanel->Show();
-    m_mongoPanel->LoadMongoDBContent();
-    if (m_flatpakStore)
-    {
-        m_flatpakStore->Hide();
-    }
+    wxLogDebug("Terminal and Config tabs hidden.");
 
-    wxButton *mongoButton = wxDynamicCast(FindWindow(ID_MONGODB_BUTTON), wxButton);
+    // Show and load MongoDB panel
+    m_mongoPanel->Show();
+    wxLogDebug("MongoDB panel shown.");
+    m_mongoPanel->LoadMongoDBContent(); // Load/refresh data when shown
+    wxLogDebug("MongoDB content loading initiated.");
+
+    // Optional: Change button appearance to indicate active state
+    wxButton *mongoButton = wxDynamicCast(event.GetEventObject(), wxButton);
     if (mongoButton)
     {
-        mongoButton->SetBackgroundColour(wxColour(100, 200, 100)); // Lighter green when active
+        mongoButton->SetBackgroundColour(wxColour(100, 200, 100)); // Example: Lighter green
+        mongoButton->Refresh();
+        wxLogDebug("MongoDB button appearance updated to active state.");
     }
 
-    m_mainPanel->Layout();
+    m_mainPanel->Layout(); // Update layout
+    wxLogDebug("Main panel layout updated.");
 }
 
+// Handler in SecondWindow to catch the close event from MongoDBPanel
 void SecondWindow::OnMongoDBPanelClose(wxCommandEvent &event)
 {
-    m_mongoPanel->Hide();
+    wxLogDebug("SecondWindow::OnMongoDBPanelClose received event");
+    m_mongoPanel->Hide(); // Hide the MongoDB panel
+
+    // Show the previously active tab
     if (m_lastTab)
     {
         m_lastTab->Show();
+        wxLogDebug("Restored last active tab.");
     }
     else
     {
-        m_terminalTab->Show();
-    }
-    if (m_flatpakStore)
-    {
-        m_flatpakStore->Hide();
+        m_terminalTab->Show(); // Default fallback to terminal tab
+        wxLogDebug("Fell back to showing Terminal tab.");
     }
 
+    // Reset MongoDB button appearance to its normal state
     wxButton *mongoButton = wxDynamicCast(FindWindow(ID_MONGODB_BUTTON), wxButton);
     if (mongoButton)
     {
-        mongoButton->SetBackgroundColour(wxColour(77, 171, 68)); // Original green
+        mongoButton->SetBackgroundColour(wxColour(77, 171, 68)); // Original MongoDB green
+        mongoButton->Refresh();
+        wxLogDebug("MongoDB button appearance reset.");
     }
 
-    m_mainPanel->Layout();
-}
-
-// MongoDBPanel implementation
-MongoDBPanel::MongoDBPanel(wxWindow *parent) : wxPanel(parent)
-{
-    wxBoxSizer *sizer = new wxBoxSizer(wxVERTICAL);
-
-    wxButton *closeButton = new wxButton(this, ID_MONGODB_PANEL_CLOSE, "X",
-                                         wxDefaultPosition, wxSize(30, 30));
-    closeButton->SetBackgroundColour(wxColour(200, 50, 50));
-    closeButton->SetForegroundColour(*wxWHITE);
-
-    m_contentDisplay = new wxTextCtrl(this, wxID_ANY, "",
-                                      wxDefaultPosition, wxDefaultSize,
-                                      wxTE_MULTILINE | wxTE_READONLY);
-    m_contentDisplay->SetBackgroundColour(wxColour(30, 30, 30));
-    m_contentDisplay->SetForegroundColour(*wxWHITE);
-
-    sizer->Add(closeButton, 0, wxALIGN_RIGHT | wxALL, 5);
-    sizer->Add(m_contentDisplay, 1, wxEXPAND | wxALL, 5);
-
-    SetSizer(sizer);
-}
-
-void MongoDBPanel::LoadMongoDBContent()
-{
-    m_contentDisplay->Clear();
-    try
-    {
-        // Use a valid connection string
-        const auto uri = mongocxx::uri{"mongodb+srv://WERcvbdfg32:ED6Rlo6dP1hosLvJ@cxx.q4z9x.mongodb.net/?retryWrites=true&w=majority&appName=CXX"};
-
-        // Set the version of the Stable API on the client
-        mongocxx::options::client client_options;
-        const auto api = mongocxx::options::server_api{mongocxx::options::server_api::version::k_version_1};
-        client_options.server_api_opts(api);
-
-        // Setup the connection and get a handle on the "testdb" database.
-        mongocxx::client client(uri, client_options);
-        mongocxx::database db = client["testdb"];
-        mongocxx::collection coll = db["testcollection"];
-
-        // Ping the database to check the connection
-        const auto ping_cmd = bsoncxx::builder::basic::make_document(bsoncxx::builder::basic::kvp("ping", 1));
-        db.run_command(ping_cmd.view());
-        m_contentDisplay->AppendText("Successfully connected to MongoDB!\n\n");
-
-        // Fetch and display documents
-        mongocxx::cursor cursor = coll.find({});
-        m_contentDisplay->AppendText("MongoDB Contents:\n\n");
-        for (auto &&doc : cursor)
-        {
-            std::string json = bsoncxx::to_json(doc);
-            m_contentDisplay->AppendText(wxString(json) + "\n");
-        }
-
-        if (!m_contentDisplay->GetValue().Contains("{"))
-        {
-            m_contentDisplay->AppendText("No documents found in collection\n");
-        }
-    }
-    catch (const std::exception &e)
-    {
-        m_contentDisplay->AppendText("Error: " + wxString(e.what()) + "\n");
-        m_contentDisplay->AppendText("Check MongoDB connection string and network\n");
-    }
+    m_mainPanel->Layout(); // Update layout
+    wxLogDebug("Main panel layout updated after closing MongoDB panel.");
 }
