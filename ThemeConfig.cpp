@@ -204,8 +204,6 @@ void ThemeConfig::ApplyThemeToControl(wxWindow *control, const ThemeColors &colo
     if (!control)
         return;
 
-    // Set default background and foreground for most controls
-    // Use panel background as the default BG for many controls
     control->SetBackgroundColour(colors.panel.background);
     control->SetForegroundColour(colors.text); // Default text color
 
@@ -229,7 +227,7 @@ void ThemeConfig::ApplyThemeToControl(wxWindow *control, const ThemeColors &colo
             titleText->SetBackgroundColour(colors.titleBar); // Match title bar BG
         }
         // Refresh the internal buttons (they will pick up theme in their OnPaint)
-        titleBar->RefreshButtons();
+        titleBar->RefreshControls();
         titleBar->Refresh(); // Refresh the title bar itself
     }
     else if (auto *statusBar = dynamic_cast<CustomStatusBar *>(control))
