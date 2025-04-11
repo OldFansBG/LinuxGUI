@@ -1,19 +1,26 @@
 #include "SettingsDialog.h"
-#include "CustomTitleBar.h"
+#include "CustomTitleBar.h" // For parent cast
 #include <wx/dcbuffer.h>
 #include <wx/graphics.h>
-#include <wxSVG/svg.h>
-#include <wx/mstream.h>
+#include <wx/stattext.h> // Ensure included
+
 wxDEFINE_EVENT(EVT_TOGGLE_SWITCH, wxCommandEvent);
+
+// --- ToggleSwitch Implementation (Same as before, OnPaint updated) ---
 wxBEGIN_EVENT_TABLE(ToggleSwitch, wxControl)
     EVT_PAINT(ToggleSwitch::OnPaint)
         EVT_LEFT_DOWN(ToggleSwitch::OnMouse)
             wxEND_EVENT_TABLE()
-                ToggleSwitch::ToggleSwitch(wxWindow *parent, wxWindowID id, bool initialState, const wxPoint &pos, const wxSize &size) : wxControl(parent, id, pos, size, wxBORDER_NONE), m_value(initialState)
+
+                ToggleSwitch::ToggleSwitch(wxWindow *parent, wxWindowID id, bool initialState, const wxPoint &pos, const wxSize &size)
+    : wxControl(parent, id, pos, size, wxBORDER_NONE), m_value(initialState),
+      m_thumbColor(*wxWHITE) // Thumb is usually white
 {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
     SetMinSize(size);
+    // Colors will be set dynamically in OnPaint based on theme
 }
+
 void ToggleSwitch::SetValue(bool value)
 {
     if (m_value != value)
@@ -29,7 +36,7 @@ void ToggleSwitch::SetValue(bool value)
 
 void ToggleSwitch::OnPaint(wxPaintEvent &event)
 {
-    wxBufferedPaintDC dc(this);
+    wxAutoBufferedPaintDC dc(this); // Use buffered DC
     dc.SetBackground(*wxTRANSPARENT_BRUSH);
     dc.Clear();
 
@@ -38,16 +45,30 @@ void ToggleSwitch::OnPaint(wxPaintEvent &event)
     int height = size.GetHeight();
     int radius = height / 2;
 
+    // --- Get current theme colors INSIDE OnPaint ---
+    const ThemeColors &colors = ThemeConfig::Get().GetThemeColors(ThemeConfig::Get().GetCurrentTheme());
+    m_trackOnColor = colors.button.background; // Use button background for ON state
+    m_trackOffColor = colors.input.background; // Use input background for OFF state
+
     wxGraphicsContext *gc = wxGraphicsContext::Create(dc);
     if (gc)
     {
+        gc->SetAntialiasMode(wxANTIALIAS_DEFAULT); // Enable anti-aliasing
+
+        // Draw track
         gc->SetBrush(wxBrush(m_value ? m_trackOnColor : m_trackOffColor));
         gc->SetPen(*wxTRANSPARENT_PEN);
         gc->DrawRoundedRectangle(0, 0, width, height, radius);
 
+        // Draw thumb
         gc->SetBrush(wxBrush(m_thumbColor));
-        int thumbPos = m_value ? width - height + 2 : 2;
-        gc->DrawEllipse(thumbPos, 2, height - 4, height - 4);
+        // Add a subtle border to the thumb for definition
+        gc->SetPen(wxPen(colors.secondaryText, 1)); // Use secondary text color for border
+        int thumbDiameter = height - 4;
+        int thumbX = m_value ? width - thumbDiameter - 2 : 2;
+        int thumbY = 2;
+        gc->DrawEllipse(thumbX, thumbY, thumbDiameter, thumbDiameter);
+
         delete gc;
     }
 }
@@ -57,103 +78,212 @@ void ToggleSwitch::OnMouse(wxMouseEvent &event)
     SetValue(!m_value);
 }
 
+// --- SettingsDialog Implementation ---
 wxBEGIN_EVENT_TABLE(SettingsDialog, wxDialog)
     EVT_BUTTON(wxID_OK, SettingsDialog::OnOK)
         EVT_BUTTON(wxID_CANCEL, SettingsDialog::OnCancel)
-            EVT_BUTTON(wxID_ANY, SettingsDialog::OnThemeButtonClick)
-                EVT_PAINT(SettingsDialog::OnPaint)
-                    wxEND_EVENT_TABLE()
+            EVT_BUTTON(wxID_ANY, SettingsDialog::OnThemeButtonClick) // Catches both theme buttons
+    EVT_PAINT(SettingsDialog::OnPaint)
+#ifdef __WXMSW__
+        EVT_COMMAND(wxID_ANY, EVT_TOGGLE_SWITCH, SettingsDialog::OnToggleChanged)
+#endif
+            wxEND_EVENT_TABLE()
 
-                        SettingsDialog::SettingsDialog(wxWindow *parent)
+                SettingsDialog::SettingsDialog(wxWindow *parent)
     : wxDialog(parent, wxID_ANY, "Settings",
                wxDefaultPosition, wxSize(500, 450),
                wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER | wxFRAME_SHAPED)
 {
     SetBackgroundStyle(wxBG_STYLE_PAINT);
+
+    // Initialize the dialog's theme state from the global config
+    m_selectedThemeInDialog = ThemeConfig::Get().GetCurrentTheme();
+
     CreateContent();
-    if (ThemeConfig::Get().GetCurrentTheme() == "light")
-    {
-        m_lightButton->SetBackgroundColour(m_primaryColor);
-        m_lightButton->SetForegroundColour(*wxWHITE);
-        m_darkButton->SetBackgroundColour(m_bgColor);
-    }
-    else
-    {
-        m_darkButton->SetBackgroundColour(m_primaryColor);
-        m_darkButton->SetForegroundColour(*wxWHITE);
-        m_lightButton->SetBackgroundColour(m_bgColor);
-    }
+
+    // Apply the initial theme to the dialog itself
+    ApplyTheme(m_selectedThemeInDialog);
+
     Centre();
 }
 
+// Applies theme colors to the controls WITHIN the settings dialog
+void SettingsDialog::ApplyTheme(const wxString &theme)
+{
+    ThemeConfig &config = ThemeConfig::Get();
+    if (!config.HasTheme(theme))
+    {
+        wxLogError("SettingsDialog: Theme '%s' not found.", theme);
+        return;
+    }
+    m_selectedThemeInDialog = theme.Lower(); // Update internal state
+
+    const ThemeColors &colors = config.GetThemeColors(m_selectedThemeInDialog);
+
+    // --- Update Dialog's Cached Colors ---
+    m_bgColor = colors.background;
+    m_textColor = colors.text;
+    m_labelColor = colors.secondaryText;
+    m_primaryColor = colors.button.background;
+    m_secondaryColor = colors.input.background;
+    m_inputBgColor = colors.input.background;
+    m_inputFgColor = colors.input.text;
+
+    // --- Apply to Dialog and Main Panel ---
+    SetBackgroundColour(m_bgColor);
+    if (m_mainPanel)
+        m_mainPanel->SetBackgroundColour(m_bgColor);
+
+    // --- Apply to Specific Controls ---
+    if (m_titleText)
+        m_titleText->SetForegroundColour(m_textColor);
+
+    // Theme Section Panel and Label
+    wxWindow *themePanel = m_lightButton ? m_lightButton->GetParent() : nullptr;
+    if (themePanel)
+    {
+        themePanel->SetBackgroundColour(m_bgColor); // Match dialog background
+        wxWindowList children = themePanel->GetChildren();
+        for (wxWindow *child : children)
+        {
+            if (auto *label = dynamic_cast<wxStaticText *>(child))
+            {
+                label->SetForegroundColour(m_labelColor);
+                label->SetBackgroundColour(m_bgColor); // Match panel background
+            }
+            // Apply to button sizer panel if nested
+            else if (auto *panel = dynamic_cast<wxPanel *>(child))
+            {
+                panel->SetBackgroundColour(m_bgColor);
+            }
+            else if (auto *sizer = dynamic_cast<wxBoxSizer *>(child->GetSizer()))
+            {
+                // Could iterate sizer items if needed, but direct children usually sufficient
+            }
+        }
+    }
+
+    // Container Section Box and Inner Panel
+    if (m_containerSizer)
+    {
+        wxStaticBox *box = m_containerSizer->GetStaticBox();
+        if (box)
+        {
+            box->SetForegroundColour(m_labelColor);
+            // Find the inner panel to set its background
+            wxWindowList boxChildren = box->GetChildren();
+            if (!boxChildren.IsEmpty())
+            {
+                wxPanel *innerPanel = dynamic_cast<wxPanel *>(boxChildren.Item(0)->GetData());
+                if (innerPanel)
+                {
+                    innerPanel->SetBackgroundColour(m_bgColor); // Match dialog BG
+                                                                // Style controls inside the inner panel
+                    wxSizer *innerSizer = innerPanel->GetSizer();
+                    if (innerSizer)
+                    {
+                        wxSizerItemList items = innerSizer->GetChildren();
+                        for (wxSizerItem *item : items)
+                        {
+                            wxPanel *rowPanel = dynamic_cast<wxPanel *>(item->GetWindow()); // Panels for Docker/WSL rows
+                            if (rowPanel)
+                            {
+                                rowPanel->SetBackgroundColour(m_bgColor);
+                                wxSizer *rowSizer = rowPanel->GetSizer();
+                                if (rowSizer)
+                                {
+                                    wxSizerItemList rowItems = rowSizer->GetChildren();
+                                    for (wxSizerItem *rowItem : rowItems)
+                                    {
+                                        wxWindow *widget = rowItem->GetWindow();
+                                        if (auto *text = dynamic_cast<wxStaticText *>(widget))
+                                        {
+                                            text->SetForegroundColour(m_textColor);
+                                            text->SetBackgroundColour(m_bgColor);
+                                        }
+                                        else if (auto *toggle = dynamic_cast<ToggleSwitch *>(widget))
+                                        {
+                                            toggle->Refresh(); // Toggle redraws using current theme
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // OK/Cancel Buttons
+    if (m_okButton)
+    {
+        m_okButton->SetBackgroundColour(m_primaryColor);
+        m_okButton->SetForegroundColour(*wxWHITE);
+    }
+    if (m_cancelButton)
+    {
+        m_cancelButton->SetBackgroundColour(m_secondaryColor);
+        m_cancelButton->SetForegroundColour(m_textColor);
+    }
+
+    // --- Update Theme Button Appearance ---
+    if (m_lightButton && m_darkButton)
+    {
+        if (m_selectedThemeInDialog == "light")
+        {
+            m_lightButton->SetBackgroundColour(m_primaryColor); // Active button uses primary
+            m_lightButton->SetForegroundColour(*wxWHITE);
+            m_darkButton->SetBackgroundColour(m_bgColor); // Inactive button matches dialog BG
+            m_darkButton->SetForegroundColour(m_textColor);
+        }
+        else
+        {                                                      // Dark or other themes
+            m_darkButton->SetBackgroundColour(m_primaryColor); // Active button uses primary
+            m_darkButton->SetForegroundColour(*wxWHITE);
+            m_lightButton->SetBackgroundColour(m_bgColor); // Inactive button matches dialog BG
+            m_lightButton->SetForegroundColour(m_textColor);
+        }
+        m_lightButton->Refresh();
+        m_darkButton->Refresh();
+    }
+
+    // --- Refresh Layout and Drawing ---
+    if (m_mainPanel)
+        m_mainPanel->Layout();
+    Layout();
+    Refresh();
+    Update(); // Ensures immediate redraw
+}
+
+// CreateContent remains largely the same, but remove direct color settings
 void SettingsDialog::CreateContent()
 {
-    m_mainPanel = new wxPanel(this);
-    m_mainPanel->SetBackgroundColour(m_bgColor);
+    // Get initial colors just for reference if needed, but don't apply here
+    const ThemeColors &initialColors = ThemeConfig::Get().GetThemeColors(m_selectedThemeInDialog);
+    // Example: wxColour initialBg = initialColors.background;
 
+    m_mainPanel = new wxPanel(this);
     wxBoxSizer *mainSizer = new wxBoxSizer(wxVERTICAL);
 
-    wxStaticText *titleText = new wxStaticText(m_mainPanel, wxID_ANY, "Settings");
-    titleText->SetForegroundColour(m_textColor);
-    wxFont titleFont = titleText->GetFont();
+    m_titleText = new wxStaticText(m_mainPanel, wxID_ANY, "Settings");
+    wxFont titleFont = m_titleText->GetFont();
     titleFont.SetWeight(wxFONTWEIGHT_BOLD);
     titleFont.SetPointSize(titleFont.GetPointSize() + 3);
-    titleText->SetFont(titleFont);
-    mainSizer->Add(titleText, 0, wxALL, 20);
+    m_titleText->SetFont(titleFont);
+    mainSizer->Add(m_titleText, 0, wxALL | wxEXPAND, 20);
 
     wxPanel *themePanel = new wxPanel(m_mainPanel);
-    themePanel->SetBackgroundColour(m_bgColor);
     wxBoxSizer *themeSizer = new wxBoxSizer(wxVERTICAL);
     wxStaticText *themeLabel = new wxStaticText(themePanel, wxID_ANY, "Theme");
-    themeLabel->SetForegroundColour(m_textColor);
-    themeSizer->Add(themeLabel, 0, wxALL, 10);
-
+    themeSizer->Add(themeLabel, 0, wxLEFT | wxTOP | wxRIGHT, 10);
     wxBoxSizer *themeButtonSizer = new wxBoxSizer(wxHORIZONTAL);
-    m_lightButton = new wxButton(themePanel, wxID_ANY, "Light",
-                                 wxDefaultPosition, wxSize(160, 45), wxBORDER_NONE);
-    m_lightButton->SetBackgroundColour(m_bgColor);
-    m_lightButton->SetForegroundColour(m_textColor);
+    m_lightButton = new wxButton(themePanel, wxID_ANY, "Light", wxDefaultPosition, wxSize(160, 45), wxBORDER_NONE);
+    m_darkButton = new wxButton(themePanel, wxID_ANY, "Dark", wxDefaultPosition, wxSize(160, 45), wxBORDER_NONE);
     wxFont buttonFont = m_lightButton->GetFont();
-    buttonFont.SetFaceName("Segoe UI Symbol");
+    buttonFont.SetWeight(wxFONTWEIGHT_BOLD);
     m_lightButton->SetFont(buttonFont);
-
-    wxSVGDocument svgDoc;
-    const char *svgData = R"(
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-            <path d="M361.5 1.2c5 2.1 8.6 6.6 9.6 11.9L391 121l107.9 19.8c5.3 1 9.8 4.6 11.9 9.6s1.5 10.7-1.6 15.2L446.9 256l62.3 90.3c3.1 4.5 3.7 10.2 1.6 15.2s-6.6 8.6-11.9 9.6L391 391 371.1 498.9c-1 5.3-4.6 9.8-9.6 11.9s-10.7 1.5-15.2-1.6L256 446.9l-90.3 62.3c-4.5 3.1-10.2 3.7-15.2 1.6s-8.6-6.6-9.6-11.9L121 391 13.1 371.1c-5.3-1-9.8-4.6-11.9-9.6s-1.5-10.7 1.6-15.2L65.1 256 2.8 165.7c-3.1-4.5-3.7-10.2-1.6-15.2s6.6-8.6 11.9-9.6L121 121 140.9 13.1c1-5.3 4.6-9.8 9.6-11.9s10.7-1.5 15.2 1.6L256 65.1 346.3 2.8c4.5-3.1 10.2-3.7 15.2-1.6zM160 256a96 96 0 1 1 192 0 96 96 0 1 1 -192 0zm224 0a128 128 0 1 0 -256 0 128 128 0 1 0 256 0z"/>
-        </svg>
-    )";
-    wxMemoryInputStream svgStream(svgData, strlen(svgData));
-    if (svgDoc.Load(svgStream))
-    {
-        wxImage svgImage = svgDoc.Render(24, 24, nullptr, true, true);
-        m_lightButton->SetBitmap(wxBitmap(svgImage));
-    }
-    m_lightButton->SetLabel(" Light");
-    m_lightButton->SetBitmapMargins(8, 0);
-
-    m_darkButton = new wxButton(themePanel, wxID_ANY, "Dark",
-                                wxDefaultPosition, wxSize(160, 45), wxBORDER_NONE);
-    m_darkButton->SetBackgroundColour(m_primaryColor);
-    m_darkButton->SetForegroundColour(*wxWHITE);
     m_darkButton->SetFont(buttonFont);
-
-    // Create a separate document instance for the dark button
-    wxSVGDocument darkSvgDoc;
-    const char *darkSvgData = R"(
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512">
-            <path d="M223.5 32C100 32 0 132.3 0 256S100 480 223.5 480c60.6 0 115.5-24.2 155.8-63.4c5-4.9 6.3-12.5 3.1-18.7s-10.1-9.7-17-8.5c-9.8 1.7-19.8 2.6-30.1 2.6c-96.9 0-175.5-78.8-175.5-176c0-65.8 36-123.1 89.3-153.3c6.1-3.5 9.2-10.5 7.7-17.3s-7.3-11.9-14.3-12.5c-6.3-.5-12.6-.8-19-.8z"/>
-    </svg>
-    )";
-    wxMemoryInputStream darkSvgStream(darkSvgData, strlen(darkSvgData));
-    if (darkSvgDoc.Load(darkSvgStream))
-    {
-        wxImage darkSvgImage = darkSvgDoc.Render(24, 24, nullptr, true, true);
-        m_darkButton->SetBitmap(wxBitmap(darkSvgImage));
-    }
-    m_darkButton->SetLabel(" Dark");
-    m_darkButton->SetBitmapMargins(8, 0);
-
     themeButtonSizer->Add(m_lightButton, 1, wxEXPAND | wxRIGHT, 5);
     themeButtonSizer->Add(m_darkButton, 1, wxEXPAND | wxLEFT, 5);
     themeSizer->Add(themeButtonSizer, 0, wxEXPAND | wxALL, 10);
@@ -162,107 +292,76 @@ void SettingsDialog::CreateContent()
 
     mainSizer->AddSpacer(15);
 
-    wxStaticBoxSizer *containerSizer = new wxStaticBoxSizer(wxVERTICAL, m_mainPanel, "Container Options");
-    wxStaticBox *containerBox = containerSizer->GetStaticBox();
-    containerBox->SetForegroundColour(m_textColor);
-    containerBox->SetBackgroundColour(m_bgColor);
-
-    wxPanel *dockerPanel = new wxPanel(containerBox);
-    dockerPanel->SetBackgroundColour(m_bgColor);
+    m_containerSizer = new wxStaticBoxSizer(wxVERTICAL, m_mainPanel, "Container Options");
+    wxStaticBox *containerBox = m_containerSizer->GetStaticBox();
+    wxPanel *containerInnerPanel = new wxPanel(containerBox);
+    wxBoxSizer *containerInnerSizer = new wxBoxSizer(wxVERTICAL);
+    wxPanel *dockerPanel = new wxPanel(containerInnerPanel);
     wxBoxSizer *dockerSizer = new wxBoxSizer(wxHORIZONTAL);
-    wxMemoryInputStream dockerSvgStream(R"(
-<svg xmlns="http://www.w3.org/2000/svg" aria-label="Docker" role="img" viewBox="0 0 512 512" fill="#000000"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"><rect width="512" height="512" rx="15%" fill="#ffffff"></rect><path stroke="#066da5" stroke-width="38" d="M296 226h42m-92 0h42m-91 0h42m-91 0h41m-91 0h42m8-46h41m8 0h42m7 0h42m-42-46h42"></path><path fill="#066da5" d="m472 228s-18-17-55-11c-4-29-35-46-35-46s-29 35-8 74c-6 3-16 7-31 7H68c-5 19-5 145 133 145 99 0 173-46 208-130 52 4 63-39 63-39"></path></g></svg>
-)",
-                                        strlen(R"(
-<svg xmlns="http://www.w3.org/2000/svg" aria-label="Docker" role="img" viewBox="0 0 512 512" fill="#000000"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"><rect width="512" height="512" rx="15%" fill="#ffffff"></rect><path stroke="#066da5" stroke-width="38" d="M296 226h42m-92 0h42m-91 0h42m-91 0h41m-91 0h42m8-46h41m8 0h42m7 0h42m-42-46h42"></path><path fill="#066da5" d="m472 228s-18-17-55-11c-4-29-35-46-35-46s-29 35-8 74c-6 3-16 7-31 7H68c-5 19-5 145 133 145 99 0 173-46 208-130 52 4 63-39 63-39"></path></g></svg>
-)"));
-    wxSVGDocument dockerSvgDoc;
-    wxStaticBitmap *dockerIcon = nullptr;
-    if (dockerSvgDoc.Load(dockerSvgStream))
-    {
-        wxImage dockerSvgImage = dockerSvgDoc.Render(24, 24, nullptr, true, true);
-        dockerIcon = new wxStaticBitmap(dockerPanel, wxID_ANY, wxBitmap(dockerSvgImage));
-        dockerSizer->Add(dockerIcon, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
-    }
-    wxFont iconFont = dockerIcon->GetFont();
-    iconFont.SetPointSize(iconFont.GetPointSize() + 2);
-    dockerIcon->SetFont(iconFont);
     wxStaticText *dockerText = new wxStaticText(dockerPanel, wxID_ANY, "Use Docker (Recommended)");
-    dockerText->SetForegroundColour(m_textColor);
     m_dockerToggle = new ToggleSwitch(dockerPanel, wxID_ANY, true);
-    dockerSizer->Add(dockerText, 1, wxALIGN_CENTER_VERTICAL);
+    dockerSizer->Add(dockerText, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
     dockerSizer->Add(m_dockerToggle, 0, wxALIGN_CENTER_VERTICAL);
     dockerPanel->SetSizer(dockerSizer);
-    containerSizer->Add(dockerPanel, 0, wxEXPAND | wxALL, 10);
+    containerInnerSizer->Add(dockerPanel, 0, wxEXPAND | wxBOTTOM, 5);
 
 #ifdef __WXMSW__
-    wxPanel *wslPanel = new wxPanel(containerBox);
-    wslPanel->SetBackgroundColour(m_bgColor);
+    wxPanel *wslPanel = new wxPanel(containerInnerPanel);
     wxBoxSizer *wslSizer = new wxBoxSizer(wxHORIZONTAL);
-    wxStaticText *wslIcon = new wxStaticText(wslPanel, wxID_ANY, "\u2325");
-    wslIcon->SetForegroundColour(m_textColor);
-    wslIcon->SetFont(iconFont);
-    wslIcon->SetBackgroundStyle(wxBG_STYLE_PAINT);
-    wslIcon->SetBackgroundColour(m_bgColor);
-
     wxStaticText *wslText = new wxStaticText(wslPanel, wxID_ANY, "Use Windows Subsystem for Linux (WSL)");
-    wslText->SetForegroundColour(m_textColor);
     m_wslToggle = new ToggleSwitch(wslPanel, wxID_ANY, false);
-    wslSizer->Add(wslIcon, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
-    wslSizer->Add(wslText, 1, wxALIGN_CENTER_VERTICAL);
+    wslSizer->Add(wslText, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
     wslSizer->Add(m_wslToggle, 0, wxALIGN_CENTER_VERTICAL);
     wslPanel->SetSizer(wslSizer);
-    containerSizer->Add(wslPanel, 0, wxEXPAND | wxALL, 10);
-
+    containerInnerSizer->Add(wslPanel, 0, wxEXPAND);
     m_dockerToggle->Bind(EVT_TOGGLE_SWITCH, &SettingsDialog::OnToggleChanged, this);
     m_wslToggle->Bind(EVT_TOGGLE_SWITCH, &SettingsDialog::OnToggleChanged, this);
 #endif
 
-    mainSizer->Add(containerSizer, 0, wxEXPAND | wxLEFT | wxRIGHT, 20);
-    mainSizer->AddSpacer(20);
+    containerInnerPanel->SetSizer(containerInnerSizer);
+    m_containerSizer->Add(containerInnerPanel, 1, wxEXPAND | wxALL, 10);
+    mainSizer->Add(m_containerSizer, 0, wxEXPAND | wxLEFT | wxRIGHT, 20);
+
+    mainSizer->AddStretchSpacer(1);
 
     wxBoxSizer *buttonSizer = new wxBoxSizer(wxHORIZONTAL);
-    m_cancelButton = new wxButton(m_mainPanel, wxID_CANCEL, "Cancel",
-                                  wxDefaultPosition, wxSize(100, 40), wxBORDER_NONE);
-    m_cancelButton->SetBackgroundColour(m_secondaryColor);
-    m_cancelButton->SetForegroundColour(*wxWHITE);
-    m_okButton = new wxButton(m_mainPanel, wxID_OK, "OK",
-                              wxDefaultPosition, wxSize(100, 40), wxBORDER_NONE);
-    m_okButton->SetBackgroundColour(m_primaryColor);
-    m_okButton->SetForegroundColour(*wxWHITE);
-    buttonFont.SetWeight(wxFONTWEIGHT_BOLD);
+    m_cancelButton = new wxButton(m_mainPanel, wxID_CANCEL, "Cancel", wxDefaultPosition, wxSize(100, 40), wxBORDER_NONE);
+    m_okButton = new wxButton(m_mainPanel, wxID_OK, "OK", wxDefaultPosition, wxSize(100, 40), wxBORDER_NONE);
     m_okButton->SetFont(buttonFont);
     m_cancelButton->SetFont(buttonFont);
-
-    buttonSizer->Add(0, 0, 1, wxEXPAND);
+    buttonSizer->AddStretchSpacer(1);
     buttonSizer->Add(m_cancelButton, 0, wxRIGHT, 10);
     buttonSizer->Add(m_okButton, 0);
     mainSizer->Add(buttonSizer, 0, wxEXPAND | wxALL, 20);
-    m_mainPanel->SetSizer(mainSizer);
 
+    m_mainPanel->SetSizer(mainSizer);
     wxBoxSizer *dialogSizer = new wxBoxSizer(wxVERTICAL);
     dialogSizer->Add(m_mainPanel, 1, wxEXPAND);
     SetSizer(dialogSizer);
+    Layout();
 }
 
 void SettingsDialog::OnThemeButtonClick(wxCommandEvent &event)
 {
     wxObject *obj = event.GetEventObject();
+    wxString newTheme;
     if (obj == m_lightButton)
     {
-        m_lightButton->SetBackgroundColour(m_primaryColor);
-        m_lightButton->SetForegroundColour(*wxWHITE);
-        m_darkButton->SetBackgroundColour(m_bgColor);
-        m_darkButton->SetForegroundColour(m_textColor);
-        ApplyTheme("light");
+        newTheme = "light";
     }
     else if (obj == m_darkButton)
     {
-        m_darkButton->SetBackgroundColour(m_primaryColor);
-        m_darkButton->SetForegroundColour(*wxWHITE);
-        m_lightButton->SetBackgroundColour(m_bgColor);
-        m_lightButton->SetForegroundColour(m_textColor);
-        ApplyTheme("dark");
+        newTheme = "dark";
+    }
+    else
+    {
+        return; // Not a theme button
+    }
+
+    // Only apply if the theme actually changed within the dialog's context
+    if (newTheme != m_selectedThemeInDialog)
+    {
+        ApplyTheme(newTheme);
     }
 }
 
@@ -271,6 +370,11 @@ void SettingsDialog::OnToggleChanged(wxCommandEvent &event)
 #ifdef __WXMSW__
     wxObject *obj = event.GetEventObject();
     bool value = event.GetInt() != 0;
+
+    if (!m_dockerToggle || !m_wslToggle)
+        return; // Safety
+
+    // Mutual Exclusivity Logic: If one is turned ON, turn the other OFF.
     if (obj == m_dockerToggle && value)
     {
         m_wslToggle->SetValue(false);
@@ -279,66 +383,87 @@ void SettingsDialog::OnToggleChanged(wxCommandEvent &event)
     {
         m_dockerToggle->SetValue(false);
     }
-    if (!m_dockerToggle->GetValue() && !m_wslToggle->GetValue())
+    // Prevent both being turned OFF.
+    // If the user action *would* result in both being off, revert the action
+    // by setting the one they just interacted with back to true.
+    else if (!value && !m_dockerToggle->GetValue() && !m_wslToggle->GetValue())
     {
+        // This state should ideally not be reached if the above logic works,
+        // but as a fallback, force one back on.
         if (obj == m_dockerToggle)
-            m_wslToggle->SetValue(true);
-        else
-            m_dockerToggle->SetValue(true);
+            m_dockerToggle->SetValue(true); // Revert docker toggle
+        else if (obj == m_wslToggle)
+            m_wslToggle->SetValue(true); // Revert wsl toggle
     }
 
 #endif
 }
 
-void SettingsDialog::ApplyTheme(const wxString &theme)
-{
-}
-
+// Returns the theme currently selected *in the dialog*, not necessarily the global one yet
 wxString SettingsDialog::GetSelectedTheme() const
 {
-    return m_lightButton->GetBackgroundColour() == m_primaryColor ? "light" : "dark";
+    return m_selectedThemeInDialog;
+}
+
+bool SettingsDialog::UseDocker() const
+{
+    return m_dockerToggle ? m_dockerToggle->GetValue() : true;
+}
+
+bool SettingsDialog::UseWSL() const
+{
+#ifdef __WXMSW__
+    return m_wslToggle ? m_wslToggle->GetValue() : false;
+#else
+    return false;
+#endif
 }
 
 void SettingsDialog::OnPaint(wxPaintEvent &event)
 {
     wxAutoBufferedPaintDC dc(this);
-    dc.SetBackground(wxBrush(m_bgColor));
+    // Use colors based on the dialog's *currently selected* theme state
+    const ThemeColors &colors = ThemeConfig::Get().GetThemeColors(m_selectedThemeInDialog);
+    dc.SetBackground(wxBrush(colors.background));
     dc.Clear();
 
+    // Optional rounded corners
     wxGraphicsContext *gc = wxGraphicsContext::Create(dc);
     if (gc)
     {
+        gc->SetAntialiasMode(wxANTIALIAS_DEFAULT);
         wxRect rect = GetClientRect();
-        gc->SetBrush(wxBrush(m_bgColor));
+        gc->SetBrush(wxBrush(colors.background));
         gc->SetPen(*wxTRANSPARENT_PEN);
-        gc->DrawRoundedRectangle(rect.x, rect.y, rect.width, rect.height, 10);
+        // gc->DrawRoundedRectangle(rect.x, rect.y, rect.width, rect.height, 10); // Uncomment if desired
         delete gc;
     }
 }
 
 void SettingsDialog::OnOK(wxCommandEvent &event)
 {
-    wxString selectedTheme = m_lightButton->GetBackgroundColour() == m_primaryColor ? "light" : "dark";
-    ThemeConfig::Get().SetCurrentTheme(selectedTheme);
+    // 1. Get the theme selected *in the dialog* when OK was clicked
+    wxString finalSelectedTheme = GetSelectedTheme();
 
-    wxFrame *mainFrame = wxDynamicCast(GetParent(), wxFrame);
-    if (mainFrame)
+    // 2. Update the global ThemeConfig state
+    ThemeConfig::Get().SetCurrentTheme(finalSelectedTheme);
+
+    // 3. Apply the final theme globally (to parent and potentially other registered windows)
+    wxWindow *parent = GetParent();
+    if (parent)
     {
-        ThemeConfig::Get().ApplyTheme(mainFrame, selectedTheme);
-
-        for (wxWindow *child : mainFrame->GetChildren())
-        {
-            if (CustomTitleBar *titleBar = dynamic_cast<CustomTitleBar *>(child))
-            {
-                ThemeConfig::Get().ApplyTheme(titleBar, selectedTheme);
-                break;
-            }
-        }
+        // This will trigger ApplyTheme on MainFrame and its children (including TitleBar)
+        ThemeConfig::Get().ApplyTheme(parent, finalSelectedTheme);
     }
+    // Optionally trigger an update for all other registered windows if needed
+    // ThemeConfig::Get().UpdateSystemTheme(); // Or a similar method if not tied to system event
+
+    // 4. Close the dialog
     EndModal(wxID_OK);
 }
 
 void SettingsDialog::OnCancel(wxCommandEvent &event)
 {
+    // Discard changes made within the dialog
     EndModal(wxID_CANCEL);
 }

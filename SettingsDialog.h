@@ -1,10 +1,13 @@
 // SettingsDialog.h
 #ifndef SETTINGSDIALOG_H
 #define SETTINGSDIALOG_H
-#include <wx/wx.h>
-#include "ThemeConfig.h"
-#include <wxSVG/svg.h> // Include wxSVG headers
 
+#include <wx/wx.h>
+#include <wx/statbox.h>
+#include <wx/checkbox.h>
+#include "ThemeConfig.h"
+
+// --- ToggleSwitch Declaration ---
 class ToggleSwitch : public wxControl
 {
 public:
@@ -15,32 +18,39 @@ public:
 
 private:
     bool m_value;
-    wxColour m_trackOnColor = wxColour(79, 70, 229);
-    wxColour m_trackOffColor = wxColour(75, 85, 99);
-    wxColour m_thumbColor = wxColour(255, 255, 255);
+    wxColour m_trackOnColor; // Colors will be set based on theme
+    wxColour m_trackOffColor;
+    wxColour m_thumbColor;
     void OnPaint(wxPaintEvent &event);
     void OnMouse(wxMouseEvent &event);
     wxDECLARE_EVENT_TABLE();
 };
 
+// --- SettingsDialog Declaration ---
 class SettingsDialog : public wxDialog
 {
 public:
     explicit SettingsDialog(wxWindow *parent);
-    wxString GetSelectedTheme() const;
+    wxString GetSelectedTheme() const; // Returns the theme selected *within* the dialog
     bool UseDocker() const;
     bool UseWSL() const;
 
 private:
+    // Event Handlers
     void OnOK(wxCommandEvent &event);
     void OnCancel(wxCommandEvent &event);
     void OnThemeButtonClick(wxCommandEvent &event);
     void OnToggleChanged(wxCommandEvent &event);
     void OnPaint(wxPaintEvent &event);
+
+    // UI Creation & Theme Application
     void CreateContent();
-    void ApplyTheme(const wxString &theme);
-    void SetupColors();
+    void ApplyTheme(const wxString &theme); // Applies theme to dialog controls
+
+    // UI Elements References
     wxPanel *m_mainPanel;
+    wxStaticText *m_titleText;
+    wxStaticBoxSizer *m_containerSizer; // Keep if needed for styling box
     wxButton *m_lightButton;
     wxButton *m_darkButton;
     ToggleSwitch *m_dockerToggle;
@@ -49,14 +59,22 @@ private:
 #endif
     wxButton *m_cancelButton;
     wxButton *m_okButton;
-    wxColour m_normalItemColor;
-    wxColour m_hoverItemColor;
-    wxColour m_bgColor = wxColour(30, 41, 59);
-    wxColour m_textColor = wxColour(229, 231, 235);
-    wxColour m_primaryColor = wxColour(79, 70, 229);
-    wxColour m_secondaryColor = wxColour(75, 85, 99);
-    DECLARE_EVENT_TABLE()
+
+    // State within the dialog
+    wxString m_selectedThemeInDialog; // Tracks selection before OK is pressed
+
+    // Cached theme colors (optional, could get directly from ThemeConfig)
+    wxColour m_bgColor;
+    wxColour m_textColor;
+    wxColour m_labelColor;
+    wxColour m_primaryColor;
+    wxColour m_secondaryColor;
+    wxColour m_inputBgColor;
+    wxColour m_inputFgColor;
+
+    wxDECLARE_EVENT_TABLE();
 };
 
 wxDECLARE_EVENT(EVT_TOGGLE_SWITCH, wxCommandEvent);
-#endif
+
+#endif // SETTINGSDIALOG_H
