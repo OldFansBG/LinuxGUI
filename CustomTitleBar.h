@@ -19,7 +19,7 @@ public:
              const wxPoint &pos = wxDefaultPosition,
              const wxSize &size = wxDefaultSize,
              long style = 0,
-             const wxString &name = wxPanelNameStr); // Corrected constructor signature
+             const wxString &name = wxPanelNameStr);
 
     void SetAlwaysShowButton(bool always) { m_alwaysShow = always; }
 
@@ -40,8 +40,7 @@ private:
     bool m_isPressed;
     bool m_alwaysShow;
 
-    // Add the missing event table declaration
-    wxDECLARE_EVENT_TABLE(); // <<< ADD THIS LINE
+    wxDECLARE_EVENT_TABLE();
 };
 
 //------------------------------------------------------------------------
@@ -53,7 +52,9 @@ public:
     CustomTitleBar(wxWindow *parent);
 
     wxStaticText *GetTitleTextWidget() { return m_titleText; }
-    void RefreshButtons();
+
+    // Changed RefreshButtons to more comprehensive RefreshControls
+    void RefreshControls();
 
 private:
     // UI Creation

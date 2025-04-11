@@ -177,19 +177,39 @@ CustomTitleBar::CustomTitleBar(wxWindow *parent)
       m_titleText(nullptr),
       m_isDragging(false)
 {
+    // Set the background style before creating any controls
     SetBackgroundStyle(wxBG_STYLE_PAINT);
+
+    // Get the theme colors
+    const ThemeColors &colors = ThemeConfig::Get().GetThemeColors(ThemeConfig::Get().GetCurrentTheme());
+
+    // Set the background color explicitly
+    SetBackgroundColour(colors.titleBar);
+
+    // Create the controls
     CreateControls();
+
+    // Apply the theme
     ThemeConfig::Get().ApplyTheme(this, ThemeConfig::Get().GetCurrentTheme());
 }
+// In CustomTitleBar.cpp, modify the CreateControls function:
 
 void CustomTitleBar::CreateControls()
 {
-    wxBoxSizer *sizer = new wxBoxSizer(wxHORIZONTAL); // It's a HORIZONTAL sizer
+    wxBoxSizer *sizer = new wxBoxSizer(wxHORIZONTAL);
     SetSizer(sizer);
 
+    // First create the title text with correct transparency handling
     m_titleText = new wxStaticText(this, wxID_ANY, "LinuxISOPro",
                                    wxDefaultPosition, wxDefaultSize,
-                                   wxALIGN_CENTER_VERTICAL);
+                                   wxALIGN_CENTER_VERTICAL | wxTRANSPARENT_WINDOW);
+
+    // Note: Don't use SetBackgroundStyle here as it's too late
+    // Instead, we'll use the background color of the parent
+    const ThemeColors &colors = ThemeConfig::Get().GetThemeColors(ThemeConfig::Get().GetCurrentTheme());
+    m_titleText->SetBackgroundColour(colors.titleBar);
+    m_titleText->SetForegroundColour(colors.text);
+
     wxFont titleFont = m_titleText->GetFont();
     titleFont.SetPointSize(10);
     titleFont.SetWeight(wxFONTWEIGHT_NORMAL);
@@ -218,9 +238,14 @@ void CustomTitleBar::OnPaint(wxPaintEvent &event)
     wxAutoBufferedPaintDC dc(this);
     wxRect rect = GetClientRect();
     const ThemeColors &colors = ThemeConfig::Get().GetThemeColors(ThemeConfig::Get().GetCurrentTheme());
+
+    // Set the background color of the title bar
     dc.SetBrush(wxBrush(colors.titleBar));
     dc.SetPen(*wxTRANSPARENT_PEN);
     dc.DrawRectangle(rect);
+
+    // Make sure our background color is properly set
+    SetBackgroundColour(colors.titleBar);
 }
 
 void CustomTitleBar::OnMouseLeftDown(wxMouseEvent &event)
@@ -311,10 +336,30 @@ void CustomTitleBar::OnClose(wxCommandEvent &event)
     }
 }
 
-void CustomTitleBar::RefreshButtons()
+// Replace the RefreshButtons function in CustomTitleBar.cpp with this:
+
+void CustomTitleBar::RefreshControls()
 {
+    // Get the current theme colors
+    const ThemeColors &colors = ThemeConfig::Get().GetThemeColors(ThemeConfig::Get().GetCurrentTheme());
+
+    // Update the title bar background color
+    SetBackgroundColour(colors.titleBar);
+
+    // Update title text colors to match the theme
+    if (m_titleText)
+    {
+        m_titleText->SetBackgroundColour(colors.titleBar);
+        m_titleText->SetForegroundColour(colors.text);
+        m_titleText->Refresh();
+    }
+
+    // Refresh the buttons
     if (m_minimizeButton)
         m_minimizeButton->Refresh();
     if (m_closeButton)
         m_closeButton->Refresh();
+
+    // Refresh the entire title bar to ensure proper painting
+    Refresh();
 }
