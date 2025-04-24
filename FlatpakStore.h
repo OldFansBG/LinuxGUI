@@ -262,6 +262,7 @@ private:
     void ClearResults();
     void LoadInitialApps();
     void ProcessPendingBatch(bool processAll);
+    void SaveInstallationPreferences(const wxString &appId, const wxString &command); // Add new method declaration
 
     DECLARE_EVENT_TABLE()
 };

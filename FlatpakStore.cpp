@@ -6,6 +6,9 @@
 #include <wx/filename.h>
 #include <wx/stdpaths.h>
 #include <wx/log.h>
+#include <rapidjson/document.h>
+#include <rapidjson/writer.h>
+#include <rapidjson/stringbuffer.h>
 #include <iostream>
 
 // Define event types
@@ -1028,6 +1031,14 @@ void FlatpakStore::OnInstallButtonClicked(wxCommandEvent &event)
     }
     wxLogDebug("Container ID validated: %s", m_containerId);
 
+    // Create installation command
+    wxString command = wxString::Format(
+        "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'flatpak install -y flathub %s > /dev/null 2>&1'\"",
+        m_containerId, appId);
+
+    // Save installation preferences
+    SaveInstallationPreferences(appId, command);
+
     // Create installation state
     InstallState *state = new InstallState(card);
     wxLogDebug("Created InstallState for app: %s", appId);
@@ -1055,6 +1066,76 @@ void FlatpakStore::OnInstallButtonClicked(wxCommandEvent &event)
         return;
     }
     wxLogDebug("InstallThread started successfully for app: %s", appId);
+}
+
+void FlatpakStore::SaveInstallationPreferences(const wxString &appId, const wxString &command)
+{
+    wxLogDebug("Saving installation preferences for app: %s", appId);
+
+    // Create preferences directory if it doesn't exist
+    wxString prefDir = wxFileName(m_workDir, "preferences").GetFullPath();
+    if (!wxDirExists(prefDir))
+    {
+        wxMkdir(prefDir);
+    }
+
+    // Create or update preferences.json
+    wxString prefFile = wxFileName(prefDir, "preferences.json").GetFullPath();
+    rapidjson::Document doc;
+    wxString content;
+
+    // Read existing content if file exists
+    if (wxFileExists(prefFile))
+    {
+        wxFile file(prefFile);
+        if (file.IsOpened())
+        {
+            file.ReadAll(&content);
+            file.Close();
+            if (!content.IsEmpty())
+            {
+                if (doc.Parse(content.ToStdString().c_str()).HasParseError())
+                {
+                    wxLogDebug("Error parsing existing preferences.json");
+                    doc.SetObject();
+                }
+            }
+        }
+    }
+
+    // Add or update installation preferences
+    if (!doc.IsObject())
+    {
+        doc.SetObject();
+    }
+
+    if (!doc.HasMember("installations"))
+    {
+        doc.AddMember("installations", rapidjson::Value(rapidjson::kArrayType), doc.GetAllocator());
+    }
+
+    rapidjson::Value installPrefs(rapidjson::kObjectType);
+    installPrefs.AddMember("appId", rapidjson::Value(appId.ToStdString().c_str(), doc.GetAllocator()), doc.GetAllocator());
+    installPrefs.AddMember("command", rapidjson::Value(command.ToStdString().c_str(), doc.GetAllocator()), doc.GetAllocator());
+    installPrefs.AddMember("timestamp", wxDateTime::Now().GetTicks(), doc.GetAllocator());
+
+    doc["installations"].PushBack(installPrefs, doc.GetAllocator());
+
+    // Write back to file
+    wxFile file;
+    if (file.Create(prefFile, true))
+    {
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+        doc.Accept(writer);
+        file.Write(buffer.GetString(), buffer.GetSize());
+        file.Close();
+        wxLogDebug("Successfully saved installation preferences for app: %s", appId);
+    }
+    else
+    {
+        wxLogDebug("Failed to create preferences.json file");
+    }
 }
 
 void FlatpakStore::OnInstallStart(wxCommandEvent &event)
