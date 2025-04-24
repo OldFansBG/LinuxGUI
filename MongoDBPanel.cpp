@@ -1,5 +1,3 @@
-
-
 #include "MongoDBPanel.h"
 #include "WindowIDs.h" // Include the shared IDs header (Important!)
 
@@ -74,17 +72,15 @@ wxBEGIN_EVENT_TABLE(MongoDBPanel, wxPanel)
 
     // --- Content List ---
     m_contentList = new wxListCtrl(this, wxID_ANY, wxDefaultPosition, wxDefaultSize,
-                                   wxLC_REPORT | wxLC_SINGLE_SEL | wxLC_HRULES | wxLC_VRULES | wxBORDER_NONE); // Report style, no border
+                                   wxLC_REPORT | wxLC_SINGLE_SEL | wxLC_HRULES | wxLC_VRULES | wxBORDER_NONE);
 
-    // Define Columns
-    m_contentList->InsertColumn(0, "ID", wxLIST_FORMAT_LEFT, 220); // MongoDB _id (wider)
-    m_contentList->InsertColumn(1, "Filename", wxLIST_FORMAT_LEFT, 180);
-    m_contentList->InsertColumn(2, "Upload Time", wxLIST_FORMAT_LEFT, 160);
-    m_contentList->InsertColumn(3, "Content Snippet", wxLIST_FORMAT_LEFT, 350); // Wider snippet
+    // Define Columns - Simplified to show only Application Name and File Name
+    m_contentList->InsertColumn(0, "Application Name", wxLIST_FORMAT_LEFT, 300);
+    m_contentList->InsertColumn(1, "File Name", wxLIST_FORMAT_LEFT, 200);
 
     // --- Assemble Main Sizer ---
     mainSizer->Add(topBar, 0, wxEXPAND | wxTOP | wxBOTTOM, 5);
-    mainSizer->Add(m_contentList, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10); // Add list control with padding
+    mainSizer->Add(m_contentList, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
 
     SetSizer(mainSizer);
     ApplyThemeColors(); // Apply colors
@@ -119,153 +115,100 @@ void MongoDBPanel::ApplyThemeColors()
 
 void MongoDBPanel::LoadMongoDBContent()
 {
-    m_contentList->DeleteAllItems(); // Clear previous content
+    m_contentList->DeleteAllItems();
     wxLogDebug("MongoDBPanel::LoadMongoDBContent - List cleared.");
 
     try
     {
-        // Connection URI - IMPORTANT: Replace with your actual connection string
         const auto uri = mongocxx::uri{"mongodb+srv://WERcvbdfg32:ED6Rlo6dP1hosLvJ@cxx.q4z9x.mongodb.net/?retryWrites=true&w=majority&appName=CXX"};
         mongocxx::options::client client_options;
         const auto api = mongocxx::options::server_api{mongocxx::options::server_api::version::k_version_1};
         client_options.server_api_opts(api);
 
         mongocxx::client client(uri, client_options);
-        mongocxx::database db = client["testdb"];       // Your database name
-        mongocxx::collection coll = db["config_files"]; // Collection for JSON files
-        wxLogDebug("MongoDBPanel::LoadMongoDBContent - Connected to db: %s, collection: %s",
-                   std::string(db.name()),    // Convert view_or_value
-                   std::string(coll.name())); // Convert view_or_value
+        mongocxx::database db = client["testdb"];
+        mongocxx::collection coll = db["config_files"];
 
-        mongocxx::cursor cursor = coll.find({}); // Find all documents
-        wxLogDebug("MongoDBPanel::LoadMongoDBContent - Executed find query.");
-
+        mongocxx::cursor cursor = coll.find({});
         long itemIndex = 0;
+
         for (auto &&doc_view : cursor)
         {
-            // --- Extract Data for Columns ---
-            wxString docIdStr = "N/A";
-            if (doc_view["_id"] && doc_view["_id"].type() == bsoncxx::type::k_oid)
-            {
-                docIdStr = doc_view["_id"].get_oid().value.to_string();
-            }
-
-            wxString filenameStr = "(no filename)"; // Default
+            // Get the original filename
+            wxString filename = "Unknown";
             if (doc_view["original_filename"] && doc_view["original_filename"].type() == bsoncxx::type::k_string)
-            {                                                                                              // Use k_string
-                filenameStr = wxString::FromUTF8(doc_view["original_filename"].get_string().value.data()); // Use get_string()
+            {
+                filename = wxString::FromUTF8(doc_view["original_filename"].get_string().value.data());
             }
 
-            wxString timestampStr = "(no timestamp)"; // Default
-            if (doc_view["upload_timestamp"] && doc_view["upload_timestamp"].type() == bsoncxx::type::k_date)
+            if (doc_view["config_data"] && doc_view["config_data"].type() == bsoncxx::type::k_document)
             {
-                auto time_point_ms = doc_view["upload_timestamp"].get_date();          // Get the b_date wrapper
-                std::chrono::system_clock::time_point time_point{time_point_ms.value}; // Construct time_point from ms duration
-                std::time_t time_c = std::chrono::system_clock::to_time_t(time_point);
-                std::tm tm_buf;
-// Use platform-specific safe function for localtime
-#ifdef _WIN32
-                localtime_s(&tm_buf, &time_c);
-#else
-                localtime_r(&time_c, &tm_buf);
-#endif
-                std::stringstream ss;
-                ss << std::put_time(&tm_buf, "%Y-%m-%d %H:%M:%S"); // ISO 8601 like
-                timestampStr = ss.str();
-            }
-            else if (doc_view["upload_timestamp"] && doc_view["upload_timestamp"].type() == bsoncxx::type::k_string)
-            {                                                                                              // Use k_string
-                timestampStr = wxString::FromUTF8(doc_view["upload_timestamp"].get_string().value.data()); // Use get_string()
-            }
-
-            wxString contentSnippet = "(No Content/Invalid)";
-            try
-            {
-                // Preferentially get snippet from "config_data" if it exists
-                std::string key_to_check = "config_data"; // The key where the original JSON is stored
-                if (doc_view[key_to_check])
+                auto config_data = doc_view["config_data"].get_document().view();
+                if (config_data["installations"] && config_data["installations"].type() == bsoncxx::type::k_array)
                 {
-                    if (doc_view[key_to_check].type() == bsoncxx::type::k_document)
+                    auto installations = config_data["installations"].get_array().value;
+
+                    // First, collect all application names for this file
+                    wxString allAppNames;
+                    for (auto &&install : installations)
                     {
-                        contentSnippet = bsoncxx::to_json(doc_view[key_to_check].get_document().view());
+                        if (install.type() == bsoncxx::type::k_document)
+                        {
+                            auto install_doc = install.get_document().view();
+                            if (install_doc["appName"] && install_doc["appName"].type() == bsoncxx::type::k_string)
+                            {
+                                wxString appName = wxString::FromUTF8(install_doc["appName"].get_string().value.data());
+                                if (!allAppNames.IsEmpty())
+                                {
+                                    allAppNames += ", ";
+                                }
+                                allAppNames += appName;
+                            }
+                        }
                     }
-                    else
+
+                    // Insert a single row for this file with all its applications
+                    if (!allAppNames.IsEmpty())
                     {
-                        // Attempt to convert the entire document if config_data isn't a document
-                        contentSnippet = bsoncxx::to_json(doc_view);
+                        long actualIndex = m_contentList->InsertItem(itemIndex, allAppNames);
+                        m_contentList->SetItem(actualIndex, 1, filename);
+
+                        // Alternate row colors
+                        if (itemIndex % 2 == 0)
+                        {
+                            m_contentList->SetItemBackgroundColour(actualIndex, m_listBgColor);
+                        }
+                        else
+                        {
+                            wxColour altColor = m_listBgColor.ChangeLightness(105);
+                            m_contentList->SetItemBackgroundColour(actualIndex, altColor);
+                        }
+                        m_contentList->SetItemTextColour(actualIndex, m_listFgColor);
+
+                        itemIndex++;
                     }
                 }
-                else
-                {
-                    // Fallback to whole document if "config_data" is not present
-                    contentSnippet = bsoncxx::to_json(doc_view);
-                }
-
-                // Truncate the snippet
-                if (contentSnippet.Length() > 150)
-                { // Increased snippet length
-                    contentSnippet = contentSnippet.Left(147) + "...";
-                }
             }
-            catch (const bsoncxx::exception &e)
-            {
-                wxLogWarning("Could not convert BSON to JSON for snippet (Doc ID: %s): %s", docIdStr, e.what());
-                contentSnippet = "(Error converting)";
-            }
-
-            // --- Insert into List Control ---
-            long actualIndex = m_contentList->InsertItem(itemIndex, docIdStr);
-            m_contentList->SetItem(actualIndex, 1, filenameStr);
-            m_contentList->SetItem(actualIndex, 2, timestampStr);
-            m_contentList->SetItem(actualIndex, 3, contentSnippet);
-
-            // Alternate row colors (optional but good for readability)
-            if (itemIndex % 2 == 0)
-            {
-                m_contentList->SetItemBackgroundColour(actualIndex, m_listBgColor);
-            }
-            else
-            {
-                wxColour altColor = m_listBgColor.ChangeLightness(105); // Slightly lighter
-                m_contentList->SetItemBackgroundColour(actualIndex, altColor);
-            }
-            m_contentList->SetItemTextColour(actualIndex, m_listFgColor); // Ensure text color
-
-            itemIndex++;
         }
-
-        wxLogDebug("MongoDBPanel::LoadMongoDBContent - Processed %ld documents.", itemIndex);
 
         if (itemIndex == 0)
         {
-            // Display a message if the collection is empty
-            long actualIndex = m_contentList->InsertItem(0, "No configuration files found in MongoDB.");
+            long actualIndex = m_contentList->InsertItem(0, "No applications found in MongoDB.");
             m_contentList->SetItem(actualIndex, 1, "-");
-            m_contentList->SetItem(actualIndex, 2, "-");
-            m_contentList->SetItem(actualIndex, 3, "-");
             m_contentList->SetItemBackgroundColour(actualIndex, m_listBgColor);
             m_contentList->SetItemTextColour(actualIndex, m_listFgColor);
         }
     }
     catch (const mongocxx::exception &e)
     {
-        wxLogError("MongoDB Error during Load: %s", e.what());
-        wxMessageBox("Error connecting to or reading from MongoDB:\n" + wxString(e.what()),
-                     "MongoDB Error", wxOK | wxICON_ERROR, this);
-        long actualIndex = m_contentList->InsertItem(0, "Error loading data from MongoDB.");
-        m_contentList->SetItem(actualIndex, 1, "Check Logs");
-        m_contentList->SetItem(actualIndex, 2, "-");
-        m_contentList->SetItem(actualIndex, 3, wxString(e.what()).Left(100)); // Show part of error
-        m_contentList->SetItemBackgroundColour(actualIndex, *wxRED);          // Highlight error row
-        m_contentList->SetItemTextColour(actualIndex, *wxWHITE);
+        wxLogError("MongoDB error: %s", e.what());
+        wxMessageBox(wxString::Format("MongoDB error: %s", e.what()), "Error", wxOK | wxICON_ERROR);
     }
     catch (const std::exception &e)
     {
-        wxLogError("Standard Exception during Load: %s", e.what());
-        wxMessageBox("An unexpected error occurred while loading data: " + wxString(e.what()),
-                     "Error", wxOK | wxICON_ERROR, this);
+        wxLogError("Error: %s", e.what());
+        wxMessageBox(wxString::Format("Error: %s", e.what()), "Error", wxOK | wxICON_ERROR);
     }
-    wxLogDebug("MongoDBPanel::LoadMongoDBContent - Finished loading.");
 }
 
 // This handler is for the 'Close' button *inside* the MongoDBPanel
