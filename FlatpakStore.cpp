@@ -1036,8 +1036,11 @@ void FlatpakStore::OnInstallButtonClicked(wxCommandEvent &event)
         "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'flatpak install -y flathub %s > /dev/null 2>&1'\"",
         m_containerId, appId);
 
+    // Get the app name from the card
+    wxString appName = card->GetName();
+
     // Save installation preferences
-    SaveInstallationPreferences(appId, command);
+    SaveInstallationPreferences(appId, command, appName);
 
     // Create installation state
     InstallState *state = new InstallState(card);
@@ -1068,7 +1071,7 @@ void FlatpakStore::OnInstallButtonClicked(wxCommandEvent &event)
     wxLogDebug("InstallThread started successfully for app: %s", appId);
 }
 
-void FlatpakStore::SaveInstallationPreferences(const wxString &appId, const wxString &command)
+void FlatpakStore::SaveInstallationPreferences(const wxString &appId, const wxString &command, const wxString &appName)
 {
     wxLogDebug("Saving installation preferences for app: %s", appId);
 
@@ -1116,6 +1119,7 @@ void FlatpakStore::SaveInstallationPreferences(const wxString &appId, const wxSt
 
     rapidjson::Value installPrefs(rapidjson::kObjectType);
     installPrefs.AddMember("appId", rapidjson::Value(appId.ToStdString().c_str(), doc.GetAllocator()), doc.GetAllocator());
+    installPrefs.AddMember("appName", rapidjson::Value(appName.ToStdString().c_str(), doc.GetAllocator()), doc.GetAllocator());
     installPrefs.AddMember("command", rapidjson::Value(command.ToStdString().c_str(), doc.GetAllocator()), doc.GetAllocator());
     installPrefs.AddMember("timestamp", wxDateTime::Now().GetTicks(), doc.GetAllocator());
 
