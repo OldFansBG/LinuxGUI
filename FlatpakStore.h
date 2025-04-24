@@ -97,6 +97,7 @@ public:
 
     void SetIcon(const wxBitmap &bitmap);
     wxString GetAppId() const { return m_appId; }
+    wxString GetName() const { return m_nameText->GetLabel(); }
     wxGauge *GetProgressGauge() { return m_progressGauge; }
     wxButton *GetCancelButton() { return m_cancelButton; }
     void ShowInstalling(bool show);
