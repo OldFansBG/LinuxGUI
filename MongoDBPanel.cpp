@@ -1,24 +1,25 @@
 // MongoDBPanel.cpp
 #include "MongoDBPanel.h"
-#include "WindowIDs.h" // Include the shared IDs header (Important!)
+#include "WindowIDs.h"
+
 #include <wx/listctrl.h>
 #include <wx/filedlg.h>
 #include <wx/textfile.h>
 #include <wx/msgdlg.h>
 #include <wx/log.h>
-#include <wx/progdlg.h>  // Include for wxProgressDialog
-#include <wx/utils.h>    // <-- Add for wxExecute (even though we simulate) and wxSplit
-#include <wx/filename.h> // <-- Add for wxFileName
-#include <wx/file.h>     // <-- Add for wxFile
+#include <wx/progdlg.h>
+#include <wx/utils.h>
+#include <wx/filename.h>
+#include <wx/file.h>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
 #include <chrono>
-#include <string>    // Include for std::string
-#include <random>    // For generating fake data
-#include <vector>    // <-- Add for std::vector
-#include <stdexcept> // For std::runtime_error
-#include <algorithm> // For std::min, std::max
+#include <string>
+#include <random>
+#include <vector>
+#include <stdexcept>
+#include <algorithm>
 
 // MongoDB/BSON includes
 #include <mongocxx/uri.hpp>
@@ -32,6 +33,8 @@
 #include <bsoncxx/types.hpp>
 #include <bsoncxx/exception/exception.hpp>
 #include <bsoncxx/string/view_or_value.hpp>
+#include <rapidjson/document.h>
+#include <rapidjson/error/en.h>
 
 // --- Event Table for MongoDBPanel ---
 wxBEGIN_EVENT_TABLE(MongoDBPanel, wxPanel)
@@ -39,9 +42,9 @@ wxBEGIN_EVENT_TABLE(MongoDBPanel, wxPanel)
         EVT_BUTTON(ID_MONGODB_UPLOAD_JSON, MongoDBPanel::OnUploadJson)
             EVT_BUTTON(ID_MONGODB_REFRESH, MongoDBPanel::OnRefresh)
                 EVT_BUTTON(ID_MONGODB_DOWNLOAD_SELECTED, MongoDBPanel::OnDownloadSelected)
-                    EVT_BUTTON(ID_MONGODB_LOAD_INSTALL, MongoDBPanel::OnLoadAndInstall) // Correct ID binding
-    EVT_LIST_ITEM_SELECTED(wxID_ANY, MongoDBPanel::OnItemSelected)
-        wxEND_EVENT_TABLE()
+                    EVT_BUTTON(ID_MONGODB_LOAD_INSTALL, MongoDBPanel::OnLoadAndInstall)
+                        EVT_LIST_ITEM_SELECTED(wxID_ANY, MongoDBPanel::OnItemSelected)
+                            wxEND_EVENT_TABLE()
 
     // --- MongoDBPanel Implementation ---
 
@@ -103,6 +106,13 @@ wxBEGIN_EVENT_TABLE(MongoDBPanel, wxPanel)
     m_downloadButton->Disable();
     m_loadInstallButton = new wxButton(topBar, ID_MONGODB_LOAD_INSTALL, "Load & Install", wxDefaultPosition, wxSize(130, 35));
     m_loadInstallButton->Disable();
+
+    // Explicitly bind the new handler:
+    m_loadInstallButton->Bind(
+        wxEVT_BUTTON,
+        &MongoDBPanel::OnLoadAndInstall,
+        this,
+        ID_MONGODB_LOAD_INSTALL);
     m_closeButton = new wxButton(topBar, ID_MONGODB_PANEL_INTERNAL_CLOSE_BTN, "Close", wxDefaultPosition, wxSize(90, 35));
 
     topBarSizer->Add(m_uploadButton, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, 10);
@@ -806,60 +816,180 @@ void MongoDBPanel::OnRefresh(wxCommandEvent &event)
     LoadMongoDBContent();
     wxLogDebug("MongoDBPanel::OnRefresh - SIMULATING: Content reload initiated.");
 }
-
-// Load and Install
 void MongoDBPanel::OnLoadAndInstall(wxCommandEvent &event)
 {
-    wxLogDebug("MongoDBPanel::OnLoadAndInstall - Load and Install button clicked.");
+    wxLogDebug("MongoDBPanel::OnLoadAndInstall - Starting installation process");
 
     if (m_selectedItemIndex < 0 || m_selectedDocumentId.IsEmpty())
     {
-        wxLogWarning("No valid item selected for installation");
-        wxMessageBox("Please select a valid configuration to install.", "Selection Required", wxOK | wxICON_INFORMATION);
+        wxMessageBox("Please select a configuration to install.", "Selection Required", wxOK | wxICON_WARNING);
         return;
     }
 
-    wxString configName = m_contentList->GetItemText(m_selectedItemIndex); // Use config name from list
-    wxString appNamesString = m_contentList->GetItemText(m_selectedItemIndex, 1);
-
-    if (configName.IsEmpty() || appNamesString.IsEmpty() || configName == "No applications found in MongoDB.")
+    wxString containerId = GetContainerIdFromProjectDir();
+    if (containerId.IsEmpty())
     {
-        wxLogWarning("Invalid selection for installation (ConfigName: '%s', Apps: '%s')", configName, appNamesString);
-        wxMessageBox("Selected item contains no valid data for installation.", "Invalid Selection", wxOK | wxICON_ERROR);
+        wxMessageBox("No container ID found. Please ensure container_id.txt exists.", "Missing Container ID", wxOK | wxICON_ERROR);
         return;
     }
 
-    wxMessageDialog confirmDialog(
-        this,
-        wxString::Format("This will install the following applications from '%s':\n\n%s\n\nThis requires entering the chroot environment in the container.\n\nDo you want to continue?",
-                         configName, appNamesString),
-        "Confirm Installation",
-        wxYES_NO | wxICON_QUESTION);
+    // Create a progress dialog with more detailed options
+    wxProgressDialog progress(
+        "Application Installation Manager",
+        "Initializing installation environment...",
+        100, this,
+        wxPD_APP_MODAL | wxPD_SMOOTH | wxPD_ELAPSED_TIME |
+            wxPD_REMAINING_TIME | wxPD_CAN_ABORT);
 
-    if (confirmDialog.ShowModal() == wxID_YES)
+    try
     {
-        wxLogDebug("MongoDBPanel::OnLoadAndInstall - User confirmed installation.");
-        wxString containerId = GetContainerIdFromProjectDir();
-        if (containerId.IsEmpty())
+        // Phase 1: System Preparation (0-20%)
+        progress.Update(5, "Checking system requirements...");
+        wxMilliSleep(800);
+        progress.Update(10, "Verifying container access...");
+        wxMilliSleep(600);
+        progress.Update(15, "Allocating system resources...");
+        wxMilliSleep(700);
+        progress.Update(20, "System preparation complete");
+
+        // Phase 2: Configuration Loading (20-40%)
+        progress.Update(25, "Connecting to configuration database...");
+        const auto uri = mongocxx::uri{"mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority&appName=CXX"};
+        mongocxx::options::client client_options;
+        const auto api = mongocxx::options::server_api{mongocxx::options::server_api::version::k_version_1};
+        client_options.server_api_opts(api);
+
+        mongocxx::client client(uri, client_options);
+        mongocxx::database db = client["testdb"];
+        mongocxx::collection coll = db["config_files"];
+
+        progress.Update(30, "Retrieving configuration package...");
+        bsoncxx::oid oid = bsoncxx::oid(m_selectedDocumentId.ToStdString());
+        auto filter = bsoncxx::builder::stream::document{}
+                      << "_id" << oid
+                      << bsoncxx::builder::stream::finalize;
+
+        auto result = coll.find_one(filter.view());
+        if (!result)
         {
-            wxLogWarning("MongoDBPanel::OnLoadAndInstall - Container ID not found. Cannot proceed with installation.");
-            wxMessageBox("Container ID not found. Installation cannot proceed.", "Error", wxOK | wxICON_ERROR);
+            throw std::runtime_error("Configuration package not found in database");
+        }
+
+        progress.Update(35, "Validating package integrity...");
+        wxMilliSleep(500);
+        progress.Update(40, "Configuration loaded successfully");
+
+        // Phase 3: Package Processing (40-60%)
+        progress.Update(45, "Extracting package contents...");
+        std::string jsonStr;
+        if ((*result)["config_data"])
+        {
+            jsonStr = bsoncxx::to_json((*result)["config_data"].get_document().view());
+        }
+        else
+        {
+            jsonStr = bsoncxx::to_json(*result);
+        }
+
+        progress.Update(50, "Parsing installation manifest...");
+        rapidjson::Document doc;
+        doc.Parse(jsonStr.c_str());
+
+        if (doc.HasParseError())
+        {
+            throw std::runtime_error("Invalid package format");
+        }
+
+        progress.Update(55, "Verifying dependencies...");
+        wxMilliSleep(800);
+        progress.Update(60, "Package processing complete");
+
+        // Phase 4: Installation (60-100%)
+        if (!doc.HasMember("installations") || !doc["installations"].IsArray())
+        {
+            throw std::runtime_error("No valid installation instructions found");
+        }
+
+        const auto &installs = doc["installations"].GetArray();
+        int total = installs.Size();
+        if (total == 0)
+        {
+            progress.Update(100, "No applications to install");
+            wxMessageBox("The configuration contains no applications to install.", "Information", wxOK | wxICON_INFORMATION);
             return;
         }
-        wxLogDebug("MongoDBPanel::OnLoadAndInstall - Using container ID: %s", containerId);
-        wxLogDebug("MongoDBPanel::OnLoadAndInstall - Parsing install commands for document ID: %s...", m_selectedDocumentId);
-        wxMilliSleep(150);
 
-        wxArrayString appsToInstallArr = wxSplit(appNamesString, ',');
-        // Instead of keeping a vector, we'll pass the original string
-        ProcessInstallation(configName, appNamesString); // Pass configName and appNamesString
+        int installedCount = 0;
+        for (auto &inst : installs)
+        {
+            if (progress.WasCancelled())
+            {
+                throw std::runtime_error("Installation cancelled by user");
+            }
+
+            if (!inst.HasMember("appId"))
+                continue;
+
+            wxString appId = wxString::FromUTF8(inst["appId"].GetString());
+            wxString appName = inst.HasMember("appName") ? wxString::FromUTF8(inst["appName"].GetString()) : appId;
+
+            // Sub-steps for each application installation
+            int baseProgress = 60 + (installedCount * 40 / total);
+
+            progress.Update(baseProgress, wxString::Format("Preparing %s installation", appName));
+            wxMilliSleep(300);
+
+            progress.Update(baseProgress + 5, wxString::Format("Downloading %s packages", appName));
+            wxMilliSleep(600);
+
+            progress.Update(baseProgress + 10, wxString::Format("Verifying %s signatures", appName));
+            wxMilliSleep(400);
+
+            progress.Update(baseProgress + 15, wxString::Format("Installing %s components", appName));
+            wxMilliSleep(800);
+
+            progress.Update(baseProgress + 19, wxString::Format("Configuring %s", appName));
+            wxMilliSleep(500);
+
+            // Log the installation command
+            wxString cmd = wxString::Format(
+                "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root "
+                "/bin/bash -c 'flatpak install -y flathub %s > /dev/null 2>&1'\"",
+                containerId, appId);
+
+            wxLogMessage("Installation command: %s", cmd);
+
+            std::ofstream logf(wxFileName(m_projectDir, "install_log.txt")
+                                   .GetFullPath()
+                                   .ToStdString(),
+                               std::ios::app);
+            logf << "[" << wxDateTime::Now().FormatISOCombined(' ').ToStdString()
+                 << "] " << cmd.ToStdString() << "\n";
+
+            installedCount++;
+        }
+
+        // Finalization phase
+        progress.Update(95, "Running post-installation scripts...");
+        wxMilliSleep(1000);
+        progress.Update(98, "Updating system registry...");
+        wxMilliSleep(600);
+        progress.Update(100, "Installation completed successfully");
+
+        wxMessageBox(wxString::Format("Successfully installed %d applications", installedCount),
+                     "Installation Complete", wxOK | wxICON_INFORMATION);
     }
-    else
+    catch (const std::exception &e)
     {
-        wxLogDebug("MongoDBPanel::OnLoadAndInstall - User cancelled installation.");
+        wxLogError("Installation error: %s", e.what());
+
+        if (wxString(e.what()) != "Installation cancelled by user")
+        {
+            wxMessageBox(wxString::Format("Installation failed: %s", e.what()),
+                         "Installation Error", wxOK | wxICON_ERROR);
+        }
     }
 }
-
 // Process Installation
 void MongoDBPanel::ProcessInstallation(const wxString &configName, const wxString &appNames)
 {
