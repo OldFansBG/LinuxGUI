@@ -698,9 +698,8 @@ void SecondWindow::CreateControls()
     m_sqlTab->Hide();                                 // Starts hidden
 
     // MongoDB Panel
-    m_mongoPanel = new MongoDBPanel(m_mainPanel); // Create instance
-    m_mongoPanel->Hide();                         // Starts hidden
-
+    m_mongoPanel = new MongoDBPanel(m_mainPanel, m_projectDir); // Pass projectDir
+    m_mongoPanel->Hide();   
     // --- Bottom Button Panel ---
     wxPanel *buttonPanel = new wxPanel(m_mainPanel);
     buttonPanel->SetBackgroundColour(wxColour(30, 30, 30)); // Match tab bar
