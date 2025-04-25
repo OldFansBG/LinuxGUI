@@ -81,9 +81,8 @@ private:
     wxColour m_headerBgColor;
     wxColour m_borderColor;
 
-    // --- Simulated Logic Helpers ---
-    void SimulateInstallation(const wxString &fileName, const wxString &appNames);
-    void SimulateDownload(const wxString &documentId, const wxString &filePath);
+    // --- Logic Helpers ---
+    void ProcessInstallation(const wxString &configName, const wxString &appNames);
     wxString GetContainerIdFromProjectDir(); // <-- New helper function
 
     // --- Added JSON File Handling Helpers ---

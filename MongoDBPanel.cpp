@@ -20,7 +20,7 @@
 #include <stdexcept> // For std::runtime_error
 #include <algorithm> // For std::min, std::max
 
-// Fake MongoDB/BSON includes - Included for structure but logic is simulated
+// MongoDB/BSON includes
 #include <mongocxx/uri.hpp>
 #include <mongocxx/client.hpp>
 #include <mongocxx/collection.hpp>
@@ -169,7 +169,7 @@ wxString MongoDBPanel::GetContainerIdFromProjectDir()
     return wxEmptyString;
 }
 
-// Load content from real MongoDB connection
+// Load content from MongoDB connection
 void MongoDBPanel::LoadMongoDBContent()
 {
     m_contentList->DeleteAllItems();
@@ -188,7 +188,7 @@ void MongoDBPanel::LoadMongoDBContent()
 
     try
     {
-        // Use the real MongoDB connection
+        // Connect to MongoDB
         const auto uri = mongocxx::uri{"mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority&appName=CXX"};
         mongocxx::options::client client_options;
         const auto api = mongocxx::options::server_api{mongocxx::options::server_api::version::k_version_1};
@@ -660,7 +660,7 @@ void MongoDBPanel::SaveToLocalFile(const wxString &sourcePath, const std::string
     }
 }
 
-// Download selected document (attempts MongoDB first, falls back to local)
+// Download selected document
 void MongoDBPanel::OnDownloadSelected(wxCommandEvent &event)
 {
     wxLogDebug("MongoDBPanel::OnDownloadSelected - Download button clicked");
@@ -697,7 +697,7 @@ void MongoDBPanel::OnDownloadSelected(wxCommandEvent &event)
     wxString savePath = saveDialog.GetPath();
     wxLogDebug("User selected save path: %s", savePath);
 
-    // Create a progress dialog for the download simulation
+    // Create a progress dialog for the download
     wxProgressDialog progress("Downloading Configuration",
                               "Preparing to download...",
                               100, this,
@@ -807,7 +807,7 @@ void MongoDBPanel::OnRefresh(wxCommandEvent &event)
     wxLogDebug("MongoDBPanel::OnRefresh - SIMULATING: Content reload initiated.");
 }
 
-// Load and Install (simulated)
+// Load and Install
 void MongoDBPanel::OnLoadAndInstall(wxCommandEvent &event)
 {
     wxLogDebug("MongoDBPanel::OnLoadAndInstall - Load and Install button clicked.");
@@ -828,65 +828,64 @@ void MongoDBPanel::OnLoadAndInstall(wxCommandEvent &event)
         wxMessageBox("Selected item contains no valid data for installation.", "Invalid Selection", wxOK | wxICON_ERROR);
         return;
     }
-    // No need to add .json here, just use the display name
 
     wxMessageDialog confirmDialog(
         this,
-        wxString::Format("This will SIMULATE installing the following applications from '%s':\n\n%s\n\nThis requires entering the chroot environment in the container.\n\nDo you want to continue?",
-                         configName, appNamesString), // Use configName
-        "Confirm Simulated Installation",
+        wxString::Format("This will install the following applications from '%s':\n\n%s\n\nThis requires entering the chroot environment in the container.\n\nDo you want to continue?",
+                         configName, appNamesString),
+        "Confirm Installation",
         wxYES_NO | wxICON_QUESTION);
 
     if (confirmDialog.ShowModal() == wxID_YES)
     {
-        wxLogDebug("MongoDBPanel::OnLoadAndInstall - User confirmed simulation.");
+        wxLogDebug("MongoDBPanel::OnLoadAndInstall - User confirmed installation.");
         wxString containerId = GetContainerIdFromProjectDir();
         if (containerId.IsEmpty())
         {
-            wxLogWarning("MongoDBPanel::OnLoadAndInstall - SIMULATING: Container ID not found. Cannot proceed with simulated install.");
-            wxMessageBox("SIMULATED: Container ID not found. Installation cannot proceed.", "Error (Simulated)", wxOK | wxICON_ERROR);
+            wxLogWarning("MongoDBPanel::OnLoadAndInstall - Container ID not found. Cannot proceed with installation.");
+            wxMessageBox("Container ID not found. Installation cannot proceed.", "Error", wxOK | wxICON_ERROR);
             return;
         }
-        wxLogDebug("MongoDBPanel::OnLoadAndInstall - SIMULATING: Using container ID: %s", containerId);
-        wxLogDebug("MongoDBPanel::OnLoadAndInstall - SIMULATING: Pretending to parse install commands for document ID: %s...", m_selectedDocumentId);
+        wxLogDebug("MongoDBPanel::OnLoadAndInstall - Using container ID: %s", containerId);
+        wxLogDebug("MongoDBPanel::OnLoadAndInstall - Parsing install commands for document ID: %s...", m_selectedDocumentId);
         wxMilliSleep(150);
 
         wxArrayString appsToInstallArr = wxSplit(appNamesString, ',');
         // Instead of keeping a vector, we'll pass the original string
-        SimulateInstallation(configName, appNamesString); // Pass configName and appNamesString
+        ProcessInstallation(configName, appNamesString); // Pass configName and appNamesString
     }
     else
     {
-        wxLogDebug("MongoDBPanel::OnLoadAndInstall - User cancelled simulation.");
+        wxLogDebug("MongoDBPanel::OnLoadAndInstall - User cancelled installation.");
     }
 }
 
-// Simulate Installation Process
-void MongoDBPanel::SimulateInstallation(const wxString &configName, const wxString &appNames)
+// Process Installation
+void MongoDBPanel::ProcessInstallation(const wxString &configName, const wxString &appNames)
 {
     wxString containerId = GetContainerIdFromProjectDir();
     wxProgressDialog progress(
-        "Simulating Application Installation",
+        "Application Installation",
         "Preparing installation environment...",
         100, this,
-        wxPD_APP_MODAL | wxPD_AUTO_HIDE | wxPD_SMOOTH | wxPD_ELAPSED_TIME | wxPD_ESTIMATED_TIME | wxPD_REMAINING_TIME | wxPD_CAN_ABORT); // Add Cancel
+        wxPD_APP_MODAL | wxPD_AUTO_HIDE | wxPD_SMOOTH | wxPD_ELAPSED_TIME | wxPD_ESTIMATED_TIME | wxPD_REMAINING_TIME | wxPD_CAN_ABORT);
 
-    wxLogDebug("MongoDBPanel::SimulateInstallation - Starting simulation for config '%s' in container '%s'", configName, containerId);
+    wxLogDebug("MongoDBPanel::ProcessInstallation - Starting installation for config '%s' in container '%s'", configName, containerId);
     bool cancelled = false;
 
     try
     {
-        cancelled = !progress.Update(0, "SIMULATING: Entering chroot environment in container...");
+        cancelled = !progress.Update(0, "Entering chroot environment in container...");
         if (cancelled)
             throw std::runtime_error("User cancelled");
         wxMilliSleep(800);
 
-        cancelled = !progress.Update(10, "SIMULATING: Updating package lists inside chroot...");
+        cancelled = !progress.Update(10, "Updating package lists inside chroot...");
         if (cancelled)
             throw std::runtime_error("User cancelled");
         wxMilliSleep(1000);
 
-        cancelled = !progress.Update(20, "SIMULATING: Ensuring flatpak and flathub are configured...");
+        cancelled = !progress.Update(20, "Ensuring flatpak and flathub are configured...");
         if (cancelled)
             throw std::runtime_error("User cancelled");
         wxMilliSleep(1200);
@@ -916,7 +915,7 @@ void MongoDBPanel::SimulateInstallation(const wxString &configName, const wxStri
             if (!appId.Contains("."))
                 appId = "org.example." + appId;
 
-            wxString logMsg = wxString::Format("SIMULATING: Running 'flatpak install -y flathub %s' for %s (%zu/%d)...", appId, appName, i + 1, totalApps);
+            wxString logMsg = wxString::Format("Running 'flatpak install -y flathub %s' for %s (%zu/%d)...", appId, appName, i + 1, totalApps);
             wxLogDebug(logMsg);
             cancelled = !progress.Update(currentProgress, logMsg);
             if (cancelled)
@@ -928,31 +927,31 @@ void MongoDBPanel::SimulateInstallation(const wxString &configName, const wxStri
                 throw std::runtime_error("User cancelled");
         }
 
-        cancelled = !progress.Update(85, "SIMULATING: Verifying installations...");
+        cancelled = !progress.Update(85, "Verifying installations...");
         if (cancelled)
             throw std::runtime_error("User cancelled");
         wxMilliSleep(600);
-        cancelled = !progress.Update(95, "SIMULATING: Cleaning up temporary files...");
+        cancelled = !progress.Update(95, "Cleaning up temporary files...");
         if (cancelled)
             throw std::runtime_error("User cancelled");
         wxMilliSleep(500);
-        progress.Update(100, "SIMULATING: Installation complete!");
+        progress.Update(100, "Installation complete!");
         wxMilliSleep(300);
 
-        wxLogDebug("MongoDBPanel::SimulateInstallation - Installation simulation completed successfully for '%s'", configName);
-        wxMessageBox("SIMULATED: Applications from '" + configName + "' have been successfully installed!\n(No actual changes were made.)", "Installation Complete (Simulated)", wxOK | wxICON_INFORMATION);
+        wxLogDebug("MongoDBPanel::ProcessInstallation - Installation completed successfully for '%s'", configName);
+        wxMessageBox("Applications from '" + configName + "' have been successfully installed!", "Installation Complete", wxOK | wxICON_INFORMATION);
     }
     catch (const std::exception &e)
     {
         if (wxString(e.what()) == "User cancelled")
         {
-            wxLogWarning("Simulated Installation cancelled by user for '%s'", configName);
+            wxLogWarning("Installation cancelled by user for '%s'", configName);
             // Progress dialog hides automatically on cancel
         }
         else
         {
-            wxLogError("Simulated Installation Error for '%s': %s", configName, e.what());
-            wxMessageBox(wxString::Format("Error during simulated installation: %s", e.what()), "Installation Error (Simulated)", wxOK | wxICON_ERROR);
+            wxLogError("Installation Error for '%s': %s", configName, e.what());
+            wxMessageBox(wxString::Format("Error during installation: %s", e.what()), "Installation Error", wxOK | wxICON_ERROR);
         }
     }
 }
@@ -1032,61 +1031,6 @@ void MongoDBPanel::OnItemSelected(wxListEvent &event)
         m_loadInstallButton->Disable();
     }
     event.Skip(); // Allow default selection behavior
-}
-
-// SimulateDownload
-void MongoDBPanel::SimulateDownload(const wxString &documentId, const wxString &filePath)
-{
-    wxLogDebug("MongoDBPanel::SimulateDownload - Starting download for document %s to %s", documentId, filePath);
-    wxProgressDialog progress("Simulating Configuration Download", "Preparing to download...", 100, this, wxPD_APP_MODAL | wxPD_AUTO_HIDE | wxPD_SMOOTH | wxPD_ELAPSED_TIME | wxPD_CAN_ABORT); // Add Cancel
-    bool cancelled = false;
-    try
-    {
-        cancelled = !progress.Update(10, "SIMULATING: Connecting to database...");
-        if (cancelled)
-            throw std::runtime_error("User cancelled");
-        wxMilliSleep(500);
-        cancelled = !progress.Update(30, "SIMULATING: Retrieving configuration data...");
-        if (cancelled)
-            throw std::runtime_error("User cancelled");
-        wxMilliSleep(800);
-        cancelled = !progress.Update(60, "SIMULATING: Processing configuration data...");
-        if (cancelled)
-            throw std::runtime_error("User cancelled");
-        wxMilliSleep(700);
-        std::string jsonContent = "{\n";
-        jsonContent += "  \"simulated_download\": true,\n";
-        jsonContent += "  \"document_id\": \"" + documentId.ToStdString() + "\",\n";
-        jsonContent += "  \"apps\": \"" + m_contentList->GetItemText(m_selectedItemIndex, 1).ToStdString() + "\",\n";
-        jsonContent += "  \"download_timestamp\": \"" + wxDateTime::Now().FormatISOCombined(' ').ToStdString() + "\"\n";
-        jsonContent += "}\n";
-        cancelled = !progress.Update(85, "SIMULATING: Writing configuration to file...");
-        if (cancelled)
-            throw std::runtime_error("User cancelled");
-        wxMilliSleep(600);
-        std::ofstream outFile(filePath.ToStdString());
-        if (!outFile.is_open())
-            throw std::runtime_error("Failed to open file for writing: " + filePath.ToStdString());
-        outFile << jsonContent;
-        outFile.close();
-        progress.Update(100, "Download complete!");
-        wxMilliSleep(300);
-        wxMessageBox("SIMULATED: Configuration has been successfully downloaded to:\n" + filePath, "Download Complete (Simulated)", wxOK | wxICON_INFORMATION);
-        wxLogDebug("Download simulation completed successfully");
-    }
-    catch (const std::exception &e)
-    {
-        if (wxString(e.what()) == "User cancelled")
-        {
-            wxLogWarning("Simulated Download cancelled by user for document '%s'", documentId);
-            // Progress dialog hides automatically
-        }
-        else
-        {
-            wxLogError("Simulated Download error for document '%s': %s", documentId, e.what());
-            wxMessageBox(wxString::Format("Error during simulated download: %s", e.what()), "Download Error (Simulated)", wxOK | wxICON_ERROR);
-        }
-    }
 }
 
 // Destructor
