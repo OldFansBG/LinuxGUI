@@ -1034,7 +1034,7 @@ void MongoDBPanel::ProcessInstallation(const wxString &configName, const wxStrin
 
         int currentProgress = 30;
         int totalApps = appList.size();
-        int progressPerApp = (totalApps > 0) ? (80 - currentProgress) / totalApps : 0;
+        int progressPerApp = (totalApps > 0) ? std::min((60 / totalApps), 60) : 60;
 
         for (size_t i = 0; i < appList.size(); ++i)
         {
@@ -1045,31 +1045,37 @@ void MongoDBPanel::ProcessInstallation(const wxString &configName, const wxStrin
             if (!appId.Contains("."))
                 appId = "org.example." + appId;
 
-            wxString logMsg = wxString::Format("Running 'flatpak install -y flathub %s' for %s (%zu/%d)...", appId, appName, i + 1, totalApps);
+            wxString logMsg = wxString::Format("Running 'flatpak install -y flathub %s' for %s (%zu/%d)...",
+                                               appId, appName, i + 1, totalApps);
             wxLogDebug(logMsg);
-            cancelled = !progress.Update(currentProgress, logMsg);
+
+            // Ensure progress never exceeds 100
+            int nextProgress = std::min(80, currentProgress + progressPerApp);
+            cancelled = !progress.Update(nextProgress, logMsg);
             if (cancelled)
                 throw std::runtime_error("User cancelled");
+
             wxMilliSleep(900 + (rand() % 600));
-            currentProgress += progressPerApp;
-            cancelled = !progress.Update(std::min(80, currentProgress));
-            if (cancelled)
-                throw std::runtime_error("User cancelled");
+            currentProgress = nextProgress;
         }
 
+        // Final steps with guaranteed max of 100
         cancelled = !progress.Update(85, "Verifying installations...");
         if (cancelled)
             throw std::runtime_error("User cancelled");
         wxMilliSleep(600);
+
         cancelled = !progress.Update(95, "Cleaning up temporary files...");
         if (cancelled)
             throw std::runtime_error("User cancelled");
         wxMilliSleep(500);
+
         progress.Update(100, "Installation complete!");
         wxMilliSleep(300);
 
         wxLogDebug("MongoDBPanel::ProcessInstallation - Installation completed successfully for '%s'", configName);
-        wxMessageBox("Applications from '" + configName + "' have been successfully installed!", "Installation Complete", wxOK | wxICON_INFORMATION);
+        wxMessageBox("Applications from '" + configName + "' have been successfully installed!",
+                     "Installation Complete", wxOK | wxICON_INFORMATION);
     }
     catch (const std::exception &e)
     {
