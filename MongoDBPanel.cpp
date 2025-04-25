@@ -713,7 +713,11 @@ void MongoDBPanel::OnDownloadSelected(wxCommandEvent &event)
                               100, this,
                               wxPD_APP_MODAL | wxPD_AUTO_HIDE | wxPD_SMOOTH | wxPD_ELAPSED_TIME);
 
-    progress.Update(10, "Connecting to database...");
+    // Clamp helper
+    auto clamp = [](int v)
+    { return std::min(std::max(v, 0), 100); };
+
+    progress.Update(clamp(10), "Connecting to database...");
     wxMilliSleep(300);
 
     bool success = false;
@@ -731,7 +735,7 @@ void MongoDBPanel::OnDownloadSelected(wxCommandEvent &event)
         mongocxx::database db = client["testdb"];
         mongocxx::collection coll = db["config_files"];
 
-        progress.Update(30, "Retrieving configuration data...");
+        progress.Update(clamp(30), "Retrieving configuration data...");
 
         // Create an ObjectID from the string
         bsoncxx::oid oid = bsoncxx::oid(m_selectedDocumentId.ToStdString());
@@ -745,7 +749,7 @@ void MongoDBPanel::OnDownloadSelected(wxCommandEvent &event)
 
         if (result)
         {
-            progress.Update(60, "Processing configuration data...");
+            progress.Update(clamp(60), "Processing configuration data...");
             wxMilliSleep(400);
 
             // Extract the JSON data
@@ -762,7 +766,7 @@ void MongoDBPanel::OnDownloadSelected(wxCommandEvent &event)
                 jsonStr = bsoncxx::to_json(*result);
             }
 
-            progress.Update(80, "Writing configuration to file...");
+            progress.Update(clamp(80), "Writing configuration to file...");
 
             // Write to file
             std::ofstream outFile(savePath.ToStdString());
@@ -785,7 +789,7 @@ void MongoDBPanel::OnDownloadSelected(wxCommandEvent &event)
     {
         wxString dbFilePath = wxFileName(m_projectDir, "db_files", m_selectedDocumentId + ".json").GetFullPath();
 
-        progress.Update(70, "Retrieving local configuration file...");
+        progress.Update(clamp(70), "Retrieving local configuration file...");
 
         if (wxFileExists(dbFilePath))
         {
@@ -793,7 +797,7 @@ void MongoDBPanel::OnDownloadSelected(wxCommandEvent &event)
         }
     }
 
-    progress.Update(100, "Download complete!");
+    progress.Update(clamp(100), "Download complete!");
     wxMilliSleep(200);
 
     if (success)
@@ -841,19 +845,23 @@ void MongoDBPanel::OnLoadAndInstall(wxCommandEvent &event)
         wxPD_APP_MODAL | wxPD_SMOOTH | wxPD_ELAPSED_TIME |
             wxPD_REMAINING_TIME | wxPD_CAN_ABORT);
 
+    // Clamp helper
+    auto clamp = [](int v)
+    { return std::min(std::max(v, 0), 100); };
+
     try
     {
         // Phase 1: System Preparation (0-20%)
-        progress.Update(5, "Checking system requirements...");
+        progress.Update(clamp(5), "Checking system requirements...");
         wxMilliSleep(800);
-        progress.Update(10, "Verifying container access...");
+        progress.Update(clamp(10), "Verifying container access...");
         wxMilliSleep(600);
-        progress.Update(15, "Allocating system resources...");
+        progress.Update(clamp(15), "Allocating system resources...");
         wxMilliSleep(700);
-        progress.Update(20, "System preparation complete");
+        progress.Update(clamp(20), "System preparation complete");
 
         // Phase 2: Configuration Loading (20-40%)
-        progress.Update(25, "Connecting to configuration database...");
+        progress.Update(clamp(25), "Connecting to configuration database...");
         const auto uri = mongocxx::uri{"mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority&appName=CXX"};
         mongocxx::options::client client_options;
         const auto api = mongocxx::options::server_api{mongocxx::options::server_api::version::k_version_1};
@@ -863,7 +871,7 @@ void MongoDBPanel::OnLoadAndInstall(wxCommandEvent &event)
         mongocxx::database db = client["testdb"];
         mongocxx::collection coll = db["config_files"];
 
-        progress.Update(30, "Retrieving configuration package...");
+        progress.Update(clamp(30), "Retrieving configuration package...");
         bsoncxx::oid oid = bsoncxx::oid(m_selectedDocumentId.ToStdString());
         auto filter = bsoncxx::builder::stream::document{}
                       << "_id" << oid
@@ -875,12 +883,12 @@ void MongoDBPanel::OnLoadAndInstall(wxCommandEvent &event)
             throw std::runtime_error("Configuration package not found in database");
         }
 
-        progress.Update(35, "Validating package integrity...");
+        progress.Update(clamp(35), "Validating package integrity...");
         wxMilliSleep(500);
-        progress.Update(40, "Configuration loaded successfully");
+        progress.Update(clamp(40), "Configuration loaded successfully");
 
         // Phase 3: Package Processing (40-60%)
-        progress.Update(45, "Extracting package contents...");
+        progress.Update(clamp(45), "Extracting package contents...");
         std::string jsonStr;
         if ((*result)["config_data"])
         {
@@ -891,7 +899,7 @@ void MongoDBPanel::OnLoadAndInstall(wxCommandEvent &event)
             jsonStr = bsoncxx::to_json(*result);
         }
 
-        progress.Update(50, "Parsing installation manifest...");
+        progress.Update(clamp(50), "Parsing installation manifest...");
         rapidjson::Document doc;
         doc.Parse(jsonStr.c_str());
 
@@ -900,9 +908,9 @@ void MongoDBPanel::OnLoadAndInstall(wxCommandEvent &event)
             throw std::runtime_error("Invalid package format");
         }
 
-        progress.Update(55, "Verifying dependencies...");
+        progress.Update(clamp(55), "Verifying dependencies...");
         wxMilliSleep(800);
-        progress.Update(60, "Package processing complete");
+        progress.Update(clamp(60), "Package processing complete");
 
         // Phase 4: Installation (60-100%)
         if (!doc.HasMember("installations") || !doc["installations"].IsArray())
@@ -914,7 +922,7 @@ void MongoDBPanel::OnLoadAndInstall(wxCommandEvent &event)
         int total = installs.Size();
         if (total == 0)
         {
-            progress.Update(100, "No applications to install");
+            progress.Update(clamp(100), "No applications to install");
             wxMessageBox("The configuration contains no applications to install.", "Information", wxOK | wxICON_INFORMATION);
             return;
         }
@@ -935,20 +943,21 @@ void MongoDBPanel::OnLoadAndInstall(wxCommandEvent &event)
 
             // Sub-steps for each application installation
             int baseProgress = 60 + (installedCount * 40 / total);
+            baseProgress = clamp(baseProgress);
 
-            progress.Update(baseProgress, wxString::Format("Preparing %s installation", appName));
+            progress.Update(clamp(baseProgress), wxString::Format("Preparing %s installation", appName));
             wxMilliSleep(300);
 
-            progress.Update(baseProgress + 5, wxString::Format("Downloading %s packages", appName));
+            progress.Update(clamp(baseProgress + 5), wxString::Format("Downloading %s packages", appName));
             wxMilliSleep(600);
 
-            progress.Update(baseProgress + 10, wxString::Format("Verifying %s signatures", appName));
+            progress.Update(clamp(baseProgress + 10), wxString::Format("Verifying %s signatures", appName));
             wxMilliSleep(400);
 
-            progress.Update(baseProgress + 15, wxString::Format("Installing %s components", appName));
+            progress.Update(clamp(baseProgress + 15), wxString::Format("Installing %s components", appName));
             wxMilliSleep(800);
 
-            progress.Update(baseProgress + 19, wxString::Format("Configuring %s", appName));
+            progress.Update(clamp(baseProgress + 19), wxString::Format("Configuring %s", appName));
             wxMilliSleep(500);
 
             // Log the installation command
@@ -970,11 +979,11 @@ void MongoDBPanel::OnLoadAndInstall(wxCommandEvent &event)
         }
 
         // Finalization phase
-        progress.Update(95, "Running post-installation scripts...");
+        progress.Update(clamp(95), "Running post-installation scripts...");
         wxMilliSleep(1000);
-        progress.Update(98, "Updating system registry...");
+        progress.Update(clamp(98), "Updating system registry...");
         wxMilliSleep(600);
-        progress.Update(100, "Installation completed successfully");
+        progress.Update(clamp(100), "Installation completed successfully");
 
         wxMessageBox(wxString::Format("Successfully installed %d applications", installedCount),
                      "Installation Complete", wxOK | wxICON_INFORMATION);
@@ -1000,22 +1009,26 @@ void MongoDBPanel::ProcessInstallation(const wxString &configName, const wxStrin
         100, this,
         wxPD_APP_MODAL | wxPD_AUTO_HIDE | wxPD_SMOOTH | wxPD_ELAPSED_TIME | wxPD_ESTIMATED_TIME | wxPD_REMAINING_TIME | wxPD_CAN_ABORT);
 
+    // Clamp helper
+    auto clamp = [](int v)
+    { return std::min(std::max(v, 0), 100); };
+
     wxLogDebug("MongoDBPanel::ProcessInstallation - Starting installation for config '%s' in container '%s'", configName, containerId);
     bool cancelled = false;
 
     try
     {
-        cancelled = !progress.Update(0, "Entering chroot environment in container...");
+        cancelled = !progress.Update(clamp(0), "Entering chroot environment in container...");
         if (cancelled)
             throw std::runtime_error("User cancelled");
         wxMilliSleep(800);
 
-        cancelled = !progress.Update(10, "Updating package lists inside chroot...");
+        cancelled = !progress.Update(clamp(10), "Updating package lists inside chroot...");
         if (cancelled)
             throw std::runtime_error("User cancelled");
         wxMilliSleep(1000);
 
-        cancelled = !progress.Update(20, "Ensuring flatpak and flathub are configured...");
+        cancelled = !progress.Update(clamp(20), "Ensuring flatpak and flathub are configured...");
         if (cancelled)
             throw std::runtime_error("User cancelled");
         wxMilliSleep(1200);
@@ -1051,7 +1064,7 @@ void MongoDBPanel::ProcessInstallation(const wxString &configName, const wxStrin
 
             // Ensure progress never exceeds 100
             int nextProgress = std::min(80, currentProgress + progressPerApp);
-            cancelled = !progress.Update(nextProgress, logMsg);
+            cancelled = !progress.Update(clamp(nextProgress), logMsg);
             if (cancelled)
                 throw std::runtime_error("User cancelled");
 
@@ -1060,17 +1073,17 @@ void MongoDBPanel::ProcessInstallation(const wxString &configName, const wxStrin
         }
 
         // Final steps with guaranteed max of 100
-        cancelled = !progress.Update(85, "Verifying installations...");
+        cancelled = !progress.Update(clamp(85), "Verifying installations...");
         if (cancelled)
             throw std::runtime_error("User cancelled");
         wxMilliSleep(600);
 
-        cancelled = !progress.Update(95, "Cleaning up temporary files...");
+        cancelled = !progress.Update(clamp(95), "Cleaning up temporary files...");
         if (cancelled)
             throw std::runtime_error("User cancelled");
         wxMilliSleep(500);
 
-        progress.Update(100, "Installation complete!");
+        progress.Update(clamp(100), "Installation complete!");
         wxMilliSleep(300);
 
         wxLogDebug("MongoDBPanel::ProcessInstallation - Installation completed successfully for '%s'", configName);
