@@ -1,15 +1,16 @@
-#ifndef APPSETTINGS_H
-#define APPSETTINGS_H
+#ifndef APPSETTINGS_H // Предпазител от многократно включване на хедър файла
+#define APPSETTINGS_H // Дефиниране на предпазителя за хедър файла
 
-#include <wx/string.h>
+#include <wx/string.h> // Включване на wxString клас от wxWidgets библиотеката
 
-// Struct to hold application settings
-struct AppSettings {
-    wxString isoPath;         // Path to the ISO file
-    wxString workDir;         // Working directory
-    wxString projectName;     // Project name
-    wxString version;         // Version of the project
-    wxString detectedDistro;  // Detected Linux distribution
+// Структура, съдържаща настройките на приложението
+struct AppSettings
+{                            // Дефиниция на структурата за настройки на приложението
+    wxString isoPath;        // Път до ISO файла
+    wxString workDir;        // Работна директория
+    wxString projectName;    // Име на проекта
+    wxString version;        // Версия на проекта
+    wxString detectedDistro; // Открита Linux дистрибуция
 };
 
-#endif // APPSETTINGS_H
+#endif // APPSETTINGS_H // Край на предпазителя за хедър файла

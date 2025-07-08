@@ -1,64 +1,62 @@
-#pragma once
+#pragma once // Директива към компилатора да включи този хедър файл само веднъж, дори ако е указан многократно
 
-#include <wx/wx.h>
-#include <wx/thread.h>
-#include <atomic>
+#include <wx/wx.h>     // Включва основния хедър файл на wxWidgets
+#include <wx/thread.h> // Включва хедър файла за работа с нишки в wxWidgets (wxThread)
 
-class SecondWindow;
-class WallpaperLoadThread; // Forward declaration
+class WallpaperLoadThread; // Предварителна декларация на класа WallpaperLoadThread
 
-class CustomizeTab : public wxPanel
-{
-public:
-    CustomizeTab(wxWindow *parent);
-    ~CustomizeTab();
-    void LoadWallpaper(); // Moved to public section
+class CustomizeTab : public wxPanel // Декларация на клас CustomizeTab, който наследява публично от wxPanel
+{                                   // Начало на тялото на класа
+public:                             // Начало на публичната секция на класа
+    CustomizeTab(wxWindow *parent); // Декларация на конструктора, който приема указател към родителски прозорец
+    ~CustomizeTab();                // Декларация на деструктора
+    void LoadWallpaper();           // Декларация на метод за зареждане на тапети
 
-    // These methods need to be public or friend-accessible to WallpaperLoadThread
-    wxString GetProjectDir();
-    wxString GetWallpaperDirFromCommand(const wxString &containerId, const wxString &detectedDE);
-    wxString ExecuteCommandOnMainThread(const wxString &command, wxArrayString *output = nullptr);
+    // Helper method to check if wallpaperPanel is ready for use
+    bool IsWallpaperPanelReady() const;
 
-private:
-    void CreateContent();
+private:                  // Начало на частната секция на класа
+    void CreateContent(); // Декларация на метод за създаване на съдържанието на таба
 
-    // Fix function signature - should be wxCommandEvent not wxMouseEvent
-    void OnAddWallpaper(wxCommandEvent &event);
-    void OnWallpaperReady(wxCommandEvent &event);
-    void OnWallpaperLoadComplete(wxCommandEvent &event);
+    void OnAddWallpaper(wxCommandEvent &event);          // Декларация на метод за обработка на събитие при добавяне на тапет
+    void OnWallpaperReady(wxCommandEvent &event);        // Декларация на метод за обработка на събитие, когато един тапет е готов
+    void OnWallpaperLoadComplete(wxCommandEvent &event); // Декларация на метод за обработка на събитие, когато всички тапети са заредени
+    void OnOpenWallpaperFolder(wxCommandEvent &event);   // Декларация на метод за отваряне на папката с тапети
 
-    // New methods for responsive layout
-    void OnWallpaperPanelSize(wxSizeEvent &event);
-    void UpdateWallpaperGrid();
+    // Нови методи за адаптивно разположение
+    void OnWallpaperPanelSize(wxSizeEvent &event); // Декларация на метод за обработка на събитие при промяна на размера на панела с тапети
+    void UpdateWallpaperGrid();                    // Декларация на метод за обновяване на мрежата с тапети
 
-    wxScrolledWindow *wallpaperPanel;
-    wxStaticText *m_loadingText;
-    bool m_stopWallpaperLoad;
-    bool m_isDestroyed;
+    wxScrolledWindow *wallpaperPanel; // Указател към скролируем прозорец, който ще съдържа галерията с тапети
+    wxStaticText *m_loadingText;      // Указател към статичен текст, показван по време на зареждане
+    bool m_stopWallpaperLoad;         // Флаг, указващ дали зареждането на тапети трябва да бъде спряно
+    bool m_isDestroyed;               // Флаг, указващ дали табът е в процес на унищожаване
 
-    DECLARE_EVENT_TABLE()
+    DECLARE_EVENT_TABLE() // Макрос за деклариране на таблицата със събития за този клас
 
-    // Alternative approach: make WallpaperLoadThread a friend
-    // friend class WallpaperLoadThread;
-};
+    // Make WallpaperLoadThread a friend class so it can access private members
+    friend class WallpaperLoadThread;
+}; // Край на тялото на класа CustomizeTab
 
-// Update the WallpaperImageData struct to include selection state
-struct WallpaperImageData
-{
-    wxImage image;
-    wxString originalPath;
-    bool isSelected = false;
-};
+// Актуализирайте структурата WallpaperImageData, за да включва състояние на избор
+struct WallpaperImageData    // Дефиниция на структура за съхранение на данни за изображение на тапет
+{                            // Начало на тялото на структурата
+    wxImage image;           // Обект wxImage, съдържащ самото изображение
+    wxString originalPath;   // Низ, съдържащ оригиналния път до файла на тапета
+    bool isSelected = false; // Булев флаг, указващ дали тапетът е избран (инициализиран на false)
+}; // Край на тялото на структурата
 
-class WallpaperLoadThread : public wxThread
-{
-public:
-    WallpaperLoadThread(CustomizeTab *tab, bool &stopFlag)
-        : wxThread(wxTHREAD_DETACHED), m_tab(tab), m_stopFlag(stopFlag) {}
+class WallpaperLoadThread : public wxThread                // Декларация на клас WallpaperLoadThread, който наследява публично от wxThread
+{                                                          // Начало на тялото на класа
+public:                                                    // Начало на публичната секция на класа
+    WallpaperLoadThread(CustomizeTab *tab, bool &stopFlag) // Конструктор, приема указател към CustomizeTab и референция към булев флаг за спиране
+        : wxThread(wxTHREAD_DETACHED), m_tab(tab), m_stopFlag(stopFlag)
+    {
+    } // Инициализира базовия клас wxThread като отделена нишка (detached) и член-променливите m_tab и m_stopFlag
 
-    virtual ExitCode Entry() override;
+    virtual ExitCode Entry() override; // Декларация на виртуален метод Entry, който съдържа кода, изпълняван от нишката (пренаписва метода от wxThread)
 
-private:
-    CustomizeTab *m_tab;
-    bool &m_stopFlag;
-};
+private:                 // Начало на частната секция на класа
+    CustomizeTab *m_tab; // Указател към обекта CustomizeTab, с който работи нишката
+    bool &m_stopFlag;    // Референция към флага за спиране, споделен с CustomizeTab
+}; // Край на тялото на класа WallpaperLoadThread

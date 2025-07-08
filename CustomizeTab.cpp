@@ -1,5 +1,4 @@
 #include "CustomizeTab.h"
-#include "SecondWindow.h"
 #include <wx/filename.h>
 #include <wx/wfstream.h>
 #include <wx/dir.h>
@@ -7,12 +6,24 @@
 #include <wx/sizer.h>
 #include <wx/log.h>
 #include <wx/colordlg.h>
+#include <wx/textfile.h>
+#include <wx/thread.h>
+#include <wx/utils.h> // For wxLaunchDefaultApplication
+
+// Critical section for thread safety
+wxCriticalSection gThreadCS;
+
+// The hardcoded wallpaper directory
+const wxString WALLPAPER_DIRECTORY = "C:\\Users\\PC\\Documents\\houdini20.5\\linuxmint";
+
 wxDEFINE_EVENT(wxEVT_WALLPAPER_READY, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_WALLPAPER_LOAD_COMPLETE, wxCommandEvent);
+
 wxBEGIN_EVENT_TABLE(CustomizeTab, wxPanel)
     EVT_COMMAND(wxID_ANY, wxEVT_WALLPAPER_READY, CustomizeTab::OnWallpaperReady)
         EVT_COMMAND(wxID_ANY, wxEVT_WALLPAPER_LOAD_COMPLETE, CustomizeTab::OnWallpaperLoadComplete)
             wxEND_EVENT_TABLE()
+
                 CustomizeTab::CustomizeTab(wxWindow *parent)
     : wxPanel(parent),
       wallpaperPanel(nullptr),
@@ -21,7 +32,9 @@ wxBEGIN_EVENT_TABLE(CustomizeTab, wxPanel)
       m_isDestroyed(false)
 {
     CreateContent();
+    LoadWallpaper();
 }
+
 CustomizeTab::~CustomizeTab()
 {
     m_stopWallpaperLoad = true;
@@ -31,7 +44,6 @@ CustomizeTab::~CustomizeTab()
 
 void CustomizeTab::CreateContent()
 {
-    // Modern color palette
     wxColour bgColor(18, 18, 27);
     wxColour cardBgColor(30, 30, 46);
     wxColour accentColor(137, 180, 250);
@@ -40,686 +52,690 @@ void CustomizeTab::CreateContent()
 
     SetBackgroundColour(bgColor);
 
-    // Create a horizontal split layout
     wxBoxSizer *mainSizer = new wxBoxSizer(wxHORIZONTAL);
 
-    // --- LEFT SIDEBAR (Controls Panel) ---
     wxPanel *controlPanel = new wxPanel(this, wxID_ANY);
     controlPanel->SetBackgroundColour(cardBgColor);
 
     wxBoxSizer *controlSizer = new wxBoxSizer(wxVERTICAL);
     controlSizer->AddSpacer(25);
 
-    // App title/header
     wxStaticText *appTitle = new wxStaticText(controlPanel, wxID_ANY, "Customization");
     wxFont titleFont = appTitle->GetFont();
     titleFont.SetPointSize(titleFont.GetPointSize() + 3);
     titleFont.SetWeight(wxFONTWEIGHT_BOLD);
     appTitle->SetFont(titleFont);
     appTitle->SetForegroundColour(accentColor);
-
-    controlSizer->Add(appTitle, 0, wxALIGN_CENTER | wxLEFT | wxRIGHT, 25);
+    controlSizer->Add(appTitle, 0, wxALIGN_CENTER_HORIZONTAL | wxLEFT | wxRIGHT, 25);
     controlSizer->AddSpacer(30);
 
-    // Theme controls section
     wxStaticText *themeHeader = new wxStaticText(controlPanel, wxID_ANY, "THEME SETTINGS");
     wxFont sectionFont = themeHeader->GetFont();
     sectionFont.SetPointSize(sectionFont.GetPointSize() - 1);
     sectionFont.SetWeight(wxFONTWEIGHT_BOLD);
     themeHeader->SetFont(sectionFont);
     themeHeader->SetForegroundColour(secondaryTextColor);
-
     controlSizer->Add(themeHeader, 0, wxLEFT | wxRIGHT, 25);
     controlSizer->AddSpacer(15);
 
-    // Theme dropdown with label
     wxStaticText *themeLabel = new wxStaticText(controlPanel, wxID_ANY, "Global Theme");
     themeLabel->SetForegroundColour(textColor);
-
     controlSizer->Add(themeLabel, 0, wxLEFT | wxRIGHT, 25);
     controlSizer->AddSpacer(8);
 
     wxChoice *theme = new wxChoice(controlPanel, wxID_ANY);
     theme->Append(std::vector<wxString>{"Default", "Nord", "Dracula", "Gruvbox", "Tokyo Night", "Catppuccin"});
     theme->SetSelection(0);
-
     controlSizer->Add(theme, 0, wxEXPAND | wxLEFT | wxRIGHT, 25);
     controlSizer->AddSpacer(20);
 
-    // Accent color with preview and button
     wxStaticText *accentLabel = new wxStaticText(controlPanel, wxID_ANY, "Accent Color");
     accentLabel->SetForegroundColour(textColor);
-
     controlSizer->Add(accentLabel, 0, wxLEFT | wxRIGHT, 25);
     controlSizer->AddSpacer(8);
 
     wxBoxSizer *colorSizer = new wxBoxSizer(wxHORIZONTAL);
-
-    wxPanel *colorPanel = new wxPanel(controlPanel, wxID_ANY, wxDefaultPosition, wxSize(30, 30));
-    colorPanel->SetBackgroundColour(accentColor);
-
+    wxPanel *colorPanelDisplay = new wxPanel(controlPanel, wxID_ANY, wxDefaultPosition, wxSize(30, 30)); // Renamed
+    colorPanelDisplay->SetBackgroundColour(accentColor);
     wxButton *changeColorBtn = new wxButton(controlPanel, wxID_ANY, "Choose Color");
     changeColorBtn->SetForegroundColour(textColor);
     changeColorBtn->SetBackgroundColour(cardBgColor.ChangeLightness(110));
 
-    colorSizer->Add(colorPanel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
-    colorSizer->Add(changeColorBtn, 1, wxALIGN_CENTER_VERTICAL);
+    colorSizer->Add(colorPanelDisplay, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
+    // For a horizontal sizer, wxEXPAND makes it expand vertically.
+    // wxALIGN_CENTER_VERTICAL conflicts with vertical wxEXPAND.
+    // If you want the button to take available horizontal space and be centered vertically:
+    // colorSizer->Add(changeColorBtn, 1, wxEXPAND); // This expands vertically. Not what we want for a button.
+    // If you want button to take its natural height and be centered vertically, and expand horizontally
+    colorSizer->Add(changeColorBtn, 1, wxALIGN_CENTER_VERTICAL); // Proportion 1 for horizontal expansion, wxALIGN_CENTER_VERTICAL for vertical alignment.
 
     controlSizer->Add(colorSizer, 0, wxEXPAND | wxLEFT | wxRIGHT, 25);
     controlSizer->AddSpacer(30);
 
-    // Wallpaper controls section
     wxStaticText *wpHeader = new wxStaticText(controlPanel, wxID_ANY, "WALLPAPER");
     wpHeader->SetFont(sectionFont);
     wpHeader->SetForegroundColour(secondaryTextColor);
-
     controlSizer->Add(wpHeader, 0, wxLEFT | wxRIGHT, 25);
     controlSizer->AddSpacer(15);
 
     wxButton *addWallpaperBtn = new wxButton(controlPanel, wxID_ANY, "Upload New Wallpaper");
     addWallpaperBtn->SetForegroundColour(textColor);
     addWallpaperBtn->SetBackgroundColour(accentColor);
-
     controlSizer->Add(addWallpaperBtn, 0, wxEXPAND | wxLEFT | wxRIGHT, 25);
+    controlSizer->AddSpacer(10);
+
+    wxButton *openFolderBtn = new wxButton(controlPanel, wxID_ANY, "Open Wallpaper Folder");
+    openFolderBtn->SetForegroundColour(textColor);
+    openFolderBtn->SetBackgroundColour(cardBgColor.ChangeLightness(110));
+    controlSizer->Add(openFolderBtn, 0, wxEXPAND | wxLEFT | wxRIGHT, 25);
     controlSizer->AddSpacer(10);
 
     wxButton *refreshBtn = new wxButton(controlPanel, wxID_ANY, "Refresh Gallery");
     refreshBtn->SetForegroundColour(textColor);
     refreshBtn->SetBackgroundColour(cardBgColor.ChangeLightness(110));
-
     controlSizer->Add(refreshBtn, 0, wxEXPAND | wxLEFT | wxRIGHT, 25);
-
-    // Push everything up with a stretcher at the bottom
     controlSizer->AddStretchSpacer(1);
 
-    // Bottom info text
     wxStaticText *infoText = new wxStaticText(controlPanel, wxID_ANY,
                                               "Select any wallpaper to apply it\nas your desktop background.");
     infoText->SetForegroundColour(secondaryTextColor);
-
-    controlSizer->Add(infoText, 0, wxALIGN_CENTER | wxALL, 25);
-
+    controlSizer->Add(infoText, 0, wxALIGN_CENTER_HORIZONTAL | wxALL, 25);
     controlPanel->SetSizer(controlSizer);
 
-    // --- RIGHT CONTENT AREA (Wallpaper Gallery) ---
     wxPanel *galleryContainer = new wxPanel(this, wxID_ANY);
     galleryContainer->SetBackgroundColour(bgColor);
 
     wxBoxSizer *gallerySizer = new wxBoxSizer(wxVERTICAL);
-
-    // Gallery heading
     wxBoxSizer *galleryHeaderSizer = new wxBoxSizer(wxHORIZONTAL);
 
-    wxStaticText *galleryTitle = new wxStaticText(galleryContainer, wxID_ANY, "Wallpaper Gallery");
-    galleryTitle->SetFont(titleFont);
-    galleryTitle->SetForegroundColour(textColor);
-
-    galleryHeaderSizer->Add(galleryTitle, 1, wxALIGN_BOTTOM);
-
-    // Counter for wallpapers (optional info)
-    wxStaticText *counterText = new wxStaticText(galleryContainer, wxID_ANY, "");
-    counterText->SetForegroundColour(secondaryTextColor);
-
-    galleryHeaderSizer->Add(counterText, 0, wxALIGN_BOTTOM);
+    wxStaticText *galleryTitleText = new wxStaticText(galleryContainer, wxID_ANY, "Wallpaper Gallery"); // Renamed
+    galleryTitleText->SetFont(titleFont);
+    galleryTitleText->SetForegroundColour(textColor);
+    // For a horizontal sizer, wxEXPAND makes it expand vertically.
+    // wxALIGN_CENTER_VERTICAL conflicts. If you want it to take full height and be centered (if text is short), use wxEXPAND.
+    // If you just want it aligned to the bottom or center of the available vertical space without expanding its own height:
+    galleryHeaderSizer->Add(galleryTitleText, 1, wxALIGN_CENTER_VERTICAL | wxLEFT); // Proportion 1 for horizontal expansion. Align vertical.
 
     gallerySizer->Add(galleryHeaderSizer, 0, wxEXPAND | wxALL, 20);
 
-    // Scrollable wallpaper container with auto-resizing grid
     this->wallpaperPanel = new wxScrolledWindow(galleryContainer, wxID_ANY);
     this->wallpaperPanel->SetScrollRate(0, 10);
     this->wallpaperPanel->SetBackgroundColour(bgColor);
-
-    // We'll use a dynamic grid created in OnSize
     gallerySizer->Add(this->wallpaperPanel, 1, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 20);
 
-    // Loading text centered in the gallery
-    m_loadingText = new wxStaticText(this->wallpaperPanel, wxID_ANY, "Loading wallpapers...");
+    // m_loadingText will be parented to wallpaperPanel. Its sizer is set in LoadWallpaper/UpdateGrid.
+    // Create it here so it's always available.
+    m_loadingText = new wxStaticText(wallpaperPanel, wxID_ANY, "Loading wallpapers...");
     m_loadingText->SetForegroundColour(textColor);
     wxFont loadingFont(12, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
     m_loadingText->SetFont(loadingFont);
+    m_loadingText->Hide(); // Initially hidden, shown by LoadWallpaper
 
-    wxBoxSizer *loadingSizer = new wxBoxSizer(wxVERTICAL);
-    loadingSizer->AddStretchSpacer(1);
-    loadingSizer->Add(m_loadingText, 0, wxALIGN_CENTER);
-    loadingSizer->AddStretchSpacer(1);
-
-    this->wallpaperPanel->SetSizer(loadingSizer);
     galleryContainer->SetSizer(gallerySizer);
 
-    // Add the two main panels to the horizontal layout
-    mainSizer->Add(controlPanel, 0, wxEXPAND);
-    mainSizer->Add(galleryContainer, 1, wxEXPAND);
-
+    mainSizer->Add(controlPanel, 0, wxEXPAND | wxALL, 0);
+    mainSizer->Add(galleryContainer, 1, wxEXPAND | wxALL, 0);
     SetSizer(mainSizer);
 
-    // Bind events
     refreshBtn->Bind(wxEVT_BUTTON, [this](wxCommandEvent &)
                      { LoadWallpaper(); });
+    addWallpaperBtn->Bind(wxEVT_BUTTON, &CustomizeTab::OnAddWallpaper, this);
+    openFolderBtn->Bind(wxEVT_BUTTON, &CustomizeTab::OnOpenWallpaperFolder, this);
 
-    // Fix this event binding - changed to wxEVT_BUTTON from wxEVT_LEFT_DOWN
-    addWallpaperBtn->Bind(wxEVT_BUTTON, [this](wxCommandEvent &event)
-                          { OnAddWallpaper(event); });
-
-    changeColorBtn->Bind(wxEVT_BUTTON, [this, colorPanel](wxCommandEvent &)
-                         {
+    changeColorBtn->Bind(wxEVT_BUTTON, [this, colorPanelDisplay](wxCommandEvent &) { // Use renamed panel
         wxColourData data;
-        data.SetColour(colorPanel->GetBackgroundColour());
+        data.SetColour(colorPanelDisplay->GetBackgroundColour());
         wxColourDialog dialog(this, &data);
-        if (dialog.ShowModal() == wxID_OK) {
+        if (dialog.ShowModal() == wxID_OK)
+        {
             wxColour color = dialog.GetColourData().GetColour();
-            colorPanel->SetBackgroundColour(color);
-            colorPanel->Refresh();
-        } });
-
-    // Bind size event to handle responsive layout
+            colorPanelDisplay->SetBackgroundColour(color);
+            colorPanelDisplay->Refresh();
+        }
+    });
     this->wallpaperPanel->Bind(wxEVT_SIZE, &CustomizeTab::OnWallpaperPanelSize, this);
+}
+
+void CustomizeTab::OnOpenWallpaperFolder(wxCommandEvent &WXUNUSED(event))
+{
+    if (m_isDestroyed || IsBeingDeleted())
+        return;
+    if (!wxDirExists(WALLPAPER_DIRECTORY))
+    {
+        wxMessageBox("The wallpaper directory does not exist:\n" + WALLPAPER_DIRECTORY, "Error", wxOK | wxICON_ERROR, this);
+        return;
+    }
+    if (!wxLaunchDefaultApplication(WALLPAPER_DIRECTORY))
+    {
+        wxMessageBox("Could not open the wallpaper folder.\nPlease navigate to it manually:\n" + WALLPAPER_DIRECTORY, "Error", wxOK | wxICON_INFORMATION, this);
+    }
 }
 
 void CustomizeTab::OnWallpaperPanelSize(wxSizeEvent &event)
 {
-    // Skip if we're still loading or being destroyed
-    if (m_isDestroyed || IsBeingDeleted() || !wallpaperPanel)
+    if (!IsWallpaperPanelReady())
     {
         event.Skip();
         return;
     }
-
-    // Only update the grid if we have wallpapers to show
-    if (!m_loadingText->IsShown())
+    if (wallpaperPanel->GetSizer() && m_loadingText && m_loadingText->GetParent() && !m_loadingText->IsShown())
     {
         UpdateWallpaperGrid();
     }
-
     event.Skip();
 }
 
 void CustomizeTab::UpdateWallpaperGrid()
 {
-    if (!wallpaperPanel || m_isDestroyed)
+    if (!IsWallpaperPanelReady() || !m_loadingText || !m_loadingText->GetParent()) // Ensure m_loadingText is valid
         return;
 
-    // Get panel width and calculate optimal number of columns
     int panelWidth = wallpaperPanel->GetClientSize().GetWidth();
-
-    // Determine optimal thumbnail size and column count
-    // Minimum size 120px, maximum 220px, with 16px margin between items
+    if (panelWidth <= 0)
+        panelWidth = 300;
     const int minThumbSize = 120;
     const int maxThumbSize = 220;
     const int margin = 16;
-
-    // Calculate how many columns we can fit
     int optimalColumns = std::max(1, panelWidth / (minThumbSize + margin));
+    int thumbSize = std::min(maxThumbSize, (optimalColumns > 0 ? (panelWidth - (margin * (optimalColumns + 1))) / optimalColumns : minThumbSize));
+    if (thumbSize <= 0)
+        thumbSize = minThumbSize;
 
-    // Calculate the actual thumbnail size based on available space
-    int thumbSize = std::min(maxThumbSize,
-                             (panelWidth - (margin * (optimalColumns + 1))) / optimalColumns);
-
-    // Store the current wallpaper data to recreate the grid
     std::vector<WallpaperImageData *> wallpaperData;
     bool hasExistingWallpapers = false;
 
-    if (wallpaperPanel->GetSizer() && wallpaperPanel->GetSizer()->GetItemCount() > 1)
+    wxSizer *currentOuterSizer = wallpaperPanel->GetSizer();
+    if (currentOuterSizer && currentOuterSizer->GetItemCount() > 0)
     {
-        hasExistingWallpapers = true;
+        bool isLoadingSizer = (m_loadingText->IsShown() && currentOuterSizer->GetChildren().size() == 3 &&
+                               currentOuterSizer->GetChildren().Item(1) &&
+                               currentOuterSizer->GetChildren().Item(1)->GetData()->GetWindow() == m_loadingText);
 
-        // Save existing wallpaper data
-        wxSizerItemList items = wallpaperPanel->GetSizer()->GetChildren();
-        for (wxSizerItemList::iterator it = items.begin(); it != items.end(); ++it)
+        if (!isLoadingSizer)
         {
-            wxSizerItem *item = *it;
-            wxWindow *window = item->GetWindow();
-
-            if (window && window != m_loadingText)
+            wxFlexGridSizer *actualGridSizer = nullptr;
+            for (wxSizerItem *item : currentOuterSizer->GetChildren())
             {
-                wxStaticBitmap *bitmap = wxDynamicCast(window->FindWindow(wxID_ANY), wxStaticBitmap);
-                if (bitmap && bitmap->GetBitmap().IsOk())
+                if (item && item->IsSizer())
                 {
-                    WallpaperImageData *data = new WallpaperImageData;
-                    data->image = bitmap->GetBitmap().ConvertToImage();
-                    wxWindow *parent = bitmap->GetParent();
-                    if (parent)
-                    {
-                        data->isSelected = parent->GetBackgroundColour() == wxColour(137, 180, 250);
+                    actualGridSizer = wxDynamicCast(item->GetSizer(), wxFlexGridSizer);
+                    if (actualGridSizer)
+                        break;
+                }
+            }
+            if (actualGridSizer)
+            {
+                hasExistingWallpapers = true;
+                for (wxSizerItem *gridSizerItem : actualGridSizer->GetChildren())
+                {
+                    wxWindow *window = gridSizerItem->GetWindow();
+                    if (window && window != m_loadingText)
+                    { // Should not be m_loadingText here
+                        wxStaticBitmap *bitmapControl = nullptr;
+                        if (!window->GetChildren().IsEmpty())
+                        {
+                            bitmapControl = wxDynamicCast(window->GetChildren().GetFirst()->GetData(), wxStaticBitmap);
+                        }
+                        if (bitmapControl && bitmapControl->GetBitmap().IsOk())
+                        {
+                            WallpaperImageData *data = new WallpaperImageData;
+                            data->image = bitmapControl->GetBitmap().ConvertToImage();
+                            data->isSelected = window->GetBackgroundColour() == wxColour(137, 180, 250);
+                            // How to get originalPath? It needs to be stored with the 'window' (container panel)
+                            // For now, it will be empty or from a previous selection if not managed.
+                            // wxStringClientData* pathData = dynamic_cast<wxStringClientData*>(window->GetClientObject());
+                            // if (pathData) data->originalPath = pathData->GetData();
+
+                            wallpaperData.push_back(data);
+                        }
                     }
-                    wallpaperData.push_back(data);
                 }
             }
         }
     }
 
-    // Create new sizer for wallpapers
-    wxBoxSizer *wallpaperSizer = new wxBoxSizer(wxVERTICAL);
+    wxBoxSizer *newOuterSizer = new wxBoxSizer(wxVERTICAL);
 
-    if (hasExistingWallpapers)
+    if (hasExistingWallpapers && !wallpaperData.empty())
     {
-        // Create a new grid with the calculated number of columns
-        wxFlexGridSizer *gridSizer = new wxFlexGridSizer(0, optimalColumns, margin, margin);
-
-        // Add wallpapers back to the grid with the new size
-        for (WallpaperImageData *data : wallpaperData)
+        wxFlexGridSizer *newGridSizer = new wxFlexGridSizer(0, optimalColumns, margin, margin);
+        for (WallpaperImageData *currentImgData : wallpaperData)
         {
-            // Resize image to new thumbnail size
-            wxImage resizedImage = data->image.Copy();
+            wxImage resizedImage = currentImgData->image.Copy();
             resizedImage.Rescale(thumbSize, thumbSize, wxIMAGE_QUALITY_HIGH);
-
-            // Create container panel
             wxPanel *container = new wxPanel(wallpaperPanel, wxID_ANY);
-            container->SetBackgroundColour(data->isSelected ? wxColour(137, 180, 250) : wxColour(49, 50, 68));
+            container->SetBackgroundColour(currentImgData->isSelected ? wxColour(137, 180, 250) : wxColour(49, 50, 68));
+            // Store originalPath with the container
+            // container->SetClientObject(new wxStringClientData(currentImgData->originalPath));
 
             wxBoxSizer *containerSizer = new wxBoxSizer(wxVERTICAL);
-            container->SetSizer(containerSizer);
-
-            // Create bitmap display
             wxBitmap bitmap(resizedImage);
             wxStaticBitmap *wallpaperImage = new wxStaticBitmap(container, wxID_ANY, bitmap);
+            containerSizer->Add(wallpaperImage, 1, wxEXPAND | wxALL, 6); // Image expands in its panel
+            container->SetSizer(containerSizer);
 
-            containerSizer->Add(wallpaperImage, 0, wxALL, 6);
-
-            // Bind selection event
-            container->Bind(wxEVT_LEFT_DOWN, [this, container](wxMouseEvent &)
+            container->Bind(wxEVT_LEFT_DOWN, [this, container, originalPath = currentImgData->originalPath](wxMouseEvent &)
                             {
-                // Deselect all other wallpapers
-                wxSizerItemList items = wallpaperPanel->GetSizer()->GetChildren();
-                for (wxSizerItemList::iterator it = items.begin(); it != items.end(); ++it) {
-                    wxSizerItem *item = *it;
-                    wxWindow *window = item->GetWindow();
-                    if (window && window != container && window != m_loadingText) {
-                        window->SetBackgroundColour(wxColour(49, 50, 68));
-                        window->Refresh();
-                    }
-                }
-                
-                // Highlight selected wallpaper
-                container->SetBackgroundColour(wxColour(137, 180, 250));
-                container->Refresh(); });
-
-            gridSizer->Add(container, 0, wxALL, margin / 2);
+                                if (!IsWallpaperPanelReady())
+                                    return;
+                                wxSizer *outerSizer = wallpaperPanel->GetSizer();
+                                if (outerSizer)
+                                {
+                                    for (wxSizerItem *item : outerSizer->GetChildren())
+                                    {
+                                        if (item && item->IsSizer())
+                                        {
+                                            wxFlexGridSizer *flexGrid = wxDynamicCast(item->GetSizer(), wxFlexGridSizer);
+                                            if (flexGrid)
+                                            {
+                                                for (wxSizerItem *gridItem : flexGrid->GetChildren())
+                                                {
+                                                    wxWindow *win = gridItem->GetWindow();
+                                                    if (win && win != container)
+                                                    {
+                                                        win->SetBackgroundColour(wxColour(49, 50, 68));
+                                                        win->Refresh();
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                container->SetBackgroundColour(wxColour(137, 180, 250));
+                                container->Refresh();
+                                // wxLogMessage("UpdateWallpaperGrid Clicked: %s", originalPath);
+                            });
+            newGridSizer->Add(container, 1, wxEXPAND | wxALL, margin / 2); // Container expands in grid cell
         }
-
-        wallpaperSizer->AddSpacer(margin);
-        wallpaperSizer->Add(gridSizer, 1, wxALIGN_CENTER | wxLEFT | wxRIGHT, margin);
-
-        // Clean up the temporary data
-        for (WallpaperImageData *data : wallpaperData)
+        newOuterSizer->AddSpacer(margin);
+        newOuterSizer->Add(newGridSizer, 1, wxEXPAND | wxLEFT | wxRIGHT, margin);
+        newOuterSizer->AddSpacer(margin);
+        for (WallpaperImageData *imgDataToDel : wallpaperData)
         {
-            delete data;
+            delete imgDataToDel;
         }
+    }
+    else if (m_loadingText->IsShown())
+    {
+        if (m_loadingText->GetParent() != wallpaperPanel)
+            m_loadingText->Reparent(wallpaperPanel);
+        newOuterSizer->AddStretchSpacer(1);
+        newOuterSizer->Add(m_loadingText, 0, wxALIGN_CENTER_HORIZONTAL);
+        newOuterSizer->AddStretchSpacer(1);
     }
     else
     {
-        // If no wallpapers yet, show loading text
-        wallpaperSizer->AddStretchSpacer(1);
-        wallpaperSizer->Add(m_loadingText, 0, wxALIGN_CENTER);
-        wallpaperSizer->AddStretchSpacer(1);
+        wxStaticText *emptyGalleryText = new wxStaticText(wallpaperPanel, wxID_ANY, "No wallpapers found in gallery.");
+        emptyGalleryText->SetForegroundColour(wxColour(166, 173, 200));
+        newOuterSizer->AddStretchSpacer(1);
+        newOuterSizer->Add(emptyGalleryText, 0, wxALIGN_CENTER_HORIZONTAL);
+        newOuterSizer->AddStretchSpacer(1);
     }
-
-    // Replace existing sizer
-    wallpaperPanel->SetSizer(wallpaperSizer);
+    wallpaperPanel->SetSizer(newOuterSizer, true);
     wallpaperPanel->Layout();
+    wallpaperPanel->FitInside();
+    wallpaperPanel->Refresh();
+}
+
+bool CustomizeTab::IsWallpaperPanelReady() const
+{
+    wxCriticalSectionLocker lock(gThreadCS);
+    if (!this || IsBeingDeleted() || m_isDestroyed)
+        return false;
+    if (!wallpaperPanel || wallpaperPanel->IsBeingDeleted())
+        return false;
+    return true;
 }
 
 void CustomizeTab::OnWallpaperReady(wxCommandEvent &event)
 {
-    if (m_isDestroyed || IsBeingDeleted())
+    wxCriticalSectionLocker lock(gThreadCS);
+    if (m_isDestroyed || IsBeingDeleted() || !IsWallpaperPanelReady())
     {
-        delete static_cast<WallpaperImageData *>(event.GetClientData());
+        WallpaperImageData *data = static_cast<WallpaperImageData *>(event.GetClientData());
+        if (data)
+            delete data;
+        return;
+    }
+    WallpaperImageData *imgData = static_cast<WallpaperImageData *>(event.GetClientData());
+    if (!imgData || !imgData->image.IsOk())
+    {
+        if (imgData)
+            delete imgData;
         return;
     }
 
-    WallpaperImageData *data = static_cast<WallpaperImageData *>(event.GetClientData());
-    if (data && data->image.IsOk() && wallpaperPanel)
-    {
-        // Hide loading text if it's visible
-        if (m_loadingText->IsShown())
-        {
-            m_loadingText->Hide();
-
-            // Replace loading sizer with grid sizer
-            int panelWidth = wallpaperPanel->GetClientSize().GetWidth();
-            const int minThumbSize = 120;
-            const int margin = 16;
-            int optimalColumns = std::max(1, panelWidth / (minThumbSize + margin));
-
-            wxFlexGridSizer *gridSizer = new wxFlexGridSizer(0, optimalColumns, margin, margin);
-            wxBoxSizer *mainSizer = new wxBoxSizer(wxVERTICAL);
-            mainSizer->AddSpacer(margin);
-            mainSizer->Add(gridSizer, 1, wxALIGN_CENTER | wxLEFT | wxRIGHT, margin);
-
-            wallpaperPanel->SetSizer(mainSizer);
+    CallAfter([this, imgData]() mutable
+              {
+        if (!IsWallpaperPanelReady() || !imgData || !imgData->image.IsOk() || !m_loadingText || !m_loadingText->GetParent()) {
+            if (imgData) delete imgData;
+            return;
         }
 
-        // Get the current grid sizer
-        wxSizer *panelSizer = wallpaperPanel->GetSizer();
-        if (panelSizer && panelSizer->GetItemCount() > 0)
-        {
-            wxSizerItem *item = panelSizer->GetItem((size_t)0);
-            if (item && item->IsSpacer())
-                item = panelSizer->GetItem((size_t)1);
+        wxSizer *panelOuterSizer = wallpaperPanel->GetSizer();
+        wxFlexGridSizer *actualGridSizer = nullptr;
 
-            wxFlexGridSizer *gridSizer = wxDynamicCast(
-                item ? item->GetSizer() : nullptr,
-                wxFlexGridSizer);
+        if (m_loadingText->IsShown()) {
+            m_loadingText->Hide();
+            // panelOuterSizer (the loading sizer) will be deleted by SetSizer below.
+            // m_loadingText itself will be deleted if it was part of that sizer.
+            // We create a new m_loadingText if its parent is gone after SetSizer.
 
-            if (gridSizer)
-            {
-                // Determine current thumbnail size based on column count
-                int cols = gridSizer->GetCols();
-                int panelWidth = wallpaperPanel->GetClientSize().GetWidth();
-                const int margin = 16;
-                const int maxThumbSize = 220;
+            int panelWidth = wallpaperPanel->GetClientSize().GetWidth();
+            if (panelWidth <=0) panelWidth = 300;
+            const int minThumbSize = 120; const int margin = 16;
+            int optimalColumns = std::max(1, panelWidth / (minThumbSize + margin));
 
-                int thumbSize = std::min(maxThumbSize,
-                                         (panelWidth - (margin * (cols + 1))) / cols);
+            actualGridSizer = new wxFlexGridSizer(0, optimalColumns, margin, margin);
+            wxBoxSizer *mainBoxSizerForGrid = new wxBoxSizer(wxVERTICAL);
+            mainBoxSizerForGrid->AddSpacer(margin);
+            mainBoxSizerForGrid->Add(actualGridSizer, 1, wxEXPAND | wxLEFT | wxRIGHT, margin);
+            mainBoxSizerForGrid->AddSpacer(margin);
+            wallpaperPanel->SetSizer(mainBoxSizerForGrid, true); // Delete old sizer (and m_loadingText if it was its child)
+            panelOuterSizer = mainBoxSizerForGrid;
 
-                // Resize the image to fit the thumbnail
-                wxImage resizedImage = data->image.Copy();
-                resizedImage.Rescale(thumbSize, thumbSize, wxIMAGE_QUALITY_HIGH);
+            // If m_loadingText was deleted, recreate it for future use (though it remains hidden for now)
+            if (!m_loadingText->GetParent()) {
+                 m_loadingText = new wxStaticText(wallpaperPanel, wxID_ANY, "Loading wallpapers...");
+                 m_loadingText->SetForegroundColour(wxColour(205, 214, 244));
+                 wxFont font(12, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
+                 m_loadingText->SetFont(font);
+                 m_loadingText->Hide();
+            }
+        } else {
+            if (panelOuterSizer) {
+                for (wxSizerItem *item : panelOuterSizer->GetChildren()) {
+                    if (item && item->IsSizer()) {
+                        actualGridSizer = wxDynamicCast(item->GetSizer(), wxFlexGridSizer);
+                        if (actualGridSizer) break;
+                    }
+                }
+            }
+        }
 
-                // Create the container panel
-                wxPanel *container = new wxPanel(wallpaperPanel, wxID_ANY);
-                container->SetBackgroundColour(wxColour(49, 50, 68));
+        if (!actualGridSizer) {
+            int panelWidth = wallpaperPanel->GetClientSize().GetWidth(); if (panelWidth <=0) panelWidth = 300;
+            const int minThumbSize = 120; const int margin = 16;
+            int optimalColumns = std::max(1, panelWidth / (minThumbSize + margin));
+            actualGridSizer = new wxFlexGridSizer(0, optimalColumns, margin, margin);
+            wxBoxSizer *mainBoxSizerForGrid = new wxBoxSizer(wxVERTICAL);
+            mainBoxSizerForGrid->AddSpacer(margin);
+            mainBoxSizerForGrid->Add(actualGridSizer, 1, wxEXPAND | wxLEFT | wxRIGHT, margin);
+            mainBoxSizerForGrid->AddSpacer(margin);
+            wallpaperPanel->SetSizer(mainBoxSizerForGrid, true);
+        }
 
-                wxBoxSizer *containerSizer = new wxBoxSizer(wxVERTICAL);
-                container->SetSizer(containerSizer);
+        if (actualGridSizer) {
+            int cols = actualGridSizer->GetCols();
+            if (cols == 0) {
+                 int currentPanelWidth = wallpaperPanel->GetClientSize().GetWidth(); if (currentPanelWidth <= 0) currentPanelWidth = 300;
+                 cols = std::max(1, currentPanelWidth / (120 + 16));
+                 actualGridSizer->SetCols(cols);
+            }
+            int panelWidth = wallpaperPanel->GetClientSize().GetWidth(); if (panelWidth <=0) panelWidth = 300;
+            const int margin = 16; const int maxThumbSize = 220; const int minThumbSize = 120;
+            int thumbSize = std::min(maxThumbSize, (cols > 0 ? (panelWidth - (margin * (cols + 1))) / cols : minThumbSize));
+            if (thumbSize <= 0) thumbSize = minThumbSize;
 
-                // Add the bitmap
-                wxBitmap bitmap(resizedImage);
-                wxStaticBitmap *wallpaperImage = new wxStaticBitmap(container, wxID_ANY, bitmap);
+            wxImage resizedImage = imgData->image.Copy();
+            resizedImage.Rescale(thumbSize, thumbSize, wxIMAGE_QUALITY_HIGH);
+            wxPanel *container = new wxPanel(wallpaperPanel, wxID_ANY);
+            // container->SetClientObject(new wxStringClientData(imgData->originalPath)); // Store path
 
-                containerSizer->Add(wallpaperImage, 0, wxALL, 6);
+            if (!container) { delete imgData; return; }
+            container->SetBackgroundColour(wxColour(49, 50, 68));
+            wxBoxSizer *containerSizer = new wxBoxSizer(wxVERTICAL);
+            wxBitmap bitmap(resizedImage);
+            if (!bitmap.IsOk()) { delete imgData; container->Destroy(); return; }
+            wxStaticBitmap *wallpaperImage = new wxStaticBitmap(container, wxID_ANY, bitmap);
+            containerSizer->Add(wallpaperImage, 1, wxEXPAND | wxALL, 6); // Image expands in its panel
+            container->SetSizer(containerSizer);
 
-                // Add selection behavior
-                container->Bind(wxEVT_LEFT_DOWN, [this, container](wxMouseEvent &)
-                                {
-                    // Deselect all other wallpapers
-                    wxSizerItemList items = wallpaperPanel->GetSizer()->GetChildren();
-                    for (auto& item : items) {
-                        if (item->IsSizer()) {
-                            wxSizerItemList gridItems = item->GetSizer()->GetChildren();
-                            for (auto& gridItem : gridItems) {
-                                wxWindow *window = gridItem->GetWindow();
-                                if (window && window != container) {
-                                    window->SetBackgroundColour(wxColour(49, 50, 68));
-                                    window->Refresh();
+            container->Bind(wxEVT_LEFT_DOWN, [this, container, originalPath = imgData->originalPath](wxMouseEvent &) {
+                if (!IsWallpaperPanelReady()) return;
+                wxSizer *outerSizer = wallpaperPanel->GetSizer();
+                if (outerSizer) {
+                     for (wxSizerItem *item : outerSizer->GetChildren()) {
+                        if (item && item->IsSizer()) {
+                            wxFlexGridSizer* flexGrid = wxDynamicCast(item->GetSizer(), wxFlexGridSizer);
+                            if (flexGrid) {
+                                for (wxSizerItem *gridItem : flexGrid->GetChildren()) {
+                                    wxWindow *win = gridItem->GetWindow();
+                                    if (win && win != container) {
+                                        win->SetBackgroundColour(wxColour(49, 50, 68)); win->Refresh();
+                                    }
                                 }
                             }
                         }
                     }
-                    
-                    // Highlight selected wallpaper
-                    container->SetBackgroundColour(wxColour(137, 180, 250));
-                    container->Refresh(); });
-
-                // Add to the grid
-                gridSizer->Add(container, 0, wxALL, margin / 2);
-                wallpaperPanel->Layout();
-            }
+                }
+                container->SetBackgroundColour(wxColour(137, 180, 250)); container->Refresh();
+                // wxLogMessage("OnWallpaperReady Clicked: %s", originalPath);
+            });
+            actualGridSizer->Add(container, 1, wxEXPAND | wxALL, margin / 2); // Cell expands
+            wallpaperPanel->Layout(); wallpaperPanel->FitInside(); wallpaperPanel->Refresh();
         }
-    }
-
-    delete data;
+        delete imgData; });
 }
 
-void CustomizeTab::OnWallpaperLoadComplete(wxCommandEvent &event)
+void CustomizeTab::OnWallpaperLoadComplete(wxCommandEvent &WXUNUSED(event))
+{
+    wxCriticalSectionLocker lock(gThreadCS);
+    if (!IsWallpaperPanelReady())
+        return;
+    CallAfter([this]()
+              {
+        if (!IsWallpaperPanelReady() || !m_loadingText || !m_loadingText->GetParent()) return;
+        if (m_loadingText->IsShown()) {
+            m_loadingText->Hide();
+        }
+        UpdateWallpaperGrid();
+        if (wallpaperPanel) {
+            wallpaperPanel->FitInside(); wallpaperPanel->Layout(); wallpaperPanel->Refresh();
+        } });
+}
+
+void CustomizeTab::LoadWallpaper()
+{
+    CallAfter([this]()
+              {
+        if (m_isDestroyed || !wallpaperPanel) return;
+        {
+            wxCriticalSectionLocker lock(gThreadCS);
+            // Ensure m_loadingText is valid and parented before checking its sizer
+            if (!m_loadingText || !m_loadingText->GetParent()) {
+                 m_loadingText = new wxStaticText(wallpaperPanel, wxID_ANY, "Loading...");
+                 m_loadingText->SetForegroundColour(wxColour(205, 214, 244));
+                 wxFont font(12, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
+                 m_loadingText->SetFont(font);
+            }
+            m_loadingText->SetLabel("Loading wallpapers...");
+
+            wxSizer* currentSizer = wallpaperPanel->GetSizer();
+            bool currentIsLoadingSizer = false;
+            if (currentSizer) {
+                 currentIsLoadingSizer = (currentSizer->GetChildren().size() == 3 &&
+                                       currentSizer->GetChildren().Item(1) &&
+                                       currentSizer->GetChildren().Item(1)->GetData()->GetWindow() == m_loadingText);
+            }
+
+            if (!currentIsLoadingSizer) {
+                if(currentSizer) currentSizer->Clear(true);
+                wxBoxSizer *loadingSizer = new wxBoxSizer(wxVERTICAL);
+                loadingSizer->AddStretchSpacer(1);
+                loadingSizer->Add(m_loadingText, 0, wxALIGN_CENTER_HORIZONTAL);
+                loadingSizer->AddStretchSpacer(1);
+                wallpaperPanel->SetSizer(loadingSizer, true);
+            }
+            m_loadingText->Show();
+            wallpaperPanel->Layout(); wallpaperPanel->Refresh();
+            if (m_stopWallpaperLoad) m_stopWallpaperLoad = false;
+        }
+        WallpaperLoadThread *thread = new WallpaperLoadThread(this, m_stopWallpaperLoad);
+        if (thread->Run() != wxTHREAD_NO_ERROR) {
+            delete thread;
+            wxCriticalSectionLocker lock2(gThreadCS);
+            if (m_loadingText && m_loadingText->GetParent() && IsWallpaperPanelReady()) {
+                m_loadingText->SetLabel("Failed to start wallpaper load");
+                wallpaperPanel->Layout(); wallpaperPanel->Refresh();
+            }
+        } });
+}
+
+void CustomizeTab::OnAddWallpaper(wxCommandEvent &WXUNUSED(event))
 {
     if (m_isDestroyed || IsBeingDeleted())
-    {
         return;
-    }
-
-    if (m_loadingText)
-    {
-        m_loadingText->Hide();
-    }
-
-    if (wallpaperPanel)
-    {
-        // Update and optimize the wallpaper grid
-        UpdateWallpaperGrid();
-        wallpaperPanel->FitInside();
-        wallpaperPanel->Layout();
-    }
-}
-
-void CustomizeTab::OnAddWallpaper(wxCommandEvent &event)
-{
     wxFileDialog openFileDialog(this, "Choose an image", "", "",
                                 "Image files (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp",
                                 wxFD_OPEN | wxFD_FILE_MUST_EXIST);
     if (openFileDialog.ShowModal() == wxID_CANCEL)
         return;
     wxString filePath = openFileDialog.GetPath();
+    if (filePath.IsEmpty() || !wxFileExists(filePath))
+    {
+        wxMessageBox("Selected file does not exist or is invalid.", "Error", wxOK | wxICON_ERROR, this);
+        return;
+    }
     wxImage image;
     if (image.LoadFile(filePath))
     {
-        image.Rescale(200, 200, wxIMAGE_QUALITY_HIGH); // Using larger thumbnail for better quality
-        WallpaperImageData *data = new WallpaperImageData{image};
-        data->originalPath = filePath;
-        wxCommandEvent newEvent(wxEVT_WALLPAPER_READY);
-        newEvent.SetClientData(data);
-        OnWallpaperReady(newEvent);
-    }
-    else
-    {
-        wxMessageBox("Failed to load the selected image.", "Error", wxOK | wxICON_ERROR);
-    }
-}
-void CustomizeTab::LoadWallpaper()
-{
-    CallAfter([this]()
-              {
-        if (m_isDestroyed || !wallpaperPanel || !wallpaperPanel->GetSizer()) {
-            return;
-        }
-        wallpaperPanel->GetSizer()->Clear(true);
-        m_loadingText = new wxStaticText(wallpaperPanel, wxID_ANY, "Loading wallpapers...");
-        m_loadingText->SetForegroundColour(*wxWHITE);
-        wxFont font(12, wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL);
-        m_loadingText->SetFont(font);
-        wallpaperPanel->GetSizer()->Add(m_loadingText, 0, wxALIGN_CENTER | wxTOP, 20);
-        wallpaperPanel->Layout();
-        if (m_stopWallpaperLoad)
+        const wxString &targetDir = WALLPAPER_DIRECTORY;
+        if (!wxDirExists(targetDir))
         {
-            m_stopWallpaperLoad = false;
-        }
-        WallpaperLoadThread *thread = new WallpaperLoadThread(this, m_stopWallpaperLoad);
-        if (thread->Run() != wxTHREAD_NO_ERROR)
-        {
-            delete thread;
-            if (m_loadingText)
+            if (!wxFileName::Mkdir(targetDir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL))
             {
-                m_loadingText->SetLabel("Failed to load wallpapers");
+                wxMessageBox("Failed to create dir:\n" + targetDir, "Error", wxOK | wxICON_ERROR, this);
+                return;
             }
+        }
+        wxFileName fn(filePath);
+        wxString fileName = fn.GetFullName();
+        if (fileName.IsEmpty())
+        {
+            wxMessageBox("Invalid original filename.", "Error", wxOK | wxICON_ERROR, this);
             return;
-        } });
-}
-wxString CustomizeTab::GetProjectDir()
-{
-    wxWindow *parent = GetParent();
-    while (parent)
-    {
-        SecondWindow *secondWindow = wxDynamicCast(parent, SecondWindow);
-        if (secondWindow)
+        }
+        wxString targetPath = wxFileName(targetDir, fileName).GetFullPath();
+        wxString origName = fn.GetName();
+        wxString ext = fn.GetExt();
+        int counter = 1;
+        while (wxFileExists(targetPath))
         {
-            wxString projectDir = secondWindow->GetProjectDir();
-            return projectDir;
-        }
-        parent = parent->GetParent();
-    }
-    wxString cwd = wxGetCwd();
-    return cwd;
-}
-wxString CustomizeTab::ExecuteCommandOnMainThread(const wxString &command, wxArrayString *output)
-{
-    wxString result;
-    wxSemaphore semaphore(0, 1);
-    CallAfter([this, command, output, &result, &semaphore]()
-              {
-        int exitCode;
-        if (output) {
-            exitCode = wxExecute(command, *output);
-        } else {
-            exitCode = wxExecute(command, wxEXEC_SYNC);
-        }
-        if (exitCode == 0) {
-            if (output && !output->IsEmpty()) {
-                result = (*output)[0];
-            } else {
-                result = "SUCCESS";
+            wxString newName = wxString::Format("%s_%d.%s", origName, counter++, ext);
+            targetPath = wxFileName(targetDir, newName).GetFullPath();
+            if (counter > 1000)
+            {
+                wxMessageBox("Could not create unique filename.", "Error", wxOK | wxICON_ERROR, this);
+                return;
             }
         }
-        semaphore.Post(); });
-    semaphore.Wait();
-    return result;
-}
-wxString CustomizeTab::GetWallpaperDirFromCommand(const wxString &containerId, const wxString &detectedDE)
-{
-    wxString command;
-    if (detectedDE == "GNOME")
-    {
-        command = "gsettings get org.gnome.desktop.background picture-uri";
-    }
-    else if (detectedDE == "Cinnamon")
-    {
-        command = "gsettings get org.cinnamon.desktop.background picture-uri";
-    }
-    else if (detectedDE == "KDE Plasma")
-    {
-        command = "qdbus org.kde.plasma.desktop /Wallpaper org.kde.plasma.Wallpaper.image";
-    }
-    else if (detectedDE == "XFCE")
-    {
-        command = "xfconf-query -c xfce4-desktop -p /backdrop/screen0/monitor0/image-path";
+        if (!image.SaveFile(targetPath))
+        {
+            wxMessageBox("Failed to save image to:\n" + targetPath, "Error", wxOK | wxICON_ERROR, this);
+            return;
+        }
+        WallpaperImageData *data = new WallpaperImageData;
+        data->image = image.Copy();
+        data->originalPath = targetPath;
+        wxCommandEvent *newEvent = new wxCommandEvent(wxEVT_WALLPAPER_READY);
+        newEvent->SetClientData(data);
+        wxQueueEvent(this, newEvent);
     }
     else
     {
-        return wxEmptyString;
+        wxMessageBox("Failed to load selected image.", "Error", wxOK | wxICON_ERROR, this);
     }
-    wxString fullCommand = wxString::Format(
-        "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c '%s'\"",
-        containerId, command);
-    wxArrayString output;
-    wxString result = ExecuteCommandOnMainThread(fullCommand, &output);
-    if (!result.IsEmpty() && !output.IsEmpty())
-    {
-        wxString wallpaperPath = output[0].Trim();
-        if (wallpaperPath.StartsWith("'file://"))
-        {
-            wallpaperPath = wallpaperPath.Mid(8).BeforeLast('\'');
-        }
-        else if (wallpaperPath.StartsWith("file://"))
-        {
-            wallpaperPath = wallpaperPath.Mid(7);
-        }
-        wxString fullDirPath = "/root/custom_iso/squashfs-root" + wallpaperPath.BeforeLast('/');
-        if (!fullDirPath.EndsWith("/"))
-        {
-            fullDirPath += "/";
-        }
-        return fullDirPath;
-    }
-    return wxEmptyString;
 }
+
 wxThread::ExitCode WallpaperLoadThread::Entry()
-{
-    wxString projectDir = m_tab->GetProjectDir();
-    if (projectDir.IsEmpty())
+{ /* ... unchanged ... */
+    wxMilliSleep(50);
+    if (m_stopFlag || !m_tab || m_tab->IsBeingDeleted() || m_tab->m_isDestroyed)
     {
         return (ExitCode)1;
     }
-    wxString containerIdPath = wxFileName(projectDir, "container_id.txt").GetFullPath();
-    wxString containerId;
-    if (wxFileExists(containerIdPath))
-    {
-        wxFile(containerIdPath).ReadAll(&containerId);
-        containerId.Trim();
-    }
-    else
-    {
-        return (ExitCode)1;
-    }
-    wxString detectedGuiPath = wxFileName(projectDir, "detected_gui.txt").GetFullPath();
-    wxString detectedDE;
-    if (wxFileExists(detectedGuiPath))
-    {
-        wxFile(detectedGuiPath).ReadAll(&detectedDE);
-        detectedDE.Trim();
-    }
-    else
-    {
-        detectedDE = "Unknown";
-    }
-    wxString wallpaperDir = m_tab->GetWallpaperDirFromCommand(containerId, detectedDE);
-    if (wallpaperDir.IsEmpty())
-    {
-        return (ExitCode)1;
-    }
-    wxString localWallpaperDir = wxFileName(projectDir, "wallpapers").GetFullPath();
+
+    const wxString &localWallpaperDir = WALLPAPER_DIRECTORY;
     if (!wxDirExists(localWallpaperDir))
     {
-        wxMkdir(localWallpaperDir);
-    }
-    else
-    {
-        wxDir dir(localWallpaperDir);
-        wxString filename;
-        bool cont = dir.GetFirst(&filename);
-        while (cont)
+        if (!wxFileName::Mkdir(localWallpaperDir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL))
         {
-            wxRemoveFile(wxFileName(localWallpaperDir, filename).GetFullPath());
-            cont = dir.GetNext(&filename);
+            wxLogError("WallpaperLoadThread: Wallpaper directory does not exist and cannot be created: %s", localWallpaperDir);
+            wxCriticalSectionLocker lock(gThreadCS);
+            if (m_tab && !m_tab->IsBeingDeleted() && !m_tab->m_isDestroyed && m_tab->IsWallpaperPanelReady())
+            {
+                wxCommandEvent *completeEvent = new wxCommandEvent(wxEVT_WALLPAPER_LOAD_COMPLETE);
+                wxQueueEvent(m_tab, completeEvent);
+            }
+            return (ExitCode)1;
         }
     }
-    wxString cpCommand = wxString::Format("docker cp %s:%s \"%s\"", containerId, wallpaperDir, localWallpaperDir);
-    wxString result = m_tab->ExecuteCommandOnMainThread(cpCommand);
-    if (result != "SUCCESS")
+
+    wxDir dir(localWallpaperDir);
+    if (!dir.IsOpened())
     {
+        wxLogError("WallpaperLoadThread: Could not open wallpaper directory: %s", localWallpaperDir);
+        wxCriticalSectionLocker lock(gThreadCS);
+        if (m_tab && !m_tab->IsBeingDeleted() && !m_tab->m_isDestroyed && m_tab->IsWallpaperPanelReady())
+        {
+            wxCommandEvent *completeEvent = new wxCommandEvent(wxEVT_WALLPAPER_LOAD_COMPLETE);
+            wxQueueEvent(m_tab, completeEvent);
+        }
         return (ExitCode)1;
     }
-    auto processDirectory = [&](wxDir &dir, const wxString &currentPath, auto &processDir) -> void
+
+    wxString filename;
+    bool cont = dir.GetFirst(&filename, wxEmptyString, wxDIR_FILES | wxDIR_HIDDEN);
+    while (cont && !m_stopFlag && m_tab && !m_tab->IsBeingDeleted() && !m_tab->m_isDestroyed)
     {
-        wxString filename;
-        bool cont = dir.GetFirst(&filename, wxEmptyString, wxDIR_FILES | wxDIR_DIRS);
-        while (cont && !m_stopFlag)
+        wxString filepath = wxFileName(localWallpaperDir, filename).GetFullPath();
+        wxFileName fn(filepath);
+        wxString ext = fn.GetExt().Lower();
+
+        if (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "bmp")
         {
-            wxString filepath = wxFileName(currentPath, filename).GetFullPath();
-            if (wxDirExists(filepath))
+            wxImage image;
+            if (image.LoadFile(filepath))
             {
-                wxDir subDir(filepath);
-                if (subDir.IsOpened())
+                if (m_stopFlag || !m_tab || m_tab->IsBeingDeleted() || m_tab->m_isDestroyed)
                 {
-                    processDir(subDir, filepath, processDir);
+                    return (ExitCode)1;
                 }
+                WallpaperImageData *data = new WallpaperImageData;
+                data->image = image.Copy();
+                data->originalPath = filepath;
+                wxCommandEvent *event = new wxCommandEvent(wxEVT_WALLPAPER_READY);
+                event->SetClientData(data);
+                {
+                    wxCriticalSectionLocker lock(gThreadCS);
+                    if (m_tab && !m_tab->IsBeingDeleted() && !m_tab->m_isDestroyed)
+                    {
+                        wxQueueEvent(m_tab, event);
+                    }
+                    else
+                    {
+                        delete data;
+                        delete event;
+                    }
+                }
+                wxMilliSleep(15);
             }
             else
             {
-                wxString ext = filename.Lower().AfterLast('.');
-                if (ext == "jpg" || ext == "jpeg" || ext == "png")
-                {
-                    wxImage image;
-                    if (image.LoadFile(filepath))
-                    {
-                        image.Rescale(100, 100, wxIMAGE_QUALITY_HIGH);
-                        WallpaperImageData *data = new WallpaperImageData{image};
-                        wxCommandEvent *event = new wxCommandEvent(wxEVT_WALLPAPER_READY);
-                        event->SetClientData(data);
-                        wxQueueEvent(m_tab, event);
-                        wxMilliSleep(10);
-                    }
-                }
+                wxLogWarning("WallpaperLoadThread: Failed to load image file: %s", filepath);
             }
-            cont = dir.GetNext(&filename);
         }
-    };
-    wxDir dir(localWallpaperDir);
-    if (dir.IsOpened())
-    {
-        processDirectory(dir, localWallpaperDir, processDirectory);
+        cont = dir.GetNext(&filename);
     }
-    if (!m_stopFlag)
+
     {
-        wxCommandEvent *completeEvent = new wxCommandEvent(wxEVT_WALLPAPER_LOAD_COMPLETE);
-        wxQueueEvent(m_tab, completeEvent);
+        wxCriticalSectionLocker lock(gThreadCS);
+        if (!m_stopFlag && m_tab && !m_tab->IsBeingDeleted() && !m_tab->m_isDestroyed)
+        {
+            wxCommandEvent *completeEvent = new wxCommandEvent(wxEVT_WALLPAPER_LOAD_COMPLETE);
+            wxQueueEvent(m_tab, completeEvent);
+        }
     }
     return (ExitCode)0;
-};
+}

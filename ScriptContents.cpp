@@ -1,12 +1,13 @@
-// ScriptContents.cpp - Add this new file
-const char* SETUP_CHROOT_SCRIPT = R"(#!/bin/bash
-# Content of setup_chroot.sh
-)";
-
-const char* CREATE_ISO_SCRIPT = R"(#!/bin/bash
-# Content of create_iso.sh
-)";
-
-const char* SETUP_OUTPUT_SCRIPT = R"(#!/bin/bash
-# Content of setup_output.sh
-)";
+// ScriptContents.cpp - Add this new file // Име на файла на изходния код - Добавете този нов файл
+const char *SETUP_CHROOT_SCRIPT = R"(#!/bin/bash // Декларира константен указател към символен низ (C-style string) с име SETUP_CHROOT_SCRIPT и го инициализира с многоредов суров низ
+# Content of setup_chroot.sh // Начало на съдържанието на скрипта: шебанг, указващ bash интерпретатор
+)"; // Коментар в скрипта: "Съдържание на setup_chroot.sh"
+    // Край на многоредовия суров низ
+const char *CREATE_ISO_SCRIPT = R"(#!/bin/bash // Декларира константен указател към символен низ с име CREATE_ISO_SCRIPT и го инициализира с многоредов суров низ
+# Content of create_iso.sh // Начало на съдържанието на скрипта: шебанг, указващ bash интерпретатор
+)"; // Коментар в скрипта: "Съдържание на create_iso.sh"
+    // Край на многоредовия суров низ
+const char *SETUP_OUTPUT_SCRIPT = R"(#!/bin/bash // Декларира константен указател към символен низ с име SETUP_OUTPUT_SCRIPT и го инициализира с многоредов суров низ
+# Content of setup_output.sh // Начало на съдържанието на скрипта: шебанг, указващ bash интерпретатор
+)"; // Коментар в скрипта: "Съдържание на setup_output.sh"
+    // Край на многоредовия суров низ

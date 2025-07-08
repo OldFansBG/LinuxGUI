@@ -1,19 +1,21 @@
-#ifndef OSDETECTOR_H
-#define OSDETECTOR_H
+#ifndef OSDETECTOR_H // Предпазител от многократно включване на хедър файла
+#define OSDETECTOR_H // Дефиниране на предпазителя за хедър файла
 
-#include <wx/wx.h>
+#include <wx/wx.h> // Включване на wxWidgets библиотека, необходима за графичния интерфейс
 
-class OSDetector {
-public:
-    enum class OS {
-        Windows,
-        MacOS,
-        Linux,
-        Unknown
+class OSDetector
+{       // Дефиниция на клас за откриване на операционна система
+public: // Публичен интерфейс на класа
+    enum class OS
+    {            // Изброяване на поддържаните операционни системи
+        Windows, // Операционна система Windows
+        MacOS,   // Операционна система MacOS
+        Linux,   // Операционна система Linux
+        Unknown  // Неизвестна операционна система
     };
 
-    OS GetCurrentOS();
-    wxString GetOSName(OS os);
+    OS GetCurrentOS();         // Метод, който връща текущата операционна система
+    wxString GetOSName(OS os); // Метод, който връща името на операционната система като текстов низ
 };
 
-#endif // OSDETECTOR_H
+#endif // OSDETECTOR_H // Край на предпазителя за хедър файла

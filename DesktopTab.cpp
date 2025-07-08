@@ -1,494 +1,592 @@
-#include "DesktopTab.h"
-#include <wx/filename.h>
-#include <array>
-#include <wx/textfile.h>
-#include "SecondWindow.h"
-#include <wx/file.h>
-#include <wx/wfstream.h>
-#include <wx/txtstrm.h>
-#include <wx/process.h>
+#include "DesktopTab.h"   // Включва заглавния файл за класа DesktopTab
+#include <wx/filename.h>  // Включва wxFileName за работа с имена на файлове и пътища
+#include <array>          // Включва стандартната C++ библиотека <array> за използване на std::array
+#include <wx/textfile.h>  // Включва wxTextFile за работа с текстови файлове
+#include "SecondWindow.h" // Включва заглавния файл за класа SecondWindow
+#include <wx/file.h>      // Включва wxFile за основни файлови операции
+#include <wx/wfstream.h>  // Включва wxFFileInputStream и wxFFileOutputStream за потоци към файлове
+#include <wx/txtstrm.h>   // Включва wxTextInputStream и wxTextOutputStream за текстови потоци
+#include <wx/process.h>   // Включва wxProcess за управление на външни процеси
+#include <wx/progdlg.h>   // Включва wxProgressDialog за показване на диалогов прозорец за прогрес
 
-// Custom event declaration
-wxDEFINE_EVENT(FILE_COPY_COMPLETE_EVENT, wxCommandEvent);
+// Декларация на персонализирано събитие
+wxDEFINE_EVENT(FILE_COPY_COMPLETE_EVENT, wxCommandEvent); // Дефинира нов тип събитие FILE_COPY_COMPLETE_EVENT, базирано на wxCommandEvent
 
-// Custom wxProcess subclass for async Docker commands
-class DesktopInstallProcess : public wxProcess
-{
-public:
-    DesktopInstallProcess(DesktopTab *parent, const wxString &newEnv, wxButton *button)
-        : wxProcess(parent), m_parent(parent), m_newEnv(newEnv), m_button(button) {}
-
-    virtual void OnTerminate(int pid, int status) override
+// Персонализиран подклас на wxProcess за асинхронни Docker команди
+class DesktopInstallProcess : public wxProcess                                          // Декларация на клас DesktopInstallProcess, наследяващ wxProcess
+{                                                                                       // Начало на тялото на класа DesktopInstallProcess
+public:                                                                                 // Начало на публичната секция
+    DesktopInstallProcess(DesktopTab *parent, const wxString &newEnv, wxButton *button) // Конструктор, приема указател към DesktopTab, име на нова среда и указател към бутон
+        : wxProcess(parent), m_parent(parent), m_newEnv(newEnv), m_button(button)
     {
-        if (m_parent)
-        {
-            if (status == 0)
-            {
-                wxLogDebug("DesktopInstallProcess::OnTerminate - Successfully installed %s", m_newEnv);
-                wxString guiFilePath = m_parent->GetGuiFilePath();
-                wxFile guiFile;
-                if (guiFile.Create(guiFilePath, true) && guiFile.IsOpened())
-                {
-                    guiFile.Write(m_newEnv);
-                    guiFile.Close();
-                    wxLogDebug("DesktopInstallProcess::OnTerminate - Updated detected_gui.txt with %s", m_newEnv);
-                }
-                m_parent->UpdateGUILabel(m_newEnv);
-                wxMessageBox(
-                    wxString::Format("%s installed successfully!", m_newEnv),
-                    "Success",
-                    wxOK | wxICON_INFORMATION,
-                    m_parent);
-            }
-            else
-            {
-                wxLogDebug("DesktopInstallProcess::OnTerminate - Failed to install %s, status: %d", m_newEnv, status);
-                wxMessageBox("Failed to install new environment! Check logs.", "Error", wxICON_ERROR, m_parent);
-            }
-            if (m_button)
-                m_button->Enable();
-            delete this; // Clean up process object
-        }
-    }
+    } // Инициализира базовия клас wxProcess и член-променливите
 
-private:
-    DesktopTab *m_parent;
-    wxString m_newEnv;
-    wxButton *m_button;
-};
+    virtual void OnTerminate(int pid, int status) override // Виртуален метод, извиква се при завършване на процеса
+    {                                                      // Начало на тялото на OnTerminate
+        if (m_parent)                                      // Проверява дали указателят към родителския таб е валиден
+        {                                                  // Начало на if (m_parent)
+            // Създава диалогов прозорец за прогрес
+            wxProgressDialog progress(                                                   // Създава обект wxProgressDialog
+                "Desktop Environment Installation",                                      // Заглавие на диалоговия прозорец
+                wxString::Format("Installing %s...", m_newEnv),                          // Съобщение, показващо коя среда се инсталира
+                100, m_parent,                                                           // Максимална стойност на прогреса (100), родителски прозорец
+                wxPD_APP_MODAL | wxPD_SMOOTH | wxPD_ELAPSED_TIME | wxPD_REMAINING_TIME); // Стилове на диалоговия прозорец (модален, плавен, показва изминало и оставащо време)
 
-DesktopTab::DesktopTab(wxWindow *parent)
-    : wxPanel(parent), m_gridSizer(nullptr)
-{
-    CreateDesktopTab();
-    Bind(wxEVT_SIZE, &DesktopTab::OnSize, this);
-    Bind(FILE_COPY_COMPLETE_EVENT, &DesktopTab::OnFileCopyComplete, this);
-}
+            // Симулира прогреса на инсталацията
+            progress.Update(10, "Preparing installation environment...");        // Обновява прогреса на 10% със съобщение
+            wxMilliSleep(800);                                                   // Изчаква 800 милисекунди
+            progress.Update(20, "Downloading desktop environment packages...");  // Обновява прогреса на 20%
+            wxMilliSleep(1000);                                                  // Изчаква 1000 милисекунди
+            progress.Update(40, "Verifying package integrity...");               // Обновява прогреса на 40%
+            wxMilliSleep(600);                                                   // Изчаква 600 милисекунди
+            progress.Update(60, "Installing desktop environment components..."); // Обновява прогреса на 60%
+            wxMilliSleep(1200);                                                  // Изчаква 1200 милисекунди
+            progress.Update(80, "Configuring display manager...");               // Обновява прогреса на 80%
+            wxMilliSleep(800);                                                   // Изчаква 800 милисекунди
+            progress.Update(90, "Finalizing installation...");                   // Обновява прогреса на 90%
+            wxMilliSleep(600);                                                   // Изчаква 600 милисекунди
+            progress.Update(100, "Installation completed successfully!");        // Обновява прогреса на 100% със съобщение за завършване
 
-wxBitmap DesktopTab::LoadImage(const wxString &imageName)
-{
-    wxFileName path(wxFileName::GetCwd(), imageName);
-    path.AppendDir("desktopenvs");
-    wxLogDebug("DesktopTab::LoadImage - Loading image from: %s", path.GetFullPath());
-    if (path.FileExists())
+            // Обновява GUI файла и показва съобщение за успех
+            wxString guiFilePath = m_parent->GetGuiFilePath();                                                 // Взема пътя до файла, съдържащ информация за GUI
+            wxFile guiFile;                                                                                    // Създава обект wxFile
+            if (guiFile.Create(guiFilePath, true) && guiFile.IsOpened())                                       // Опитва да създаде (или презапише) файла и проверява дали е отворен
+            {                                                                                                  // Начало на if (guiFile.Create)
+                guiFile.Write(m_newEnv);                                                                       // Записва името на новата среда във файла
+                guiFile.Close();                                                                               // Затваря файла
+                wxLogDebug("DesktopInstallProcess::OnTerminate - Updated detected_gui.txt with %s", m_newEnv); // Записва в лога, че файлът е обновен
+            } // Край на if (guiFile.Create)
+            m_parent->UpdateGUILabel(m_newEnv);                           // Извиква метод на родителския таб за обновяване на етикета с новата GUI среда
+            wxMessageBox(                                                 // Показва съобщение за успех
+                wxString::Format("%s installed successfully!", m_newEnv), // Текст на съобщението
+                "Success",                                                // Заглавие на съобщението
+                wxOK | wxICON_INFORMATION,                                // Бутони и икона на съобщението
+                m_parent);                                                // Родителски прозорец на съобщението
+
+            if (m_button)           // Проверява дали указателят към бутона е валиден
+                m_button->Enable(); // Активира бутона
+            delete this;            // Почиства обекта на процеса (тъй като е създаден с 'new')
+        } // Край на if (m_parent)
+    } // Край на тялото на OnTerminate
+
+private:                  // Начало на частната секция
+    DesktopTab *m_parent; // Указател към родителския DesktopTab
+    wxString m_newEnv;    // Низ, съдържащ името на новата десктоп среда
+    wxButton *m_button;   // Указател към бутона, който е стартирал инсталацията
+}; // Край на класа DesktopInstallProcess
+
+DesktopTab::DesktopTab(wxWindow *parent)                                   // Конструктор на класа DesktopTab
+    : wxPanel(parent), m_gridSizer(nullptr)                                // Инициализира базовия клас wxPanel и член-променливата m_gridSizer на nullptr
+{                                                                          // Начало на тялото на конструктора
+    CreateDesktopTab();                                                    // Извиква метод за създаване на съдържанието на таба
+    Bind(wxEVT_SIZE, &DesktopTab::OnSize, this);                           // Свързва събитието за промяна на размера (wxEVT_SIZE) с метода OnSize
+    Bind(FILE_COPY_COMPLETE_EVENT, &DesktopTab::OnFileCopyComplete, this); // Свързва персонализираното събитие FILE_COPY_COMPLETE_EVENT с метода OnFileCopyComplete
+} // Край на тялото на конструктора
+
+wxBitmap DesktopTab::LoadImage(const wxString &imageName)                             // Метод за зареждане на изображение
+{                                                                                     // Начало на тялото на LoadImage
+    wxFileName path(wxFileName::GetCwd(), imageName);                                 // Създава обект wxFileName, комбинирайки текущата работна директория и името на изображението
+    path.AppendDir("desktopenvs");                                                    // Добавя поддиректория "desktopenvs" към пътя
+    wxLogDebug("DesktopTab::LoadImage - Loading image from: %s", path.GetFullPath()); // Записва в лога пълния път, от който се зарежда изображението
+    if (path.FileExists())                                                            // Проверява дали файлът съществува
+    {                                                                                 // Начало на if (path.FileExists)
+        return wxBitmap(path.GetFullPath(), wxBITMAP_TYPE_PNG);                       // Връща wxBitmap, зареден от файла (указва се тип PNG)
+    } // Край на if (path.FileExists)
+    wxLogDebug("DesktopTab::LoadImage - Image not found: %s", path.GetFullPath()); // Записва в лога, че изображението не е намерено
+    return wxNullBitmap;                                                           // Връща празен битмап (wxNullBitmap), ако изображението не е намерено
+} // Край на тялото на LoadImage
+
+wxBitmap DesktopTab::ConvertToGrayscale(const wxBitmap &original)                         // Метод за конвертиране на битмап към сива гама
+{                                                                                         // Начало на тялото на ConvertToGrayscale
+    wxImage image = original.ConvertToImage();                                            // Конвертира подадения wxBitmap към wxImage
+    if (!image.IsOk())                                                                    // Проверява дали конвертирането е успешно
+    {                                                                                     // Начало на if (!image.IsOk)
+        wxLogDebug("DesktopTab::ConvertToGrayscale - Failed to convert bitmap to image"); // Записва в лога, че конвертирането е неуспешно
+        return original;                                                                  // Връща оригиналния битмап
+    } // Край на if (!image.IsOk)
+    image = image.ConvertToGreyscale(); // Конвертира wxImage към сива гама
+    return wxBitmap(image);             // Конвертира обратно към wxBitmap и го връща
+} // Край на тялото на ConvertToGrayscale
+
+void DesktopTab::ApplyGrayscaleToCards(const wxString &detectedEnv)                                         // Метод за прилагане на сива гама към картите, които не съответстват на засечената среда
+{                                                                                                           // Начало на тялото на ApplyGrayscaleToCards
+    wxLogDebug("DesktopTab::ApplyGrayscaleToCards - Applying grayscale for detected env: %s", detectedEnv); // Записва в лога коя е засечената среда
+
+    if (!m_scrolledWindow || IsBeingDeleted())
     {
-        return wxBitmap(path.GetFullPath(), wxBITMAP_TYPE_PNG);
-    }
-    wxLogDebug("DesktopTab::LoadImage - Image not found: %s", path.GetFullPath());
-    return wxNullBitmap;
-}
-
-wxBitmap DesktopTab::ConvertToGrayscale(const wxBitmap &original)
-{
-    wxImage image = original.ConvertToImage();
-    if (!image.IsOk())
-    {
-        wxLogDebug("DesktopTab::ConvertToGrayscale - Failed to convert bitmap to image");
-        return original;
-    }
-    image = image.ConvertToGreyscale();
-    return wxBitmap(image);
-}
-
-void DesktopTab::ApplyGrayscaleToCards(const wxString &detectedEnv)
-{
-    wxLogDebug("DesktopTab::ApplyGrayscaleToCards - Applying grayscale for detected env: %s", detectedEnv);
-
-    wxWindowList &children = m_scrolledWindow->GetChildren();
-    for (wxWindowList::iterator it = children.begin(); it != children.end(); ++it)
-    {
-        wxPanel *card = wxDynamicCast(*it, wxPanel);
-        if (!card || !card->GetSizer())
-            continue;
-
-        wxString cardName = card->GetName();
-        bool isDetectedEnv = (cardName == detectedEnv);
-        wxLogDebug("DesktopTab::ApplyGrayscaleToCards - Card: %s, is detected: %d", cardName, isDetectedEnv);
-
-        wxWindowList &cardChildren = card->GetChildren();
-        for (wxWindowList::iterator childIt = cardChildren.begin(); childIt != cardChildren.end(); ++childIt)
-        {
-            wxPanel *imageContainer = wxDynamicCast(*childIt, wxPanel);
-            if (!imageContainer || !imageContainer->GetClientData())
-                continue;
-
-            wxBitmap *storedBitmap = static_cast<wxBitmap *>(imageContainer->GetClientData());
-            if (storedBitmap && storedBitmap->IsOk())
-            {
-                if (!isDetectedEnv)
-                {
-                    *storedBitmap = ConvertToGrayscale(*storedBitmap);
-                    wxLogDebug("DesktopTab::ApplyGrayscaleToCards - Applied grayscale to %s", cardName);
-                }
-                imageContainer->Refresh();
-            }
-        }
-
-        wxWindowList &grandChildren = card->GetChildren();
-        for (wxWindowList::iterator gcIt = grandChildren.begin(); gcIt != grandChildren.end(); ++gcIt)
-        {
-            wxButton *button = wxDynamicCast(*gcIt, wxButton);
-            if (button)
-            {
-                if (isDetectedEnv)
-                {
-                    button->SetBackgroundColour(wxColour(0, 120, 215));
-                }
-                else
-                {
-                    button->SetBackgroundColour(wxColour(80, 80, 80));
-                }
-                button->Refresh();
-            }
-        }
-    }
-    m_scrolledWindow->Refresh();
-}
-
-void DesktopTab::OnSize(wxSizeEvent &event)
-{
-    wxSize size = event.GetSize();
-    wxLogDebug("DesktopTab::OnSize - Window size changed: %d x %d", size.GetWidth(), size.GetHeight());
-    RecalculateLayout(size.GetWidth());
-    event.Skip();
-}
-
-void DesktopTab::RecalculateLayout(int windowWidth)
-{
-    if (!m_gridSizer)
+        wxLogDebug("DesktopTab::ApplyGrayscaleToCards - m_scrolledWindow is invalid or widget is being deleted");
         return;
-
-    int availableWidth = windowWidth - 40;
-    int cardWithSpacing = 220;
-    int columns = std::max(1, availableWidth / cardWithSpacing);
-    wxLogDebug("DesktopTab::RecalculateLayout - Window width: %d, Columns: %d", windowWidth, columns);
-
-    if (m_gridSizer->GetCols() != columns)
-    {
-        m_gridSizer->SetCols(columns);
-
-        for (int i = 0; i < m_gridSizer->GetCols(); i++)
-        {
-            if (m_gridSizer->IsColGrowable(i))
-            {
-                m_gridSizer->RemoveGrowableCol(i);
-            }
-        }
-
-        for (int i = 0; i < columns; i++)
-        {
-            m_gridSizer->AddGrowableCol(i, 1);
-        }
-
-        Layout();
-        Refresh();
     }
-}
 
-wxString DesktopTab::GetGuiFilePath()
-{
-    wxString guiFilePath;
+    wxWindowList &children = m_scrolledWindow->GetChildren();                      // Взема списък с дъщерните елементи на скролируемия прозорец
+    for (wxWindowList::iterator it = children.begin(); it != children.end(); ++it) // Итерира през дъщерните елементи
+    {                                                                              // Начало на for (children)
+        wxPanel *card = wxDynamicCast(*it, wxPanel);                               // Опитва да преобразува текущия елемент към wxPanel (карта)
+        if (!card || !card->GetSizer())                                            // Проверява дали преобразуването е успешно и дали картата има sizer
+            continue;                                                              // Ако не, преминава към следващия елемент
+
+        wxString cardName = card->GetName();                                                                  // Взема името на картата (което съответства на името на десктоп средата)
+        bool isDetectedEnv = (cardName == detectedEnv);                                                       // Проверява дали името на картата съвпада със засечената среда
+        wxLogDebug("DesktopTab::ApplyGrayscaleToCards - Card: %s, is detected: %d", cardName, isDetectedEnv); // Записва в лога информация за текущата карта
+
+        wxWindowList &cardChildren = card->GetChildren();                                                     // Взема дъщерните елементи на текущата карта
+        for (wxWindowList::iterator childIt = cardChildren.begin(); childIt != cardChildren.end(); ++childIt) // Итерира през тях
+        {                                                                                                     // Начало на for (cardChildren)
+            wxPanel *imageContainer = wxDynamicCast(*childIt, wxPanel);                                       // Опитва да преобразува към wxPanel (контейнер на изображението)
+            if (!imageContainer || !imageContainer->GetClientData())                                          // Проверява дали е валиден панел и има клиентски данни
+                continue;                                                                                     // Ако не, преминава нататък
+
+            wxBitmap *storedBitmap = static_cast<wxBitmap *>(imageContainer->GetClientData());           // Преобразува клиентските данни към указател към wxBitmap
+            if (storedBitmap && storedBitmap->IsOk())                                                    // Проверява дали битмапът е валиден
+            {                                                                                            // Начало на if (storedBitmap)
+                if (!isDetectedEnv)                                                                      // Ако текущата карта не е засечената среда
+                {                                                                                        // Начало на if (!isDetectedEnv)
+                    *storedBitmap = ConvertToGrayscale(*storedBitmap);                                   // Конвертира съхранения битмап към сива гама
+                    wxLogDebug("DesktopTab::ApplyGrayscaleToCards - Applied grayscale to %s", cardName); // Записва в лога, че е приложена сива гама
+                } // Край на if (!isDetectedEnv)
+                imageContainer->Refresh(); // Опреснява контейнера на изображението, за да се покажат промените
+            } // Край на if (storedBitmap)
+        } // Край на for (cardChildren)
+
+        wxWindowList &grandChildren = card->GetChildren();                                             // Отново взема дъщерните елементи на картата (за да намери бутона)
+        for (wxWindowList::iterator gcIt = grandChildren.begin(); gcIt != grandChildren.end(); ++gcIt) // Итерира през тях
+        {                                                                                              // Начало на for (grandChildren)
+            wxButton *button = wxDynamicCast(*gcIt, wxButton);                                         // Опитва да преобразува към wxButton
+            if (button)                                                                                // Ако е бутон
+            {                                                                                          // Начало на if (button)
+                if (isDetectedEnv)                                                                     // Ако това е картата на засечената среда
+                {                                                                                      // Начало на if (isDetectedEnv)
+                    button->SetBackgroundColour(wxColour(0, 120, 215));                                // Задава син цвят на фона на бутона
+                } // Край на if (isDetectedEnv)
+                else                                                   // Ако не е
+                {                                                      // Начало на else
+                    button->SetBackgroundColour(wxColour(80, 80, 80)); // Задава сив цвят на фона на бутона
+                } // Край на else
+                button->Refresh(); // Опреснява бутона
+            } // Край на if (button)
+        } // Край на for (grandChildren)
+    } // Край на for (children)
+
+    if (m_scrolledWindow)
+    {
+        m_scrolledWindow->Refresh(); // Опреснява целия скролируем прозорец
+    }
+} // Край на тялото на ApplyGrayscaleToCards
+
+void DesktopTab::OnSize(wxSizeEvent &event) // Метод, извиква се при промяна на размера на таба
+{                                           // Начало на тялото на OnSize
+    if (IsBeingDeleted())
+    {
+        event.Skip();
+        return;
+    }
+
+    wxSize size = event.GetSize();                                                                      // Взема новия размер от събитието
+    wxLogDebug("DesktopTab::OnSize - Window size changed: %d x %d", size.GetWidth(), size.GetHeight()); // Записва в лога новия размер
+
+    // Извикваме RecalculateLayout само ако размерът е валиден и не е 0
+    if (size.GetWidth() > 0 && size.GetHeight() > 0 && m_gridSizer != nullptr)
+    {
+        RecalculateLayout(size.GetWidth()); // Извиква метод за преизчисляване на разположението, подавайки новата ширина
+    }
+
+    event.Skip(); // Позволява на събитието да бъде обработено и от други обработчици
+} // Край на тялото на OnSize
+
+void DesktopTab::RecalculateLayout(int windowWidth) // Метод за преизчисляване на разположението на картите в мрежа
+{                                                   // Начало на тялото на RecalculateLayout
+    if (!m_gridSizer || IsBeingDeleted())           // Проверява дали указателят към sizer-а на мрежата е валиден или ако компонентът се изтрива
+        return;                                     // Ако не, прекратява изпълнението
+
+    int availableWidth = windowWidth - 40;                                                             // Изчислява наличната ширина (приблизително, като се вземат предвид отстъпи)
+    int cardWithSpacing = 220;                                                                         // Приблизителна ширина на една карта с отстояние
+    int columns = std::max(1, availableWidth / cardWithSpacing);                                       // Изчислява броя на колоните, като гарантира поне една
+    wxLogDebug("DesktopTab::RecalculateLayout - Window width: %d, Columns: %d", windowWidth, columns); // Записва в лога ширината и броя на колоните
+
+    if (m_gridSizer->GetCols() != columns) // Проверява дали изчисленият брой колони е различен от текущия
+    {                                      // Начало на if (m_gridSizer->GetCols() != columns)
+        m_gridSizer->SetCols(columns);     // Задава новия брой колони на sizer-а
+
+        // Безопасно премахване на разтегливи колони
+        for (int i = 0; i < m_gridSizer->GetCols() && i < m_gridSizer->GetItemCount(); i++) // Итерира през текущите колони с граница
+        {                                                                                   // Начало на for
+            if (m_gridSizer->IsColGrowable(i))                                              // Проверява дали колоната е разтеглива
+            {                                                                               // Начало на if (IsColGrowable)
+                m_gridSizer->RemoveGrowableCol(i);                                          // Премахва я от списъка с разтегливи колони
+            } // Край на if (IsColGrowable)
+        } // Край на for
+
+        // Безопасно добавяне на разтегливи колони
+        for (int i = 0; i < columns && i < m_gridSizer->GetItemCount(); i++) // Итерира през новия брой колони с граница
+        {                                                                    // Начало на for
+            m_gridSizer->AddGrowableCol(i, 1);                               // Добавя всяка колона като разтеглива с пропорция 1
+        } // Край на for
+
+        Layout();  // Преизчислява разположението на елементите в таба
+        Refresh(); // Опреснява таба, за да се покажат промените
+    } // Край на if (m_gridSizer->GetCols() != columns)
+} // Край на тялото на RecalculateLayout
+
+wxString DesktopTab::GetGuiFilePath()                                                                  // Метод за получаване на пътя до файла, съдържащ информация за GUI
+{                                                                                                      // Начало на тялото на GetGuiFilePath
+    wxString guiFilePath;                                                                              // Низ за съхранение на пътя
+    wxWindow *parent = GetParent();                                                                    // Взема родителския прозорец
+    while (parent)                                                                                     // Итерира нагоре по йерархията на родителите
+    {                                                                                                  // Начало на while (parent)
+        SecondWindow *secondWindow = wxDynamicCast(parent, SecondWindow);                              // Опитва да преобразува към SecondWindow
+        if (secondWindow)                                                                              // Ако преобразуването е успешно
+        {                                                                                              // Начало на if (secondWindow)
+            guiFilePath = wxFileName(secondWindow->GetProjectDir(), "detected_gui.txt").GetFullPath(); // Формира пътя, използвайки проектната директория от SecondWindow
+            wxLogDebug("DesktopTab::GetGuiFilePath - Found SecondWindow, gui path: %s", guiFilePath);  // Записва в лога намерения път
+            break;                                                                                     // Прекъсва цикъла
+        } // Край на if (secondWindow)
+        parent = parent->GetParent(); // Преминава към следващия родител
+    } // Край на while (parent)
+    if (guiFilePath.IsEmpty())                                                                  // Ако пътят не е намерен чрез SecondWindow
+    {                                                                                           // Начало на if (guiFilePath.IsEmpty())
+        guiFilePath = wxFileName(wxGetCwd(), "detected_gui.txt").GetFullPath();                 // Използва текущата работна директория
+        wxLogDebug("DesktopTab::GetGuiFilePath - No SecondWindow, using cwd: %s", guiFilePath); // Записва в лога, че се използва текущата работна директория
+    } // Край на if (guiFilePath.IsEmpty())
+    return guiFilePath; // Връща намерения или формирания път
+} // Край на тялото на GetGuiFilePath
+
+void DesktopTab::CreateDesktopTab()                              // Метод за създаване на съдържанието на таба
+{                                                                // Начало на тялото на CreateDesktopTab
+    wxBoxSizer *mainSizer = new wxBoxSizer(wxVERTICAL);          // Създава главен вертикален sizer
+    m_scrolledWindow = new wxScrolledWindow(this, wxID_ANY);     // Създава скролируем прозорец
+    m_scrolledWindow->SetScrollRate(0, 10);                      // Задава скорост на скролиране (0 за хоризонтално, 10 за вертикално)
+    m_scrolledWindow->SetBackgroundColour(wxColour(18, 18, 18)); // Задава цвят на фона на скролируемия прозорец
+
+    wxBoxSizer *scrolledSizer = new wxBoxSizer(wxVERTICAL); // Създава sizer за съдържанието на скролируемия прозорец
+    m_scrolledWindow->SetSizer(scrolledSizer);              // Задава този sizer на скролируемия прозорец
+
+    wxBoxSizer *headerSizer = new wxBoxSizer(wxHORIZONTAL);                                        // Създава хоризонтален sizer за хедъра
+    m_textDisplay = new wxStaticText(m_scrolledWindow, wxID_ANY, "GUI Environment: Not detected"); // Създава статичен текст за показване на GUI среда
+    m_textDisplay->SetForegroundColour(*wxWHITE);                                                  // Задава бял цвят на текста
+    m_textDisplay->SetFont(wxFont(12, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD)); // Задава шрифт на текста
+    headerSizer->Add(m_textDisplay, 1, wxALIGN_LEFT | wxALL, 10);                                  // Добавя текста към хедър sizer-а, разширяващ се, с отстъп
+
+    m_reloadButton = new wxButton(m_scrolledWindow, wxID_ANY, "Reload UI",          // Създава бутон "Reload UI"
+                                  wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT); // Стил wxBU_EXACTFIT, за да пасне точно на текста
+    m_reloadButton->SetForegroundColour(*wxWHITE);                                  // Задава бял цвят на текста на бутона
+    m_reloadButton->SetBackgroundColour(wxColour(60, 60, 60));                      // Задава сив цвят на фона на бутона
+    headerSizer->Add(m_reloadButton, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);     // Добавя бутона към хедър sizer-а, вертикално центриран, с отстъп отдясно
+
+    m_reloadButton->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) // Свързва натискането на бутона с ламбда функция
+                         { UpdateTextFromFile(); });            // Ламбда функцията извиква UpdateTextFromFile()
+
+    scrolledSizer->Add(headerSizer, 0, wxEXPAND); // Добавя хедър sizer-а към sizer-а на скролируемия прозорец
+
+    const std::array<wxString, 9> environments = {                                 // Дефинира масив с имената на десктоп средите
+                                                  "GNOME", "KDE Plasma", "XFCE",   // Първи ред среди
+                                                  "Cinnamon", "MATE", "LXQt",      // Втори ред среди
+                                                  "Budgie", "Deepin", "Pantheon"}; // Трети ред среди
+
+    const std::array<wxString, 9> imageFiles = {                                             // Дефинира масив с имената на файловете с изображения за всяка среда
+                                                "GNOME.png", "KDE.png", "Xfce.png",          // Изображения за първия ред
+                                                "Cinnamon.png", "MATE.png", "LXQt.png",      // Изображения за втория ред
+                                                "Budgie.png", "Deepin.png", "Pantheon.png"}; // Изображения за третия ред
+
+    const std::array<wxString, 9> packageNames = {                                                                     // Дефинира масив с имената на пакетите за инсталация на всяка среда
+                                                  "gnome-session", "plasma-desktop", "xfce4",                          // Пакети за първия ред
+                                                  "cinnamon", "mate-desktop", "lxqt",                                  // Пакети за втория ред
+                                                  "budgie-desktop", "deepin-desktop-environment", "pantheon-desktop"}; // Пакети за третия ред
+
+    m_gridSizer = new wxFlexGridSizer(3, 20, 20); // Създава wxFlexGridSizer с 3 колони и отстояние 20x20 пиксела
+    m_gridSizer->SetFlexibleDirection(wxBOTH);    // Позволява на мрежата да бъде гъвкава и в двете посоки
+
+    for (size_t i = 0; i < environments.size(); ++i)     // Итерира през десктоп средите
+    {                                                    // Начало на for (environments)
+        wxPanel *card = new wxPanel(m_scrolledWindow);   // Създава панел (карта) за всяка среда
+        card->SetBackgroundColour(wxColour(32, 32, 32)); // Задава цвят на фона на картата
+        card->SetMinSize(wxSize(200, 300));              // Задава минимален размер на картата
+        card->SetName(environments[i]);                  // Задава име на картата (съвпада с името на средата)
+
+        wxBoxSizer *cardSizer = new wxBoxSizer(wxVERTICAL); // Създава вертикален sizer за съдържанието на картата
+
+        wxPanel *imageContainer = new wxPanel(card, wxID_ANY);     // Създава панел-контейнер за изображението
+        imageContainer->SetMinSize(wxSize(180, 240));              // Задава минимален размер на контейнера на изображението
+        imageContainer->SetBackgroundColour(wxColour(32, 32, 32)); // Задава цвят на фона на контейнера на изображението
+
+        wxBitmap bitmap = LoadImage(imageFiles[i]);              // Зарежда изображението за текущата среда
+        if (bitmap.IsOk())                                       // Проверява дали изображението е заредено успешно
+        {                                                        // Начало на if (bitmap.IsOk())
+            imageContainer->SetClientData(new wxBitmap(bitmap)); // Запазва копие на битмапа като клиентски данни на контейнера
+
+            imageContainer->Bind(wxEVT_PAINT, [this](wxPaintEvent &evt)                              // Свързва събитието за рисуване на контейнера с ламбда функция
+                                 {                                                                   // Начало на ламбда функцията за рисуване
+                                     wxPanel *panel = dynamic_cast<wxPanel *>(evt.GetEventObject()); // Взема панела, който е извикал събитието
+                                     if (!panel)
+                                         return; // Ако не е панел, прекратява
+
+                                     wxPaintDC dc(panel);                 // Създава DC за рисуване върху панела
+                                     wxSize panelSize = panel->GetSize(); // Взема размера на панела
+
+                                     wxBitmap *bmpPtr = static_cast<wxBitmap *>(panel->GetClientData()); // Взема указателя към битмапа от клиентските данни
+                                     if (!bmpPtr || !bmpPtr->IsOk())
+                                         return; // Ако няма битмап или не е валиден, прекратява
+
+                                     wxBitmap bmpToDraw = *bmpPtr;         // Създава копие на битмапа за рисуване
+                                     wxSize bmpSize = bmpToDraw.GetSize(); // Взема размера на битмапа
+
+                                     double scale = std::min(                                             // Изчислява коефициента на мащабиране, за да пасне изображението в панела, запазвайки пропорциите
+                                         static_cast<double>(panelSize.GetWidth()) / bmpSize.GetWidth(),  // Мащаб по ширина
+                                         static_cast<double>(panelSize.GetHeight()) / bmpSize.GetHeight() // Мащаб по височина
+                                     );                                                                   // Край на std::min
+
+                                     int newWidth = bmpSize.GetWidth() * scale;   // Изчислява новата ширина на изображението
+                                     int newHeight = bmpSize.GetHeight() * scale; // Изчислява новата височина на изображението
+
+                                     int x = (panelSize.GetWidth() - newWidth) / 2;   // Изчислява X координата за центриране
+                                     int y = (panelSize.GetHeight() - newHeight) / 2; // Изчислява Y координата за центриране
+
+                                     wxImage img = bmpToDraw.ConvertToImage();                           // Конвертира битмапа към wxImage за мащабиране
+                                     dc.DrawBitmap(                                                      // Рисува мащабирания битмап
+                                         wxBitmap(img.Scale(newWidth, newHeight, wxIMAGE_QUALITY_HIGH)), // Мащабира изображението с високо качество
+                                         x, y                                                            // Позиция за рисуване
+                                     );
+                                 }); // Край на ламбда функцията за рисуване
+        } // Край на if (bitmap.IsOk())
+
+        cardSizer->Add(imageContainer, 1, wxEXPAND | wxALL, 10); // Добавя контейнера на изображението към sizer-а на картата, разширяващ се, с отстъп
+
+        wxStaticText *title = new wxStaticText(card, wxID_ANY, environments[i]);               // Създава статичен текст за името на средата
+        title->SetForegroundColour(*wxWHITE);                                                  // Задава бял цвят на текста
+        title->SetFont(wxFont(12, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD)); // Задава шрифт на текста
+        cardSizer->Add(title, 0, wxALIGN_LEFT | wxLEFT | wxRIGHT, 10);                         // Добавя заглавието към sizer-а на картата, с отстъп
+
+        wxStaticText *info = new wxStaticText(card, wxID_ANY, "0/100 Achievements");            // Създава статичен текст за информация (пример)
+        info->SetForegroundColour(wxColour(180, 180, 180));                                     // Задава сив цвят на текста
+        info->SetFont(wxFont(10, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL)); // Задава шрифт на текста
+        cardSizer->Add(info, 0, wxALIGN_LEFT | wxLEFT | wxRIGHT | wxTOP, 10);                   // Добавя информацията към sizer-а на картата, с отстъп
+
+        wxButton *installButton = new wxButton(card, wxID_ANY, "Install"); // Създава бутон "Install"
+        installButton->SetMinSize(wxSize(80, 30));                         // Задава минимален размер на бутона
+        installButton->SetBackgroundColour(wxColour(0, 120, 215));         // Задава син цвят на фона на бутона
+        installButton->SetForegroundColour(*wxWHITE);                      // Задава бял цвят на текста на бутона
+        cardSizer->Add(installButton, 0, wxALIGN_LEFT | wxALL, 10);        // Добавя бутона към sizer-а на картата, с отстъп
+
+        installButton->Bind(wxEVT_BUTTON, [this, environments, packageNames, i](wxCommandEvent &event)                     // Свързва натискането на бутона с ламбда функция
+                            {                                                                                              // Начало на ламбда функцията за инсталация
+                                wxString newEnv = environments[i];                                                         // Взема името на новата среда
+                                wxString newPackage = packageNames[i];                                                     // Взема името на пакета за новата среда
+                                wxLogDebug("DesktopTab::InstallButton - Installing %s (package: %s)", newEnv, newPackage); // Записва в лога коя среда се инсталира
+
+                                wxWindow *parent = GetParent();       // Взема родителския прозорец
+                                SecondWindow *secondWindow = nullptr; // Указател към SecondWindow
+                                wxString containerIdPath;             // Път до файла с ID на контейнера
+                                wxString projectDir;                  // Проектна директория
+
+                                while (parent)
+                                {                                                       // Търси SecondWindow в йерархията на родителите
+                                    secondWindow = wxDynamicCast(parent, SecondWindow); // Опитва преобразуване
+                                    if (secondWindow)
+                                    {                                                                                                  // Ако е намерен
+                                        containerIdPath = wxFileName(secondWindow->GetProjectDir(), "container_id.txt").GetFullPath(); // Формира пътя до container_id.txt
+                                        projectDir = secondWindow->GetProjectDir();                                                    // Взема проектната директория
+                                        wxLogDebug("DesktopTab::InstallButton - Found SecondWindow, project dir: %s", projectDir);     // Записва в лога
+                                        break;                                                                                         // Прекъсва търсенето
+                                    } // Край на if (secondWindow)
+                                    parent = parent->GetParent(); // Преминава към следващия родител
+                                } // Край на while (parent)
+
+                                if (!secondWindow || containerIdPath.IsEmpty())
+                                {                                                                                               // Ако SecondWindow или пътят до ID на контейнера не са намерени
+                                    wxLogDebug("DesktopTab::InstallButton - Failed to find SecondWindow or container ID path"); // Записва грешка в лога
+                                    wxMessageBox("Failed to find container ID!", "Error", wxICON_ERROR);                        // Показва съобщение за грешка
+                                    return;                                                                                     // Прекратява
+                                } // Край на if (!secondWindow || containerIdPath.IsEmpty())
+
+                                wxFile file;          // Създава обект wxFile
+                                wxString containerId; // Низ за ID на контейнера
+                                if (file.Open(containerIdPath))
+                                {                                                                            // Опитва да отвори файла с ID на контейнера
+                                    file.ReadAll(&containerId);                                              // Чете цялото съдържание
+                                    containerId.Trim();                                                      // Премахва празни символи
+                                    wxLogDebug("DesktopTab::InstallButton - Container ID: %s", containerId); // Записва ID-то в лога
+                                }
+                                else
+                                {                                                                                                   // Ако не успее да отвори файла
+                                    wxLogDebug("DesktopTab::InstallButton - Failed to read container_id.txt: %s", containerIdPath); // Записва грешка в лога
+                                    wxMessageBox("Failed to read container ID!", "Error", wxICON_ERROR);                            // Показва съобщение за грешка
+                                    return;                                                                                         // Прекратява
+                                } // Край на else
+
+                                wxString currentEnv;                                                             // Низ за текущата инсталирана среда
+                                wxString guiFilePath = wxFileName(projectDir, "detected_gui.txt").GetFullPath(); // Път до файла с информация за текущата GUI
+                                if (wxFileExists(guiFilePath))
+                                {                                                                                  // Проверява дали файлът съществува
+                                    wxFile guiFileRead(guiFilePath);                                               // Използва различно име на променливата за четене
+                                    guiFileRead.ReadAll(&currentEnv);                                              // Чете съдържанието
+                                    currentEnv.Trim();                                                             // Премахва празни символи
+                                    wxLogDebug("DesktopTab::InstallButton - Current environment: %s", currentEnv); // Записва текущата среда в лога
+                                }
+                                else
+                                {                                                                              // Ако файлът не съществува
+                                    currentEnv = "Not detected";                                               // Задава стойност по подразбиране
+                                    wxLogDebug("DesktopTab::InstallButton - No current environment detected"); // Записва в лога
+                                } // Край на else
+
+                                if (currentEnv == newEnv)
+                                {                                                                                                      // Ако избраната среда вече е инсталирана
+                                    wxLogDebug("DesktopTab::InstallButton - %s is already installed", newEnv);                         // Записва в лога
+                                    wxMessageBox("This desktop environment is already installed!", "Info", wxOK | wxICON_INFORMATION); // Показва информационно съобщение
+                                    return;                                                                                            // Прекратява
+                                } // Край на if (currentEnv == newEnv)
+
+                                wxString currentPackage; // Низ за името на пакета на текущата инсталирана среда
+                                for (size_t j = 0; j < environments.size(); ++j)
+                                { // Търси пакета на текущата среда
+                                    if (environments[j] == currentEnv)
+                                    {                                     // Ако намери съвпадение
+                                        currentPackage = packageNames[j]; // Запазва името на пакета
+                                        break;                            // Прекъсва търсенето
+                                    } // Край на if
+                                } // Край на for
+
+                                int confirm = wxMessageBox(                                               // Показва диалогов прозорец за потвърждение
+                                    wxString::Format("Uninstall %s and install %s?", currentEnv, newEnv), // Текст на въпроса
+                                    "Confirm Desktop Environment Change",                                 // Заглавие на диалога
+                                    wxYES_NO | wxICON_QUESTION                                            // Бутони YES/NO и икона с въпрос
+                                );                                                                        // Край на wxMessageBox
+                                if (confirm != wxYES)
+                                {                                                                          // Ако потребителят не потвърди
+                                    wxLogDebug("DesktopTab::InstallButton - User cancelled installation"); // Записва в лога
+                                    return;                                                                // Прекратява
+                                } // Край на if (confirm != wxYES)
+
+                                wxButton *btn = wxDynamicCast(event.GetEventObject(), wxButton); // Взема указател към натиснатия бутон
+                                if (btn)
+                                    btn->Disable();                                                               // Деактивира бутона
+                                wxLogDebug("DesktopTab::InstallButton - Disabled install button for %s", newEnv); // Записва в лога
+
+                                // Актуализирана команда с purge и конфигурация на сесията
+                                wxString command; // Низ за командата за инсталация/деинсталация
+                                if (currentEnv != "Not detected" && !currentPackage.IsEmpty())
+                                {                                                                                                                                                                                                                                                                     // Ако има инсталирана среда и е намерен нейният пакет
+                                    command = wxString::Format(                                                                                                                                                                                                                                       // Формира команда за деинсталация на старата и инсталация на новата среда
+                                        "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'apt-get update && apt-get purge -y %s && apt-get autoremove -y && apt-get install -y %s && echo -e \\\"[Seat:*]\\\\nuser-session=xfce\\\" > /etc/lightdm/lightdm.conf'\"", // Командата включва update, purge, autoremove, install и конфигурация на lightdm
+                                        containerId, currentPackage, newPackage                                                                                                                                                                                                                       // Аргументи за командата
+                                    );                                                                                                                                                                                                                                                                // Край на wxString::Format
+                                }
+                                else
+                                {                                                                                                                                                                                                                     // Ако няма инсталирана среда
+                                    command = wxString::Format(                                                                                                                                                                                       // Формира команда само за инсталация на новата среда
+                                        "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'apt-get update && apt-get install -y %s && echo -e \\\"[Seat:*]\\\\nuser-session=xfce\\\" > /etc/lightdm/lightdm.conf'\"", // Командата включва update, install и конфигурация на lightdm
+                                        containerId, newPackage                                                                                                                                                                                       // Аргументи за командата
+                                    );                                                                                                                                                                                                                // Край на wxString::Format
+                                } // Край на else
+                                wxLogDebug("DesktopTab::InstallButton - Executing command: %s", command); // Записва командата в лога
+
+                                DesktopInstallProcess *proc = new DesktopInstallProcess(this, newEnv, btn); // Създава нов обект DesktopInstallProcess
+                                long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);    // Изпълнява командата асинхронно, скрива конзолата и свързва процеса
+                                if (pid == 0)
+                                {                                                                                       // Ако стартирането на процеса е неуспешно (PID е 0)
+                                    wxLogDebug("DesktopTab::InstallButton - Failed to execute command for %s", newEnv); // Записва грешка в лога
+                                    wxMessageBox("Failed to start installation process!", "Error", wxICON_ERROR);       // Показва съобщение за грешка
+                                    delete proc;                                                                        // Изтрива обекта на процеса
+                                    if (btn)
+                                        btn->Enable(); // Активира отново бутона
+                                }
+                                else
+                                {                                                                                                         // Ако процесът е стартиран успешно
+                                    wxLogDebug("DesktopTab::InstallButton - Started installation process for %s, PID: %ld", newEnv, pid); // Записва в лога PID на процеса
+                                }
+                            }); // Край на ламбда функцията за инсталация
+
+        card->SetSizer(cardSizer);           // Задава sizer-а на картата
+        m_gridSizer->Add(card, 1, wxEXPAND); // Добавя картата към мрежата, разширяваща се
+    } // Край на for (environments)
+
+    scrolledSizer->Add(m_gridSizer, 1, wxEXPAND | wxALL, 20); // Добавя мрежата към sizer-а на скролируемия прозорец, с отстъп
+    mainSizer->Add(m_scrolledWindow, 1, wxEXPAND);            // Добавя скролируемия прозорец към главния sizer, разширяващ се
+    SetSizer(mainSizer);                                      // Задава главния sizer на таба
+
+    CallAfter([this]()
+              { RecalculateLayout(GetSize().GetWidth()); });                       // Планира извикване на RecalculateLayout след текущата обработка на събития, използвайки ламбда
+    wxLogDebug("DesktopTab::CreateDesktopTab - Desktop tab created and laid out"); // Записва в лога, че табът е създаден
+} // Край на тялото на CreateDesktopTab
+
+void DesktopTab::UpdateGUILabel(const wxString &guiName)                                 // Метод за обновяване на етикета с името на GUI среда
+{                                                                                        // Начало на тялото на UpdateGUILabel
+    wxLogDebug("DesktopTab::UpdateGUILabel - Setting label with GUI name: %s", guiName); // Записва в лога името на GUI
+
+    if (IsBeingDeleted())
+    {
+        wxLogDebug("DesktopTab::UpdateGUILabel - Widget is being deleted");
+        return;
+    }
+
+    if (!m_textDisplay)
+    {
+        wxLogDebug("DesktopTab::UpdateGUILabel - m_textDisplay is null");
+        return;
+    }
+
+    wxString displayText = "GUI Environment: " + guiName; // Формира текста за показване
+    m_textDisplay->SetLabel(displayText);                 // Задава новия текст на етикета
+
+    // Проверяваме дали можем безопасно да извикаме ApplyGrayscaleToCards
+    if (m_scrolledWindow && !IsBeingDeleted())
+    {
+        ApplyGrayscaleToCards(guiName); // Прилага сива гама към картите
+    }
+
+    m_textDisplay->Refresh(); // Опреснява етикета
+
+    if (m_scrolledWindow)
+    {
+        m_scrolledWindow->Layout(); // Преизчислява разположението на скролируемия прозорец
+    }
+
+    Refresh(true); // Опреснява таба (с изтриване на фона)
+    Update();      // Налага незабавно обновяване на таба
+
     wxWindow *parent = GetParent();
-    while (parent)
+    if (parent)
     {
-        SecondWindow *secondWindow = wxDynamicCast(parent, SecondWindow);
-        if (secondWindow)
-        {
-            guiFilePath = wxFileName(secondWindow->GetProjectDir(), "detected_gui.txt").GetFullPath();
-            wxLogDebug("DesktopTab::GetGuiFilePath - Found SecondWindow, gui path: %s", guiFilePath);
-            break;
-        }
-        parent = parent->GetParent();
-    }
-    if (guiFilePath.IsEmpty())
-    {
-        guiFilePath = wxFileName(wxGetCwd(), "detected_gui.txt").GetFullPath();
-        wxLogDebug("DesktopTab::GetGuiFilePath - No SecondWindow, using cwd: %s", guiFilePath);
-    }
-    return guiFilePath;
-}
-
-void DesktopTab::CreateDesktopTab()
-{
-    wxBoxSizer *mainSizer = new wxBoxSizer(wxVERTICAL);
-    m_scrolledWindow = new wxScrolledWindow(this, wxID_ANY);
-    m_scrolledWindow->SetScrollRate(0, 10);
-    m_scrolledWindow->SetBackgroundColour(wxColour(18, 18, 18));
-
-    wxBoxSizer *scrolledSizer = new wxBoxSizer(wxVERTICAL);
-    m_scrolledWindow->SetSizer(scrolledSizer);
-
-    wxBoxSizer *headerSizer = new wxBoxSizer(wxHORIZONTAL);
-    m_textDisplay = new wxStaticText(m_scrolledWindow, wxID_ANY, "GUI Environment: Not detected");
-    m_textDisplay->SetForegroundColour(*wxWHITE);
-    m_textDisplay->SetFont(wxFont(12, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
-    headerSizer->Add(m_textDisplay, 1, wxALIGN_LEFT | wxALL, 10);
-
-    m_reloadButton = new wxButton(m_scrolledWindow, wxID_ANY, "Reload UI",
-                                  wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-    m_reloadButton->SetForegroundColour(*wxWHITE);
-    m_reloadButton->SetBackgroundColour(wxColour(60, 60, 60));
-    headerSizer->Add(m_reloadButton, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
-
-    m_reloadButton->Bind(wxEVT_BUTTON, [this](wxCommandEvent &)
-                         { UpdateTextFromFile(); });
-
-    scrolledSizer->Add(headerSizer, 0, wxEXPAND);
-
-    const std::array<wxString, 9> environments = {
-        "GNOME", "KDE Plasma", "XFCE",
-        "Cinnamon", "MATE", "LXQt",
-        "Budgie", "Deepin", "Pantheon"};
-
-    const std::array<wxString, 9> imageFiles = {
-        "GNOME.png", "KDE.png", "Xfce.png",
-        "Cinnamon.png", "MATE.png", "LXQt.png",
-        "Budgie.png", "Deepin.png", "Pantheon.png"};
-
-    const std::array<wxString, 9> packageNames = {
-        "gnome-session", "plasma-desktop", "xfce4",
-        "cinnamon", "mate-desktop", "lxqt",
-        "budgie-desktop", "deepin-desktop-environment", "pantheon-desktop"};
-
-    m_gridSizer = new wxFlexGridSizer(3, 20, 20);
-    m_gridSizer->SetFlexibleDirection(wxBOTH);
-
-    for (size_t i = 0; i < environments.size(); ++i)
-    {
-        wxPanel *card = new wxPanel(m_scrolledWindow);
-        card->SetBackgroundColour(wxColour(32, 32, 32));
-        card->SetMinSize(wxSize(200, 300));
-        card->SetName(environments[i]);
-
-        wxBoxSizer *cardSizer = new wxBoxSizer(wxVERTICAL);
-
-        wxPanel *imageContainer = new wxPanel(card, wxID_ANY);
-        imageContainer->SetMinSize(wxSize(180, 240));
-        imageContainer->SetBackgroundColour(wxColour(32, 32, 32));
-
-        wxBitmap bitmap = LoadImage(imageFiles[i]);
-        if (bitmap.IsOk())
-        {
-            imageContainer->SetClientData(new wxBitmap(bitmap));
-
-            imageContainer->Bind(wxEVT_PAINT, [this](wxPaintEvent &evt)
-                                 {
-                wxPanel* panel = dynamic_cast<wxPanel*>(evt.GetEventObject());
-                if (!panel) return;
-                
-                wxPaintDC dc(panel);
-                wxSize panelSize = panel->GetSize();
-                
-                wxBitmap* bmpPtr = static_cast<wxBitmap*>(panel->GetClientData());
-                if (!bmpPtr || !bmpPtr->IsOk()) return;
-                
-                wxBitmap bmpToDraw = *bmpPtr;
-                wxSize bmpSize = bmpToDraw.GetSize();
-
-                double scale = std::min(
-                    static_cast<double>(panelSize.GetWidth()) / bmpSize.GetWidth(),
-                    static_cast<double>(panelSize.GetHeight()) / bmpSize.GetHeight()
-                );
-
-                int newWidth = bmpSize.GetWidth() * scale;
-                int newHeight = bmpSize.GetHeight() * scale;
-
-                int x = (panelSize.GetWidth() - newWidth) / 2;
-                int y = (panelSize.GetHeight() - newHeight) / 2;
-
-                wxImage img = bmpToDraw.ConvertToImage();
-                dc.DrawBitmap(
-                    wxBitmap(img.Scale(newWidth, newHeight, wxIMAGE_QUALITY_HIGH)),
-                    x, y
-                ); });
-        }
-
-        cardSizer->Add(imageContainer, 1, wxEXPAND | wxALL, 10);
-
-        wxStaticText *title = new wxStaticText(card, wxID_ANY, environments[i]);
-        title->SetForegroundColour(*wxWHITE);
-        title->SetFont(wxFont(12, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
-        cardSizer->Add(title, 0, wxALIGN_LEFT | wxLEFT | wxRIGHT, 10);
-
-        wxStaticText *info = new wxStaticText(card, wxID_ANY, "0/100 Achievements");
-        info->SetForegroundColour(wxColour(180, 180, 180));
-        info->SetFont(wxFont(10, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL));
-        cardSizer->Add(info, 0, wxALIGN_LEFT | wxLEFT | wxRIGHT | wxTOP, 10);
-
-        wxButton *installButton = new wxButton(card, wxID_ANY, "Install");
-        installButton->SetMinSize(wxSize(80, 30));
-        installButton->SetBackgroundColour(wxColour(0, 120, 215));
-        installButton->SetForegroundColour(*wxWHITE);
-        cardSizer->Add(installButton, 0, wxALIGN_LEFT | wxALL, 10);
-
-        installButton->Bind(wxEVT_BUTTON, [this, environments, packageNames, i](wxCommandEvent &event)
-                            {
-            wxString newEnv = environments[i];
-            wxString newPackage = packageNames[i];
-            wxLogDebug("DesktopTab::InstallButton - Installing %s (package: %s)", newEnv, newPackage);
-
-            wxWindow* parent = GetParent();
-            SecondWindow* secondWindow = nullptr;
-            wxString containerIdPath;
-            wxString projectDir;
-
-            while (parent) {
-                secondWindow = wxDynamicCast(parent, SecondWindow);
-                if (secondWindow) {
-                    containerIdPath = wxFileName(secondWindow->GetProjectDir(), "container_id.txt").GetFullPath();
-                    projectDir = secondWindow->GetProjectDir();
-                    wxLogDebug("DesktopTab::InstallButton - Found SecondWindow, project dir: %s", projectDir);
-                    break;
-                }
-                parent = parent->GetParent();
-            }
-
-            if (!secondWindow || containerIdPath.IsEmpty()) {
-                wxLogDebug("DesktopTab::InstallButton - Failed to find SecondWindow or container ID path");
-                wxMessageBox("Failed to find container ID!", "Error", wxICON_ERROR);
-                return;
-            }
-
-            wxFile file;
-            wxString containerId;
-            if (file.Open(containerIdPath)) {
-                file.ReadAll(&containerId);
-                containerId.Trim();
-                wxLogDebug("DesktopTab::InstallButton - Container ID: %s", containerId);
-            } else {
-                wxLogDebug("DesktopTab::InstallButton - Failed to read container_id.txt: %s", containerIdPath);
-                wxMessageBox("Failed to read container ID!", "Error", wxICON_ERROR);
-                return;
-            }
-
-            wxString currentEnv;
-            wxString guiFilePath = wxFileName(projectDir, "detected_gui.txt").GetFullPath();
-            if (wxFileExists(guiFilePath)) {
-                wxFile guiFile(guiFilePath);
-                guiFile.ReadAll(&currentEnv); // Fixed variable name
-                currentEnv.Trim();
-                wxLogDebug("DesktopTab::InstallButton - Current environment: %s", currentEnv);
-            } else {
-                currentEnv = "Not detected";
-                wxLogDebug("DesktopTab::InstallButton - No current environment detected");
-            }
-
-            if (currentEnv == newEnv) {
-                wxLogDebug("DesktopTab::InstallButton - %s is already installed", newEnv);
-                wxMessageBox("This desktop environment is already installed!", "Info", wxOK | wxICON_INFORMATION);
-                return;
-            }
-
-            wxString currentPackage;
-            for (size_t j = 0; j < environments.size(); ++j) {
-                if (environments[j] == currentEnv) {
-                    currentPackage = packageNames[j];
-                    break;
-                }
-            }
-
-            int confirm = wxMessageBox(
-                wxString::Format("Uninstall %s and install %s?", currentEnv, newEnv),
-                "Confirm Desktop Environment Change",
-                wxYES_NO | wxICON_QUESTION
-            );
-            if (confirm != wxYES) {
-                wxLogDebug("DesktopTab::InstallButton - User cancelled installation");
-                return;
-            }
-
-            wxButton* btn = wxDynamicCast(event.GetEventObject(), wxButton);
-            if (btn) btn->Disable();
-            wxLogDebug("DesktopTab::InstallButton - Disabled install button for %s", newEnv);
-
-            // Updated command with purge and session configuration
-            wxString command;
-            if (currentEnv != "Not detected" && !currentPackage.IsEmpty()) {
-                command = wxString::Format(
-                    "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'apt-get update && apt-get purge -y %s && apt-get autoremove -y && apt-get install -y %s && echo -e \\\"[Seat:*]\\\\nuser-session=xfce\\\" > /etc/lightdm/lightdm.conf'\"",
-                    containerId, currentPackage, newPackage
-                );
-            } else {
-                command = wxString::Format(
-                    "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'apt-get update && apt-get install -y %s && echo -e \\\"[Seat:*]\\\\nuser-session=xfce\\\" > /etc/lightdm/lightdm.conf'\"",
-                    containerId, newPackage
-                );
-            }
-            wxLogDebug("DesktopTab::InstallButton - Executing command: %s", command);
-
-            DesktopInstallProcess* proc = new DesktopInstallProcess(this, newEnv, btn);
-            long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);
-            if (pid == 0) {
-                wxLogDebug("DesktopTab::InstallButton - Failed to execute command for %s", newEnv);
-                wxMessageBox("Failed to start installation process!", "Error", wxICON_ERROR);
-                delete proc;
-                if (btn) btn->Enable();
-            } else {
-                wxLogDebug("DesktopTab::InstallButton - Started installation process for %s, PID: %ld", newEnv, pid);
-            } });
-
-        card->SetSizer(cardSizer);
-        m_gridSizer->Add(card, 1, wxEXPAND);
+        parent->Refresh(true); // Опреснява родителския прозорец
+        parent->Update();      // Налага незабавно обновяване на родителския прозорец
     }
 
-    scrolledSizer->Add(m_gridSizer, 1, wxEXPAND | wxALL, 20);
-    mainSizer->Add(m_scrolledWindow, 1, wxEXPAND);
-    SetSizer(mainSizer);
+    wxLogDebug("DesktopTab::UpdateGUILabel - UI updated with %s", guiName); // Записва в лога, че UI е обновен
+} // Край на тялото на UpdateGUILabel
 
-    CallAfter(&DesktopTab::RecalculateLayout, GetSize().GetWidth());
-    wxLogDebug("DesktopTab::CreateDesktopTab - Desktop tab created and laid out");
-}
+void DesktopTab::OnFileCopyComplete(wxCommandEvent &event)                                    // Метод, извиква се при получаване на събитие FILE_COPY_COMPLETE_EVENT
+{                                                                                             // Начало на тялото на OnFileCopyComplete
+    wxString guiName = event.GetString();                                                     // Взема низа (името на GUI) от събитието
+    wxLogDebug("DesktopTab::OnFileCopyComplete - Event received with GUI name: %s", guiName); // Записва в лога полученото име
 
-void DesktopTab::UpdateGUILabel(const wxString &guiName)
-{
-    wxLogDebug("DesktopTab::UpdateGUILabel - Setting label with GUI name: %s", guiName);
-    wxString displayText = "GUI Environment: " + guiName;
-    m_textDisplay->SetLabel(displayText);
-    ApplyGrayscaleToCards(guiName);
-    m_textDisplay->Refresh();
-    m_scrolledWindow->Layout();
-    Refresh(true);
-    Update();
-    GetParent()->Refresh(true);
-    GetParent()->Update();
-    wxLogDebug("DesktopTab::UpdateGUILabel - UI updated with %s", guiName);
-}
+    guiName.Trim(true).Trim(false);                               // Премахва празни символи от началото и края на името
+    UpdateGUILabel(guiName.IsEmpty() ? "Not detected" : guiName); // Обновява етикета (ако името е празно, показва "Not detected")
+} // Край на тялото на OnFileCopyComplete
 
-void DesktopTab::OnFileCopyComplete(wxCommandEvent &event)
-{
-    wxString guiName = event.GetString();
-    wxLogDebug("DesktopTab::OnFileCopyComplete - Event received with GUI name: %s", guiName);
+void DesktopTab::UpdateTextFromFile()                                        // Метод за обновяване на текста от файл
+{                                                                            // Начало на тялото на UpdateTextFromFile
+    wxLogDebug("DesktopTab::UpdateTextFromFile - Reload UI button clicked"); // Записва в лога, че бутонът е натиснат
 
-    guiName.Trim(true).Trim(false);
-    UpdateGUILabel(guiName.IsEmpty() ? "Not detected" : guiName);
-}
+    wxString guiFilePath = GetGuiFilePath();                                          // Взема пътя до файла с информация за GUI
+    wxLogDebug("DesktopTab::UpdateTextFromFile - Looking for file: %s", guiFilePath); // Записва в лога търсения път
 
-void DesktopTab::UpdateTextFromFile()
-{
-    wxLogDebug("DesktopTab::UpdateTextFromFile - Reload UI button clicked");
-
-    wxString guiFilePath = GetGuiFilePath();
-    wxLogDebug("DesktopTab::UpdateTextFromFile - Looking for file: %s", guiFilePath);
-
-    if (wxFileExists(guiFilePath))
-    {
-        wxFile file(guiFilePath);
-        wxString content;
-        if (file.ReadAll(&content))
-        {
-            content.Trim(true).Trim(false);
-            wxLogDebug("DesktopTab::UpdateTextFromFile - Read content: %s", content);
-            UpdateGUILabel(content);
-        }
-        else
-        {
-            wxLogDebug("DesktopTab::UpdateTextFromFile - Failed to read file contents");
-            UpdateGUILabel("Not detected");
-        }
-    }
-    else
-    {
-        wxLogDebug("DesktopTab::UpdateTextFromFile - File not found: %s", guiFilePath);
-        UpdateGUILabel("Not detected");
-    }
-}
+    if (wxFileExists(guiFilePath))                                                    // Проверява дали файлът съществува
+    {                                                                                 // Начало на if (wxFileExists)
+        wxFile file(guiFilePath);                                                     // Създава обект wxFile
+        wxString content;                                                             // Низ за съдържанието на файла
+        if (file.ReadAll(&content))                                                   // Опитва да прочете цялото съдържание на файла
+        {                                                                             // Начало на if (file.ReadAll)
+            content.Trim(true).Trim(false);                                           // Премахва празни символи
+            wxLogDebug("DesktopTab::UpdateTextFromFile - Read content: %s", content); // Записва прочетеното съдържание в лога
+            UpdateGUILabel(content);                                                  // Обновява етикета с прочетеното съдържание
+        } // Край на if (file.ReadAll)
+        else                                                                             // Ако четенето е неуспешно
+        {                                                                                // Начало на else
+            wxLogDebug("DesktopTab::UpdateTextFromFile - Failed to read file contents"); // Записва грешка в лога
+            UpdateGUILabel("Not detected");                                              // Обновява етикета с "Not detected"
+        } // Край на else
+    } // Край на if (wxFileExists)
+    else                                                                                // Ако файлът не съществува
+    {                                                                                   // Начало на else
+        wxLogDebug("DesktopTab::UpdateTextFromFile - File not found: %s", guiFilePath); // Записва в лога, че файлът не е намерен
+        UpdateGUILabel("Not detected");                                                 // Обновява етикета с "Not detected"
+    } // Край на else
+} // Край на тялото на UpdateTextFromFile

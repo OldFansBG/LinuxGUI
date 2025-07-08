@@ -1,43 +1,45 @@
-#pragma once
+#pragma once // Директива към компилатора да включи този заглавен файл само веднъж, дори ако е указан многократно.
 
-#include <string>
-#include <vector>
-#include <memory>
+#include <string> // Включва стандартната библиотека за работа с низове (std::string).
+#include <vector> // Включва стандартната библиотека за работа с динамични масиви (std::vector).
+#include <memory> // Включва стандартната библиотека за умни указатели (макар и да не се използват директно в публичния интерфейс тук).
 
-// Forward declaration to avoid including archive.h in header
-struct archive;
+// Предварителна декларация, за да се избегне включването на archive.h в заглавния файл.
+// Това намалява времето за компилация и зависимостите.
+struct archive; // Декларира, че съществува структура с име 'archive', без да дефинира нейните детайли.
 
-class ISOReader {
-public:
-    explicit ISOReader(const std::string& path);
-    ~ISOReader();
+class ISOReader
+{                                                // Начало на декларацията на клас с име ISOReader.
+public:                                          // Секция за публични членове на класа (достъпни извън класа).
+    explicit ISOReader(const std::string &path); // Декларация на конструктор, който приема път до ISO файл. 'explicit' предотвратява неявни преобразувания.
+    ~ISOReader();                                // Декларация на деструктор, който се извиква при унищожаване на обект от класа.
 
-    // Prevent copying
-    ISOReader(const ISOReader&) = delete;
-    ISOReader& operator=(const ISOReader&) = delete;
+    // Предотвратяване на копирането на обекти от класа.
+    ISOReader(const ISOReader &) = delete;            // Изрично забранява конструктора за копиране.
+    ISOReader &operator=(const ISOReader &) = delete; // Изрично забранява оператора за присвояване чрез копиране.
 
-    // Allow moving
-    ISOReader(ISOReader&&) noexcept;
-    ISOReader& operator=(ISOReader&&) noexcept;
+    // Разрешаване на преместването на обекти от класа.
+    ISOReader(ISOReader &&) noexcept;            // Декларация на конструктор за преместване. 'noexcept' указва, че не хвърля изключения.
+    ISOReader &operator=(ISOReader &&) noexcept; // Декларация на оператор за присвояване чрез преместване. 'noexcept' указва, че не хвърля изключения.
 
-    // Core functionality
-    bool open();
-    void close();
-    std::vector<std::string> listFiles();
-    bool readFile(const std::string& filename, std::vector<char>& content);
-    
-    // Get error message if operation fails
-    std::string getLastError() const;
+    // Основна функционалност на класа.
+    bool open();                                                            // Декларация на метод за отваряне на ISO файла. Връща true при успех, false при грешка.
+    void close();                                                           // Декларация на метод за затваряне на ISO файла.
+    std::vector<std::string> listFiles();                                   // Декларация на метод за извличане на списък с файловете в ISO архива.
+    bool readFile(const std::string &filename, std::vector<char> &content); // Декларация на метод за четене на съдържанието на конкретен файл от ISO архива.
 
-private:
-    std::string normalizePath(const std::string& path) const;
-    
-    #ifdef _WIN32
-    std::string wideToString(const wchar_t* wide) const;
-    std::wstring stringToWide(const std::string& str) const;
-    #endif
+    // Получаване на съобщение за грешка, ако операция се провали.
+    std::string getLastError() const; // Декларация на метод за получаване на последното съобщение за грешка. 'const' означава, че методът не променя състоянието на обекта.
 
-    std::string iso_path;
-    struct archive* archive;
-    std::string last_error;
-};
+private:                                                      // Секция за частни членове на класа (достъпни само вътре в класа).
+    std::string normalizePath(const std::string &path) const; // Декларация на частен помощен метод за нормализиране на пътища.
+
+#ifdef _WIN32                                                // Условна компилация: следващите методи са дефинирани само при компилация за Windows.
+    std::string wideToString(const wchar_t *wide) const;     // Декларация на частен метод за конвертиране на широк низ (wchar_t*) към std::string (UTF-8).
+    std::wstring stringToWide(const std::string &str) const; // Декларация на частен метод за конвертиране на std::string (UTF-8) към широк низ (std::wstring).
+#endif                                                       // Край на условната компилация за _WIN32.
+
+    std::string iso_path;    // Член-променлива за съхранение на пътя до ISO файла.
+    struct archive *archive; // Член-променлива (указател) към структурата 'archive' (от libarchive), използвана за работа с архива.
+    std::string last_error;  // Член-променлива за съхранение на последното възникнало съобщение за грешка.
+}; // Край на декларацията на клас ISOReader.
