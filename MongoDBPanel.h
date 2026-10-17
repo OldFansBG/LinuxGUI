@@ -8,6 +8,7 @@
 #include <wx/button.h>   // Включва заглавния файл за wxButton (контрола за бутони)
 #include <wx/sizer.h>    // Включва заглавния файл за wxSizer (мениджъри на подреждане)
 #include <map>           // Включва стандартната C++ библиотека за асоциативни контейнери (карти)
+#include <string>        // std::string за JSON съдържанието
 #include <wx/filename.h> // <-- Add include for wxFileName // Включва заглавния файл на wxWidgets за работа с имена на файлове <-- Коментар: Добавяне на включване за wxFileName
 #include <wx/file.h>     // <-- Add include for wxFile // Включва заглавния файл на wxWidgets за файлови операции <-- Коментар: Добавяне на включване за wxFile
 #include <wx/dir.h>      // <-- Add include for wxDir // Включва заглавния файл на wxWidgets за работа с директории <-- Коментар: Добавяне на включване за wxDir
@@ -82,14 +83,19 @@ private: // Частна секция на класа
     wxColour m_borderColor;      // Цвят на рамката
 
     // --- Logic Helpers --- // Коментар: Помощни методи за логика
-    void ProcessInstallation(const wxString &configName, const wxString &appNames); // Метод за обработка на инсталацията
-    wxString GetContainerIdFromProjectDir();                                        // <-- New helper function // Метод за получаване на ID на контейнера от директорията на проекта <-- Коментар: Нова помощна функция
+    wxString GetContainerIdFromProjectDir(); // Метод за получаване на ID на контейнера от директорията на проекта
+    wxString GetDbDirPath() const;           // Път до папката db_files с локалните копия на конфигурациите
+    void ResetList();                        // Изчиства списъка и деактивира бутоните, зависещи от избран елемент
+    void AddListItem(const wxString &configName, const wxString &appsList, const wxString &documentId); // Добавя ред в списъка
+    bool LoadConfigJson(const wxString &documentId, std::string &jsonOut); // Зарежда конфигурацията от MongoDB или от db_files
 
-    // --- Added JSON File Handling Helpers --- // Коментар: Добавени помощни методи за работа с JSON файлове
+    // --- JSON File Handling Helpers --- // Коментар: Помощни методи за работа с JSON файлове
+    static bool ReadFileBytes(const wxString &filePath, std::string &content);                          // Чете файл като UTF-8 байтове
+    static bool ExtractConfigSummary(const std::string &json, wxString &configName, wxString &appsList); // Извлича име и списък с приложения
     bool ParseJsonFile(const wxString &filePath, wxString &configName, wxString &appsList); // Метод за парсване на JSON файл
-    void CreateSampleDBFiles(const wxString &dbDirPath);                                    // Метод за създаване на примерни DB файлове
-    void LoadFromLocalFiles();                                                              // <-- Add fallback loading function // Метод за зареждане от локални файлове (резервен вариант) <-- Коментар: Добавяне на функция за резервно зареждане
-    void SaveToLocalFile(const wxString &sourcePath, const std::string &jsonContent);       // <-- Add local saving function // Метод за запазване в локален файл <-- Коментар: Добавяне на функция за локално запазване
+    void CreateSampleDBFiles(const wxString &dbDirPath);                                    // Създава примерна конфигурация, ако папката е празна
+    void LoadFromLocalFiles();                                                              // Метод за зареждане от локални файлове (резервен вариант)
+    void SaveToLocalFile(const wxString &sourcePath, const std::string &jsonContent);       // Метод за запазване в локален файл
 
     // ***** ADDED MEMBER ***** // Коментар: ***** ДОБАВЕНА ЧЛЕН-ПРОМЕНЛИВА *****
     wxString m_projectDir; // Съхранява пътя до директорията на проекта

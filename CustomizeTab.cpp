@@ -8,13 +8,14 @@
 #include <wx/colordlg.h>
 #include <wx/textfile.h>
 #include <wx/thread.h>
-#include <wx/utils.h> // For wxLaunchDefaultApplication
+#include <wx/utils.h>
+#include <wx/stdpaths.h>       // wxStandardPaths за папката с тапети
+#include "ContainerCommand.h"  // Команди в chroot средата на Docker контейнера // For wxLaunchDefaultApplication
 
 // Critical section for thread safety
 wxCriticalSection gThreadCS;
 
 // The hardcoded wallpaper directory
-const wxString WALLPAPER_DIRECTORY = "C:\\Users\\PC\\Documents\\houdini20.5\\linuxmint";
 
 wxDEFINE_EVENT(wxEVT_WALLPAPER_READY, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_WALLPAPER_LOAD_COMPLETE, wxCommandEvent);
@@ -24,12 +25,17 @@ wxBEGIN_EVENT_TABLE(CustomizeTab, wxPanel)
         EVT_COMMAND(wxID_ANY, wxEVT_WALLPAPER_LOAD_COMPLETE, CustomizeTab::OnWallpaperLoadComplete)
             wxEND_EVENT_TABLE()
 
-                CustomizeTab::CustomizeTab(wxWindow *parent)
+                CustomizeTab::CustomizeTab(wxWindow *parent, const wxString &projectDir)
     : wxPanel(parent),
       wallpaperPanel(nullptr),
       m_loadingText(nullptr),
       m_stopWallpaperLoad(false),
-      m_isDestroyed(false)
+      m_isDestroyed(false),
+      m_loadThread(nullptr),
+      m_loadGeneration(0),
+      m_projectDir(projectDir),
+      m_wallpaperDir(wxStandardPaths::Get().GetUserDataDir() + wxFILE_SEP_PATH + "wallpapers"),
+      m_applyWallpaperButton(nullptr)
 {
     CreateContent();
     LoadWallpaper();
@@ -37,9 +43,20 @@ wxBEGIN_EVENT_TABLE(CustomizeTab, wxPanel)
 
 CustomizeTab::~CustomizeTab()
 {
-    m_stopWallpaperLoad = true;
     m_isDestroyed = true;
-    wxMilliSleep(100);
+    StopWallpaperThread(); // Нишката трябва да приключи, преди обектът да бъде освободен
+}
+
+// Спира нишката за зареждане на тапети и изчаква да приключи
+void CustomizeTab::StopWallpaperThread()
+{
+    if (!m_loadThread)
+        return;
+    m_stopWallpaperLoad = true;
+    m_loadThread->Wait(); // Нишката проверява флага след всеки файл
+    delete m_loadThread;
+    m_loadThread = nullptr;
+    m_stopWallpaperLoad = false;
 }
 
 void CustomizeTab::CreateContent()
@@ -78,7 +95,7 @@ void CustomizeTab::CreateContent()
     controlSizer->Add(themeHeader, 0, wxLEFT | wxRIGHT, 25);
     controlSizer->AddSpacer(15);
 
-    wxStaticText *themeLabel = new wxStaticText(controlPanel, wxID_ANY, "Global Theme");
+    wxStaticText *themeLabel = new wxStaticText(controlPanel, wxID_ANY, "Global Theme (coming soon)");
     themeLabel->SetForegroundColour(textColor);
     controlSizer->Add(themeLabel, 0, wxLEFT | wxRIGHT, 25);
     controlSizer->AddSpacer(8);
@@ -86,10 +103,12 @@ void CustomizeTab::CreateContent()
     wxChoice *theme = new wxChoice(controlPanel, wxID_ANY);
     theme->Append(std::vector<wxString>{"Default", "Nord", "Dracula", "Gruvbox", "Tokyo Night", "Catppuccin"});
     theme->SetSelection(0);
+    theme->Disable(); // Още не се прилага към ISO образа
+    theme->SetToolTip("Coming soon");
     controlSizer->Add(theme, 0, wxEXPAND | wxLEFT | wxRIGHT, 25);
     controlSizer->AddSpacer(20);
 
-    wxStaticText *accentLabel = new wxStaticText(controlPanel, wxID_ANY, "Accent Color");
+    wxStaticText *accentLabel = new wxStaticText(controlPanel, wxID_ANY, "Accent Color (coming soon)");
     accentLabel->SetForegroundColour(textColor);
     controlSizer->Add(accentLabel, 0, wxLEFT | wxRIGHT, 25);
     controlSizer->AddSpacer(8);
@@ -100,6 +119,8 @@ void CustomizeTab::CreateContent()
     wxButton *changeColorBtn = new wxButton(controlPanel, wxID_ANY, "Choose Color");
     changeColorBtn->SetForegroundColour(textColor);
     changeColorBtn->SetBackgroundColour(cardBgColor.ChangeLightness(110));
+    changeColorBtn->Disable(); // Още не се прилага към ISO образа
+    changeColorBtn->SetToolTip("Coming soon");
 
     colorSizer->Add(colorPanelDisplay, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 10);
     // For a horizontal sizer, wxEXPAND makes it expand vertically.
@@ -134,10 +155,16 @@ void CustomizeTab::CreateContent()
     refreshBtn->SetForegroundColour(textColor);
     refreshBtn->SetBackgroundColour(cardBgColor.ChangeLightness(110));
     controlSizer->Add(refreshBtn, 0, wxEXPAND | wxLEFT | wxRIGHT, 25);
+    controlSizer->AddSpacer(10);
+    m_applyWallpaperButton = new wxButton(controlPanel, wxID_ANY, "Apply Wallpaper to ISO");
+    m_applyWallpaperButton->SetForegroundColour(textColor);
+    m_applyWallpaperButton->SetBackgroundColour(accentColor);
+    m_applyWallpaperButton->Disable(); // Активира се, когато е избран тапет
+    controlSizer->Add(m_applyWallpaperButton, 0, wxEXPAND | wxLEFT | wxRIGHT, 25);
     controlSizer->AddStretchSpacer(1);
 
     wxStaticText *infoText = new wxStaticText(controlPanel, wxID_ANY,
-                                              "Select any wallpaper to apply it\nas your desktop background.");
+                                              "Select a wallpaper and click\n\"Apply Wallpaper to ISO\" to make it\nthe default background\n(GNOME, Cinnamon, MATE).");
     infoText->SetForegroundColour(secondaryTextColor);
     controlSizer->Add(infoText, 0, wxALIGN_CENTER_HORIZONTAL | wxALL, 25);
     controlPanel->SetSizer(controlSizer);
@@ -181,6 +208,7 @@ void CustomizeTab::CreateContent()
                      { LoadWallpaper(); });
     addWallpaperBtn->Bind(wxEVT_BUTTON, &CustomizeTab::OnAddWallpaper, this);
     openFolderBtn->Bind(wxEVT_BUTTON, &CustomizeTab::OnOpenWallpaperFolder, this);
+    m_applyWallpaperButton->Bind(wxEVT_BUTTON, &CustomizeTab::OnApplyWallpaper, this);
 
     changeColorBtn->Bind(wxEVT_BUTTON, [this, colorPanelDisplay](wxCommandEvent &) { // Use renamed panel
         wxColourData data;
@@ -200,14 +228,14 @@ void CustomizeTab::OnOpenWallpaperFolder(wxCommandEvent &WXUNUSED(event))
 {
     if (m_isDestroyed || IsBeingDeleted())
         return;
-    if (!wxDirExists(WALLPAPER_DIRECTORY))
+    if (!wxDirExists(m_wallpaperDir))
     {
-        wxMessageBox("The wallpaper directory does not exist:\n" + WALLPAPER_DIRECTORY, "Error", wxOK | wxICON_ERROR, this);
+        wxMessageBox("The wallpaper directory does not exist:\n" + m_wallpaperDir, "Error", wxOK | wxICON_ERROR, this);
         return;
     }
-    if (!wxLaunchDefaultApplication(WALLPAPER_DIRECTORY))
+    if (!wxLaunchDefaultApplication(m_wallpaperDir))
     {
-        wxMessageBox("Could not open the wallpaper folder.\nPlease navigate to it manually:\n" + WALLPAPER_DIRECTORY, "Error", wxOK | wxICON_INFORMATION, this);
+        wxMessageBox("Could not open the wallpaper folder.\nPlease navigate to it manually:\n" + m_wallpaperDir, "Error", wxOK | wxICON_INFORMATION, this);
     }
 }
 
@@ -281,6 +309,7 @@ void CustomizeTab::UpdateWallpaperGrid()
                             WallpaperImageData *data = new WallpaperImageData;
                             data->image = bitmapControl->GetBitmap().ConvertToImage();
                             data->isSelected = window->GetBackgroundColour() == wxColour(137, 180, 250);
+                            data->originalPath = window->GetName();
                             // How to get originalPath? It needs to be stored with the 'window' (container panel)
                             // For now, it will be empty or from a previous selection if not managed.
                             // wxStringClientData* pathData = dynamic_cast<wxStringClientData*>(window->GetClientObject());
@@ -305,8 +334,7 @@ void CustomizeTab::UpdateWallpaperGrid()
             resizedImage.Rescale(thumbSize, thumbSize, wxIMAGE_QUALITY_HIGH);
             wxPanel *container = new wxPanel(wallpaperPanel, wxID_ANY);
             container->SetBackgroundColour(currentImgData->isSelected ? wxColour(137, 180, 250) : wxColour(49, 50, 68));
-            // Store originalPath with the container
-            // container->SetClientObject(new wxStringClientData(currentImgData->originalPath));
+            container->SetName(currentImgData->originalPath); // Пътят до файла се пази в името на контейнера
 
             wxBoxSizer *containerSizer = new wxBoxSizer(wxVERTICAL);
             wxBitmap bitmap(resizedImage);
@@ -341,6 +369,7 @@ void CustomizeTab::UpdateWallpaperGrid()
                                         }
                                     }
                                 }
+                                SelectWallpaper(container);
                                 container->SetBackgroundColour(wxColour(137, 180, 250));
                                 container->Refresh();
                                 // wxLogMessage("UpdateWallpaperGrid Clicked: %s", originalPath);
@@ -398,6 +427,11 @@ void CustomizeTab::OnWallpaperReady(wxCommandEvent &event)
         return;
     }
     WallpaperImageData *imgData = static_cast<WallpaperImageData *>(event.GetClientData());
+    if (imgData && event.GetInt() != m_loadGeneration) // Събитие от предишно зареждане
+    {
+        delete imgData;
+        return;
+    }
     if (!imgData || !imgData->image.IsOk())
     {
         if (imgData)
@@ -480,7 +514,7 @@ void CustomizeTab::OnWallpaperReady(wxCommandEvent &event)
             wxImage resizedImage = imgData->image.Copy();
             resizedImage.Rescale(thumbSize, thumbSize, wxIMAGE_QUALITY_HIGH);
             wxPanel *container = new wxPanel(wallpaperPanel, wxID_ANY);
-            // container->SetClientObject(new wxStringClientData(imgData->originalPath)); // Store path
+            container->SetName(imgData->originalPath); // Пътят до файла се пази в името на контейнера
 
             if (!container) { delete imgData; return; }
             container->SetBackgroundColour(wxColour(49, 50, 68));
@@ -509,6 +543,7 @@ void CustomizeTab::OnWallpaperReady(wxCommandEvent &event)
                         }
                     }
                 }
+                SelectWallpaper(container);
                 container->SetBackgroundColour(wxColour(137, 180, 250)); container->Refresh();
                 // wxLogMessage("OnWallpaperReady Clicked: %s", originalPath);
             });
@@ -569,11 +604,13 @@ void CustomizeTab::LoadWallpaper()
             }
             m_loadingText->Show();
             wallpaperPanel->Layout(); wallpaperPanel->Refresh();
-            if (m_stopWallpaperLoad) m_stopWallpaperLoad = false;
         }
-        WallpaperLoadThread *thread = new WallpaperLoadThread(this, m_stopWallpaperLoad);
-        if (thread->Run() != wxTHREAD_NO_ERROR) {
-            delete thread;
+        StopWallpaperThread(); // Предишното зареждане спира, за да няма дублирани тапети
+        m_loadGeneration++;
+        m_loadThread = new WallpaperLoadThread(this, m_stopWallpaperLoad, m_wallpaperDir, m_loadGeneration);
+        if (m_loadThread->Run() != wxTHREAD_NO_ERROR) {
+            delete m_loadThread;
+            m_loadThread = nullptr;
             wxCriticalSectionLocker lock2(gThreadCS);
             if (m_loadingText && m_loadingText->GetParent() && IsWallpaperPanelReady()) {
                 m_loadingText->SetLabel("Failed to start wallpaper load");
@@ -600,7 +637,7 @@ void CustomizeTab::OnAddWallpaper(wxCommandEvent &WXUNUSED(event))
     wxImage image;
     if (image.LoadFile(filePath))
     {
-        const wxString &targetDir = WALLPAPER_DIRECTORY;
+        const wxString &targetDir = m_wallpaperDir;
         if (!wxDirExists(targetDir))
         {
             if (!wxFileName::Mkdir(targetDir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL))
@@ -640,6 +677,7 @@ void CustomizeTab::OnAddWallpaper(wxCommandEvent &WXUNUSED(event))
         data->originalPath = targetPath;
         wxCommandEvent *newEvent = new wxCommandEvent(wxEVT_WALLPAPER_READY);
         newEvent->SetClientData(data);
+        newEvent->SetInt(m_loadGeneration);
         wxQueueEvent(this, newEvent);
     }
     else
@@ -656,7 +694,7 @@ wxThread::ExitCode WallpaperLoadThread::Entry()
         return (ExitCode)1;
     }
 
-    const wxString &localWallpaperDir = WALLPAPER_DIRECTORY;
+    const wxString &localWallpaperDir = m_dir;
     if (!wxDirExists(localWallpaperDir))
     {
         if (!wxFileName::Mkdir(localWallpaperDir, wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL))
@@ -707,6 +745,7 @@ wxThread::ExitCode WallpaperLoadThread::Entry()
                 data->originalPath = filepath;
                 wxCommandEvent *event = new wxCommandEvent(wxEVT_WALLPAPER_READY);
                 event->SetClientData(data);
+                event->SetInt(m_generation);
                 {
                     wxCriticalSectionLocker lock(gThreadCS);
                     if (m_tab && !m_tab->IsBeingDeleted() && !m_tab->m_isDestroyed)
@@ -738,4 +777,86 @@ wxThread::ExitCode WallpaperLoadThread::Entry()
         }
     }
     return (ExitCode)0;
+}
+// Маркира избрания тапет и активира бутона за прилагане
+void CustomizeTab::SelectWallpaper(wxPanel *container)
+{
+    if (!m_applyWallpaperButton || !container)
+        return;
+    m_applyWallpaperButton->Enable(!container->GetName().IsEmpty() && wxFileExists(container->GetName()));
+    m_applyWallpaperButton->SetClientObject(new wxStringClientData(container->GetName())); // Пътят на избрания файл
+}
+
+// Копира избрания тапет в ISO образа и го задава като фон по подразбиране (GNOME, Cinnamon, MATE)
+void CustomizeTab::OnApplyWallpaper(wxCommandEvent &WXUNUSED(event))
+{
+    wxStringClientData *selected = dynamic_cast<wxStringClientData *>(m_applyWallpaperButton->GetClientObject());
+    wxString sourcePath = selected ? selected->GetData() : wxString();
+    if (sourcePath.IsEmpty() || !wxFileExists(sourcePath))
+    {
+        wxMessageBox("Select a wallpaper first.", "Apply Wallpaper", wxOK | wxICON_INFORMATION, this);
+        return;
+    }
+
+    wxString containerId = ContainerCommand::ReadContainerId(m_projectDir);
+    if (containerId.IsEmpty())
+    {
+        wxMessageBox("The Docker container is not ready yet. Wait until the initial setup has finished.",
+                     "Container Not Ready", wxOK | wxICON_INFORMATION, this);
+        return;
+    }
+
+    wxString ext = wxFileName(sourcePath).GetExt().Lower();
+    wxString target = "/usr/share/backgrounds/linuxisopro/wallpaper." + ext; // Път вътре в ISO образа
+
+    wxBusyCursor busy;
+    wxArrayString output;
+    if (ContainerCommand::RunInChroot(containerId, "mkdir -p /usr/share/backgrounds/linuxisopro && rm -f /usr/share/backgrounds/linuxisopro/wallpaper.*", &output) != 0)
+    {
+        wxMessageBox("Could not prepare the wallpaper folder in the ISO.", "Apply Wallpaper", wxOK | wxICON_ERROR, this);
+        return;
+    }
+
+    wxString copyCommand = wxString::Format("docker cp \"%s\" %s:%s%s", sourcePath, containerId, ContainerCommand::CHROOT_PATH, target);
+    wxArrayString copyOutput, copyErrors;
+    if (wxExecute(copyCommand, copyOutput, copyErrors, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE) != 0)
+    {
+        wxMessageBox("Copying the wallpaper into the container failed:\n" + wxJoin(copyErrors, '\n'), "Apply Wallpaper", wxOK | wxICON_ERROR, this);
+        return;
+    }
+
+    // GSettings override за всяка инсталирана среда, която поддържа тапет по подразбиране
+    wxString script =
+        "WP=" + ContainerCommand::ShellQuote(target) + "\n"
+        "chmod 644 \"$WP\"\n"
+        "S=/usr/share/glib-2.0/schemas\n"
+        "OUT=$S/99_linuxisopro-wallpaper.gschema.override\n"
+        ": > \"$OUT\"\n"
+        "if [ -f $S/org.gnome.desktop.background.gschema.xml ]; then\n"
+        "    printf \"[org.gnome.desktop.background]\\npicture-uri='file://%s'\\npicture-options='zoom'\\n\" \"$WP\" >> \"$OUT\"\n"
+        "    grep -q picture-uri-dark $S/org.gnome.desktop.background.gschema.xml && printf \"picture-uri-dark='file://%s'\\n\" \"$WP\" >> \"$OUT\"\n"
+        "    echo >> \"$OUT\"\n"
+        "fi\n"
+        "if [ -f $S/org.cinnamon.desktop.background.gschema.xml ]; then\n"
+        "    printf \"[org.cinnamon.desktop.background]\\npicture-uri='file://%s'\\npicture-options='zoom'\\n\\n\" \"$WP\" >> \"$OUT\"\n"
+        "fi\n"
+        "if [ -f $S/org.mate.background.gschema.xml ]; then\n"
+        "    printf \"[org.mate.background]\\npicture-filename='%s'\\npicture-options='zoom'\\n\\n\" \"$WP\" >> \"$OUT\"\n"
+        "fi\n"
+        "if [ ! -s \"$OUT\" ]; then\n"
+        "    rm -f \"$OUT\"\n"
+        "    echo 'No GNOME, Cinnamon or MATE desktop found in this image.'\n"
+        "    exit 2\n"
+        "fi\n"
+        "glib-compile-schemas $S\n";
+
+    output.Clear();
+    long exitCode = ContainerCommand::RunInChroot(containerId, script, &output);
+    if (exitCode == 0)
+        wxMessageBox("The wallpaper is now the default background of the ISO.", "Apply Wallpaper", wxOK | wxICON_INFORMATION, this);
+    else if (exitCode == 2)
+        wxMessageBox("The wallpaper was copied to " + target + ", but no GNOME, Cinnamon or MATE desktop was found to set it as default.",
+                     "Apply Wallpaper", wxOK | wxICON_WARNING, this);
+    else
+        wxMessageBox("Setting the wallpaper failed:\n" + wxJoin(output, '\n'), "Apply Wallpaper", wxOK | wxICON_ERROR, this);
 }

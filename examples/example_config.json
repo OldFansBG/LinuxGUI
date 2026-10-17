@@ -1,0 +1,9 @@
+{
+  "config_name": "Everyday apps",
+  "installations": [
+    { "appId": "org.mozilla.firefox", "appName": "Firefox" },
+    { "appId": "org.videolan.VLC", "appName": "VLC" },
+    { "appId": "org.gimp.GIMP", "appName": "GIMP" },
+    { "appId": "org.libreoffice.LibreOffice", "appName": "LibreOffice" }
+  ]
+}

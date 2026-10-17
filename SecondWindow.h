@@ -11,8 +11,6 @@
 #include "ContainerManager.h"    // Включва заглавния файл ContainerManager.h
 #include "FlatpakStore.h"        // Включва заглавния файл FlatpakStore.h
 #include "WindowIDs.h"           // <<< Make sure this is included for the IDs // <<< Уверете се, че това е включено за идентификаторите
-#include <mongocxx/client.hpp>   // Keep MongoDB includes needed by SecondWindow itself // Запазване на MongoDB включванията, необходими за самия SecondWindow
-#include <mongocxx/instance.hpp> // Включва mongocxx/instance.hpp за MongoDB инстанция
 
 #ifdef _WIN32                   // Ако се компилира за Windows (_WIN32 е дефиниран)
 #include "WinTerminalManager.h" // Включва заглавния файл WinTerminalManager.h
@@ -59,14 +57,9 @@ private:                                 // Частна секция
 
     DesktopTab *m_desktopTab; // Указател към DesktopTab
 
-    static mongocxx::instance m_mongoInstance; // Статична MongoDB инстанция (споделена)
+    void CleanupContainerAsync(); // Метод за асинхронно изтриване на контейнера (docker rm -f)
 
-    wxThread *m_cleanupThread;    // Указател към нишката за почистване
-    void CleanupContainerAsync(); // Метод за асинхронно почистване на контейнер
-
-    bool m_isClosing;            // Флаг, показващ дали прозорецът се затваря
-    wxTimer *m_closeTimer;       // Таймер за затваряне
-    wxTimer *m_simulateIsoTimer; // Timer for simulating ISO creation // Таймер за симулиране на създаване на ISO
+    bool m_isClosing; // Флаг, показващ дали прозорецът се затваря
 
     wxWindow *m_lastTab; // Указател към последния активен таб
 
@@ -84,11 +77,10 @@ private:                                 // Частна секция
     void OnTabChanged(wxCommandEvent &event);        // Обработчик на събитието за смяна на таб
     void OnMongoDBButton(wxCommandEvent &event);     // Обработчик на събитието от бутона за MongoDB
     void OnMongoDBPanelClose(wxCommandEvent &event); // Handles close request // Обработчик на заявка за затваряне на MongoDB панела
-    void OnCloseTimer(wxTimerEvent &event);          // Обработчик на събитието от таймера за затваряне
-    void OnSimulateIsoTimer(wxTimerEvent &event);    // Handler for simulation timer // Обработчик на събитието от таймера за симулация
     void DoDestroy();                                // Метод за извършване на унищожаването на прозореца
 
-    wxDECLARE_EVENT_TABLE(); // Макрос за деклариране на таблицата на събитията
+    wxDECLARE_CLASS(SecondWindow); // RTTI информация, за да работи wxDynamicCast(..., SecondWindow) коректно
+    wxDECLARE_EVENT_TABLE();       // Макрос за деклариране на таблицата на събитията
 }; // Край на тялото на класа SecondWindow
 
 #endif // SECONDWINDOW_H // Край на предпазителя срещу многократно включване

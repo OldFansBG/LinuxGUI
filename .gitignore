@@ -1,29 +1,51 @@
+# Build output
 /build/
-/backup/
+/build*/
+/out/
+/dist/
+CMakeUserPresets.json
+
+# Python / PyInstaller
+__pycache__/
+*.pyc
+/venv/
+/.venv/
+*.spec
+/logs/
+
+# Editor and tooling folders
+/.vscode/
+/.idea/
 /.history/
-/python/
-/iso/
 /.lh/
+
+# Local secrets (MongoDB connection string etc.)
+.env
+*.local.yaml
+
+# Large or local-only files
+/iso/
+/backup/
+/python/
 /tools/
 /scripts/
-/build1/
+*.iso
 *.7z
-tempCodeRunnerFile.bat
-Debugviewpp.exe
-dp-zadanie.pdf
-DiplomenProekt.docx
 *.zip
 *.exe
+*.pdf
+*.docx
+~$*
+
+# Old scratch files
+tempCodeRunnerFile.bat
+Debugviewpp.exe
 docker_iso_builder.py
 pt.cpp
 tesr.py
-*.spec
-*.spec
 test.py
-mongo-c-driver/
-conanfile.txt
-New folder/DiplomenProekt.pdf
-CMakeUserPresets.json
 graph.html
 main copy.cpp
 CMakeLists copy.txt
+mongo-c-driver/
+conanfile.txt

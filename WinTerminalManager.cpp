@@ -25,7 +25,7 @@ WinTerminalManager::~WinTerminalManager()
 
 bool WinTerminalManager::Initialize()
 {                                                        // Метод за инициализация на терминала, връща true при успех, false при неуспех
-    std::wstring cmd = L"cmd.exe /k title EMBEDDED_CMD"; // Дефинира командата, която ще бъде изпълнена (стартиране на cmd.exe с определено заглавие)
+    std::wstring cmd = L"conhost.exe cmd.exe /k title EMBEDDED_CMD"; // conhost.exe: на Windows 11 иначе cmd се отваря в Windows Terminal, който не може да се вгради // Дефинира командата, която ще бъде изпълнена (стартиране на cmd.exe с определено заглавие)
     STARTUPINFOW si = {sizeof(si)};                      // Инициализира структурата STARTUPINFOW, задавайки нейния размер
     si.dwFlags = STARTF_USESHOWWINDOW;                   // Задава флаг, указващ, че ще се използва wShowWindow
     si.wShowWindow = SW_HIDE;                            // Задава прозорецът да бъде скрит при стартиране

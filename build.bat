@@ -1,64 +1,36 @@
 @echo off
 setlocal
 
-:: Ensure build directory exists
-if not exist "build" mkdir build
+:: Builds LinuxISOPro with the MSYS2 UCRT64 toolchain (see README.md for the packages to install).
+:: Override MSYS2_ROOT if MSYS2 is not installed in C:\msys64.
+if "%MSYS2_ROOT%"=="" set MSYS2_ROOT=C:\msys64
+set UCRT64=%MSYS2_ROOT%\ucrt64
 
-:: Add MSYS2 to PATH
-set PATH=C:\msys64\mingw64\bin;%PATH%
-
-cd build
-
-:: Configure with CMake (source dir is parent of build)
-cmake .. -G "MinGW Makefiles" ^
-    -DCMAKE_C_COMPILER=C:/msys64/mingw64/bin/gcc.exe ^
-    -DCMAKE_CXX_COMPILER=C:/msys64/mingw64/bin/g++.exe ^
-    -DCMAKE_PREFIX_PATH=C:/msys64/mingw64 ^
-    -DCMAKE_TOOLCHAIN_FILE=C:/tools/vcpkg/scripts/buildsystems/vcpkg.cmake
-
-:: Build
-mingw32-make
-
-:: Check if build was successful
-if %ERRORLEVEL% EQU 0 (
-    echo Build completed successfully!
-    echo Copying required DLLs...
-
-    :: Copy standard DLLs from MSYS2
-    for %%F in (
-        "libstdc++-6.dll"
-        "libgcc_s_seh-1.dll"
-        "libwinpthread-1.dll"
-        "libjsoncpp-26.dll"
-        "libcurl-4.dll"
-        "zlib1.dll"
-        "libcrypto-3-x64.dll"
-        "libssl-3-x64.dll"
-        "libwx_baseu-3.0.dll"
-        "libwx_mswu_core-3.0.dll"
-        "libssh2-1.dll"
-        "libidn2-0.dll"
-        "libunistring-5.dll"
-        "libintl-8.dll"
-        "libiconv-2.dll"
-        "libzstd.dll"
-        "libbrotlidec.dll"
-        "libbrotlicommon.dll"
-        "libnghttp2-14.dll"
-        "libssp-0.dll"
-    ) do (
-        if exist "C:\msys64\mingw64\bin\%%~F" (
-            copy "C:\msys64\mingw64\bin\%%~F" . > nul && echo Copied %%~F successfully
-        ) else (
-            echo Warning: Could not find %%~F
-        )
-    )
-
-    echo.
-    echo All files are in: %CD%
-) else (
-    echo Build failed!
+if not exist "%UCRT64%\bin\g++.exe" (
+    echo MSYS2 UCRT64 toolchain not found in %UCRT64%.
+    echo Install MSYS2 from https://www.msys2.org and run the pacman command from README.md.
     exit /b 1
 )
 
-endlocal
+set PATH=%UCRT64%\bin;%PATH%
+
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=%UCRT64%
+if errorlevel 1 goto :failed
+
+cmake --build build
+if errorlevel 1 goto :failed
+
+:: Copy the MSYS2 DLLs the executable depends on, so build\ can be run or zipped as-is.
+echo Copying runtime DLLs...
+set MSYSTEM=UCRT64
+set CHERE_INVOKING=1
+"%MSYS2_ROOT%\usr\bin\bash.exe" -lc "cd build && ldd LinuxISOPro.exe | grep -i '/ucrt64/' | awk '{print $3}' | xargs -r -I{} cp -u {} ."
+
+echo.
+echo Build completed successfully: %CD%\build\LinuxISOPro.exe
+echo Remember to put script.exe (see README.md) next to LinuxISOPro.exe.
+exit /b 0
+
+:failed
+echo Build failed!
+exit /b 1

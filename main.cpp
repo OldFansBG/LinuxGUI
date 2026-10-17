@@ -1,5 +1,7 @@
 #include "MainFrame.h" // Включва заглавния файл за MainFrame (основния прозорец на приложението)
 #include <wx/wx.h>     // Включва основния заглавен файл на wxWidgets
+#include <wx/stdpaths.h> // wxStandardPaths за пътя до изпълнимия файл
+#include <wx/filename.h> // wxFileName
 #include <windows.h>   // Включва основния заглавен файл на Windows API (за функции като RegOpenKeyExW, CreateFileW и др.)
 #include <string>      // Включва стандартната C++ библиотека за работа с низове (въпреки че тук не се използва директно std::string, може да е полезно)
 
@@ -62,6 +64,10 @@ public: // Публична секция на класа
     bool OnInit()
     {                             // Метод OnInit, който се извиква при инициализация на приложението
         wxInitAllImageHandlers(); // Инициализира всички налични обработчици на изображения (за формати като PNG, JPG и др.)
+
+        // config.yaml, themes.json, script.exe и logs/ се търсят спрямо текущата директория,
+        // затова тя се задава да е папката на изпълнимия файл (и при стартиране от пряк път или IDE)
+        wxSetWorkingDirectory(wxFileName(wxStandardPaths::Get().GetExecutablePath()).GetPath());
 
         // First check if Docker Desktop is installed // Коментар: Първо проверка дали Docker Desktop е инсталиран
         if (!isDockerDesktopInstalled())

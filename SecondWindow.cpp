@@ -18,9 +18,8 @@
 #include <sstream>        // За std::stringstream (използва се индиректно) // Включва стандартната C++ библиотека за работа с низови потоци
 #include <string>         // За std::string // Включва стандартната C++ библиотека за низове
 #include <wx/graphics.h>  // За wxGraphicsContext в OverlayFrame // Включва wxGraphicsContext за разширени възможности за 2D рисуване
-
-// MongoDB include-и, нужни за SecondWindow (минимални, ако панелът обработва логиката)
-#include <mongocxx/instance.hpp> // Все още е нужен за статичния instance // Включва необходим файл за MongoDB C++ драйвера (за управление на инстанции)
+#include "ContainerCommand.h" // Помощни функции за команди в Docker контейнера
+#include <wx/weakref.h>        // wxWeakRef за безопасни указатели към прозорци в асинхронни callback-и
 
 #ifdef __WXMSW__                   // Начало на условна компилация за Microsoft Windows (MSW) среди
 #include <windows.h>               // Включва основния заглавен файл на Windows API
@@ -32,8 +31,10 @@
 #endif                                   // Край на условната директива #ifndef
 #endif                                   // Край на условната компилация #ifdef __WXMSW__
 
-// Инициализация на статичния член
-mongocxx::instance SecondWindow::m_mongoInstance{}; // Инициализира статичния член m_mongoInstance (MongoDB инстанция) на класа SecondWindow
+wxIMPLEMENT_CLASS(SecondWindow, wxFrame); // RTTI за SecondWindow (нужно за wxDynamicCast)
+
+// Име на готовия ISO файл, който create_iso.sh записва в /root/custom_iso
+static const char *const OUTPUT_ISO_NAME = "custom_linux.iso";
 
 //---------------------------------------------------------------------
 // Клас PythonProcess: Управлява жизнения цикъл на бекенд Python процеса и действията след приключването му
@@ -47,6 +48,16 @@ public:                                                                         
         if (m_parent)                                                                                           // Проверява дали указателят към родителския прозорец (m_parent) е валиден
         {                                                                                                       // Начало на блока if (m_parent)
             m_parent->CloseOverlay();                                                                           // Извиква метод на родителския прозорец за затваряне на наслагващия се екран (overlay)
+            if (status != 0)                                                                                    // script.exe връща ненулев код, ако подготовката на контейнера е неуспешна
+            {
+                wxLogError("Backend setup failed with exit code %d", status);
+                wxMessageBox(wxString::Format("Preparing the Docker container failed (exit code %d).\n\n"
+                                              "See the newest file in the logs folder next to LinuxISOPro.exe for details.",
+                                              status),
+                             "Setup Failed", wxOK | wxICON_ERROR, m_parent);
+                delete this; // Обектът е създаден с new в StartPythonExecutable
+                return;
+            }
             wxString containerIdPath = wxFileName(m_parent->GetProjectDir(), "container_id.txt").GetFullPath(); // Създава пълен път до файла "container_id.txt" в проектната директория
             wxFile file;                                                                                        // Декларира обект wxFile за работа с файлове
             if (file.Open(containerIdPath))                                                                     // Опитва да отвори файла "container_id.txt" за четене
@@ -107,10 +118,11 @@ public:                                                                         
                 wxLogError("Не може да се отвори container_id.txt файл: %s", containerIdPath); // Записва грешка в лога
             } // Край на блока else
         } // Край на блока if (m_parent)
+        delete this; // При пренаписан OnTerminate обектът трябва да се изтрие ръчно
     } // Край на тялото на метода OnTerminate
 
 private:                    // Декларира частната секция на класа
-    SecondWindow *m_parent; // Указател към родителския прозорец (SecondWindow), който е собственик на този процес
+    wxWeakRef<SecondWindow> m_parent; // Слаб указател към родителския прозорец (нулира се, ако прозорецът бъде унищожен)
 }; // Край на дефиницията на класа PythonProcess
 //---------------------------------------------------------------------
 
@@ -125,51 +137,52 @@ public:                                                                         
     {                                                                                                               // Начало на тялото на метода OnTerminate
         if (m_parent)                                                                                               // Проверява дали указателят към родителския прозорец е валиден
         {                                                                                                           // Начало на блока if (m_parent)
-            m_parent->CloseOverlay();                                                                               // Затваря наслагващия екран на родителския прозорец
-            if (status == 0)                                                                                        // Проверява дали процесът е завършил успешно (статус 0)
+            if (status == 0)                                                                                        // Проверява дали create_iso.sh е завършил успешно (статус 0)
             {                                                                                                       // Начало на блока if (status == 0)
-                wxString containerIdPath = wxFileName(m_parent->GetProjectDir(), "container_id.txt").GetFullPath(); // Формира пълен път до файла container_id.txt
-                wxFile file;                                                                                        // Декларира обект wxFile за файлови операции
-                if (file.Open(containerIdPath))                                                                     // Опитва да отвори файла container_id.txt
-                {                                                                                                   // Начало на блока if (file.Open)
-                    wxString containerId;                                                                           // Декларира низ за ID на контейнера
-                    file.ReadAll(&containerId);                                                                     // Чете цялото съдържание на файла в containerId
-                    containerId.Trim();                                                                             // Премахва празни символи от ID-то на контейнера
+                wxString containerId = ContainerCommand::ReadContainerId(m_parent->GetProjectDir());               // Чете ID-то на контейнера от container_id.txt
+                if (!containerId.IsEmpty())                                                                         // Ако ID-то е прочетено успешно
+                {                                                                                                   // Начало на блока if
+                    wxString sourcePath = wxString::Format("%s:/root/custom_iso/%s", containerId, OUTPUT_ISO_NAME);       // Изходен път на ISO файла в контейнера
+                    wxString destPath = wxFileName(m_parent->GetProjectDir(), OUTPUT_ISO_NAME).GetFullPath();             // ISO файлът се записва в директорията на проекта
+                    wxString copyCommand = wxString::Format("docker cp \"%s\" \"%s\"", sourcePath, destPath);             // Формира командата за копиране на файла от Docker контейнера
+                    long copyStatus = wxExecute(copyCommand, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE);                          // Копира ISO файла синхронно (анимацията продължава да се рисува)
+                    m_parent->CloseOverlay();                                                                             // Затваря наслагващия екран след копирането
 
-                    wxString sourcePath = wxString::Format("%s:/root/custom_iso/custom_linuxmint.iso", containerId); // Формира изходния път на ISO файла в контейнера
-                    wxString destPath = m_parent->GetProjectDir();                                                   // Взема пътя на проектната директория като дестинация
-                    wxString copyCommand = wxString::Format("docker cp \"%s\" \"%s\"", sourcePath, destPath);        // Формира командата за копиране на файла от Docker контейнера
-                    long copyStatus = wxExecute(copyCommand, wxEXEC_SYNC | wxEXEC_HIDE_CONSOLE);                     // Изпълнява командата за копиране синхронно и скрива конзолата (wxExecute връща long)
-
-                    if (copyStatus == 0)                                                                                                 // Проверява дали копирането е успешно (статус 0)
-                    {                                                                                                                    // Начало на блока if (copyStatus == 0)
-                        wxMessageBox("ISO е създаден и копиран успешно в директорията на проекта!", "Успех", wxOK | wxICON_INFORMATION); // Показва съобщение за успех
+                    if (copyStatus == 0)                                                                                  // Проверява дали копирането е успешно (статус 0)
+                    {                                                                                                     // Начало на блока if (copyStatus == 0)
+                        wxMessageBox("The ISO was created successfully:\n" + destPath, "ISO Created", wxOK | wxICON_INFORMATION, m_parent); // Показва съобщение за успех
                     } // Край на блока if (copyStatus == 0)
-                    else                                                                                              // Ако копирането е неуспешно
-                    {                                                                                                 // Начало на блока else
-                        wxMessageBox("ISO е създаден, но копирането към хоста е неуспешно.", "Грешка", wxICON_ERROR); // Показва съобщение за грешка при копирането
+                    else                                                                                                  // Ако копирането е неуспешно
+                    {                                                                                                     // Начало на блока else
+                        wxMessageBox("The ISO was created in the container, but copying it to the project folder failed.", "Copy Failed", wxOK | wxICON_ERROR, m_parent); // Съобщение за грешка при копирането
                     } // Край на блока else
-                } // Край на блока if (file.Open)
-                else                                                                                                            // Ако отварянето на файла container_id.txt е неуспешно
-                {                                                                                                               // Начало на блока else
-                    wxLogError("Не може да се отвори container_id.txt по време на копиране на ISO.");                           // Записва грешка в лога
-                    wxMessageBox("ISO е създаден, но не може да се прочете container ID за копиране.", "Грешка", wxICON_ERROR); // Показва съобщение за грешка на потребителя
+                } // Край на блока if
+                else                                                                                                      // Ако container_id.txt не може да се прочете
+                {                                                                                                         // Начало на блока else
+                    m_parent->CloseOverlay();                                                                             // Затваря наслагващия екран
+                    wxLogError("Could not read container_id.txt while copying the ISO.");                                 // Записва грешка в лога
+                    wxMessageBox("The ISO was created, but the container ID could not be read to copy it.", "Copy Failed", wxOK | wxICON_ERROR, m_parent); // Съобщение за грешка
                 } // Край на блока else
             } // Край на блока if (status == 0)
             else                                                                                   // Ако процесът по създаване на ISO е неуспешен
             {                                                                                      // Начало на блока else
-                wxLogError("Процесът по създаване на ISO е неуспешен със статус: %d", status);     // Записва грешка в лога със статус кода
-                wxMessageBox("Процесът по създаване на ISO е неуспешен!", "Грешка", wxICON_ERROR); // Показва съобщение за грешка на потребителя
+                m_parent->CloseOverlay();                                                          // Затваря наслагващия екран
+                wxLogError("create_iso.sh failed with exit code %d", status);                      // Записва грешка в лога със статус кода
+                wxMessageBox(wxString::Format("Creating the ISO failed (exit code %d).\n\n"
+                                              "Run \"docker exec <container> /bin/bash /create_iso.sh\" in a terminal to see the full output.",
+                                              status),
+                             "ISO Creation Failed", wxOK | wxICON_ERROR, m_parent);                // Показва съобщение за грешка на потребителя
             } // Край на блока else
-            // Активира бутона 'Next' независимо от успех/грешка
-            wxButton *nextButton = wxDynamicCast(m_parent->FindWindow(ID_NEXT_BUTTON), wxButton); // Намира бутона 'Next' чрез неговото ID и го преобразува към wxButton указател
+            // Активира бутона 'Create ISO' независимо от успех/грешка
+            wxButton *nextButton = wxDynamicCast(m_parent->FindWindow(ID_NEXT_BUTTON), wxButton); // Намира бутона чрез неговото ID и го преобразува към wxButton указател
             if (nextButton)                                                                       // Проверява дали бутонът е намерен успешно
-                nextButton->Enable();                                                             // Активира бутона 'Next'
+                nextButton->Enable();                                                             // Активира бутона
         } // Край на блока if (m_parent)
+        delete this; // При пренаписан OnTerminate обектът трябва да се изтрие ръчно
     } // Край на тялото на метода OnTerminate
 
 private:                    // Декларира частната секция на класа
-    SecondWindow *m_parent; // Указател към родителския прозорец SecondWindow
+    wxWeakRef<SecondWindow> m_parent; // Слаб указател към родителския прозорец (нулира се, ако прозорецът бъде унищожен)
 }; // Край на дефиницията на класа DockerExecProcess
 //---------------------------------------------------------------------
 
@@ -297,7 +310,6 @@ private:                                                         // Деклар
 // Таблица с event-и за SecondWindow: Свързва събитията с техните обработващи функции
 wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)                                // Начало на дефиницията на таблицата със събития за SecondWindow
     EVT_CLOSE(SecondWindow::OnClose)                                      // Свързва събитието за затваряне на прозореца (EVT_CLOSE) с метода SecondWindow::OnClose
-    EVT_TIMER(wxID_ANY, SecondWindow::OnCloseTimer)                       // Хваща всяко timer събитие за close таймера (свързва EVT_TIMER с SecondWindow::OnCloseTimer)
     EVT_BUTTON(ID_TERMINAL_TAB, SecondWindow::OnTabChanged)               // Свързва натискането на бутона ID_TERMINAL_TAB с метода SecondWindow::OnTabChanged
     EVT_BUTTON(ID_SQL_TAB, SecondWindow::OnTabChanged)                    // Свързва натискането на бутона ID_SQL_TAB с метода SecondWindow::OnTabChanged
     EVT_BUTTON(ID_MONGODB_BUTTON, SecondWindow::OnMongoDBButton)          // Обработва натискането на главния MongoDB бутон (свързва с SecondWindow::OnMongoDBButton)
@@ -305,35 +317,6 @@ wxBEGIN_EVENT_TABLE(SecondWindow, wxFrame)                                // Н�
     EVT_BUTTON(ID_NEXT_BUTTON, SecondWindow::OnNext)                      // Свързва натискането на бутона ID_NEXT_BUTTON с метода SecondWindow::OnNext
     wxEND_EVENT_TABLE()                                                   // Край на дефиницията на таблицата със събития
 
-    //---------------------------------------------------------------------
-    // Клас ContainerCleanupThread: Асинхронно почиства Docker контейнерите при затваряне
-    class ContainerCleanupThread : public wxThread      // Дефиниция на клас ContainerCleanupThread, наследяващ wxThread
-{                                                       // Начало на тялото на класа ContainerCleanupThread
-public:                                                 // Декларира публичния интерфейс на класа
-    ContainerCleanupThread(const wxString &containerId) // Конструктор, приема ID на контейнер
-        : wxThread(wxTHREAD_DETACHED), m_containerId(containerId)
-    {
-    } // Инициализира базовия клас wxThread като отделена нишка и член-данната m_containerId
-
-protected:                                                                                                          // Декларира защитената секция на класа (достъпна за наследници)
-    virtual ExitCode Entry() override                                                                               // Виртуален метод, основна функция на нишката, пренаписва метода от wxThread
-    {                                                                                                               // Начало на тялото на метода Entry
-        wxLogDebug("ContainerCleanupThread::Entry - Стартира нишка за почистване на контейнер: %s", m_containerId); // Записва в лога стартирането на нишката
-        if (m_containerId.IsEmpty())                                                                                // Проверява дали ID-то на контейнера е празно
-        {                                                                                                           // Начало на блока if (m_containerId.IsEmpty())
-            wxLogDebug("ContainerCleanupThread::Entry - Container ID е празно, излизане от нишката.");              // Записва в лога, че ID-то е празно
-            return (ExitCode)0;                                                                                     // Връща код за успешно завършване (0)
-        } // Край на блока if (m_containerId.IsEmpty())
-        // Използва ContainerManager за почистване
-        ContainerManager::Get().CleanupContainer(m_containerId);                                                      // Извиква метод за почистване на контейнера от ContainerManager
-        wxLogDebug("ContainerCleanupThread::Entry - Нишката за почистване приключи за контейнер: %s", m_containerId); // Записва в лога приключването на нишката
-        return (ExitCode)0;                                                                                           // Връща код за успешно завършване (0)
-    } // Край на тялото на метода Entry
-
-private:                    // Декларира частната секция на класа
-    wxString m_containerId; // Променлива за съхранение на ID-то на контейнера, който трябва да бъде почистен
-}; // Край на дефиницията на класа ContainerCleanupThread
-//---------------------------------------------------------------------
 
 // --- Имплементация на SecondWindow ---
 
@@ -358,11 +341,8 @@ SecondWindow::SecondWindow(wxWindow *parent,                                    
       m_terminalPanel(nullptr),                                                    // Инициализация на m_terminalPanel на nullptr
       m_flatpakStore(nullptr),                                                     // Инициализира указателя FlatpakStore // Инициализация на m_flatpakStore на nullptr
       m_mongoPanel(nullptr),                                                       // Инициализация на m_mongoPanel на nullptr
-      m_cleanupThread(nullptr),                                                    // Инициализация на m_cleanupThread на nullptr
       m_isClosing(false),                                                          // Инициализация на m_isClosing на false
-      m_closeTimer(nullptr),                                                       // Инициализация на m_closeTimer на nullptr
-      m_simulateIsoTimer(nullptr),                                                 // Инициализира на nullptr // Инициализация на m_simulateIsoTimer на nullptr
-      m_lastTab(nullptr)                                                           // Инициализация на m_lastTab на nullptr
+      m_lastTab(nullptr)                                                         // Инициализация на m_lastTab на nullptr
 #ifdef __WXMSW__                                                                   // Условна компилация за Windows
       ,                                                                            // Запетая за следващия инициализатор в списъка (само за Windows)
       m_winTerminalManager(nullptr)                                                // Инициализира указателя WinTerminalManager // Инициализация на m_winTerminalManager на nullptr
@@ -392,10 +372,6 @@ SecondWindow::SecondWindow(wxWindow *parent,                                    
     // Стартира Python процеса на бекенда
     StartPythonExecutable(); // Извиква метод за стартиране на Python изпълнимия файл
 
-    // Инициализира таймера за симулация ВЕДНЪЖ и свързва събитието
-    m_simulateIsoTimer = new wxTimer(this, wxID_ANY);                                        // Създава нов обект wxTimer за симулация
-    Bind(wxEVT_TIMER, &SecondWindow::OnSimulateIsoTimer, this, m_simulateIsoTimer->GetId()); // Свързва събитието от таймера с метода OnSimulateIsoTimer
-
     // Инициализира Windows Terminal, ако е на Windows
 #ifdef __WXMSW__              // Условна компилация за Windows
     if (m_winTerminalManager) // Проверява дали WinTerminalManager е инициализиран
@@ -411,57 +387,8 @@ SecondWindow::~SecondWindow()                          // Деструктор �
 {                                                      // Начало на тялото на деструктора
     wxLogDebug("SecondWindow::~SecondWindow - START"); // Записва в лога началото на изпълнение на деструктора
 
-    // Спира и изтрива таймера за затваряне, ако съществува
-    if (m_closeTimer)                  // Проверява дали таймерът за затваряне съществува
-    {                                  // Начало на блока if (m_closeTimer)
-        if (m_closeTimer->IsRunning()) // Проверява дали таймерът за затваряне работи
-        {                              // Начало на блока if (m_closeTimer->IsRunning())
-            m_closeTimer->Stop();      // Спира таймера за затваряне
-        } // Край на блока if (m_closeTimer->IsRunning())
-        delete m_closeTimer;                                               // Изтрива обекта на таймера за затваряне
-        m_closeTimer = nullptr;                                            // Занулява указателя към таймера за затваряне
-        wxLogDebug("SecondWindow::~SecondWindow - Closed timer deleted."); // Записва в лога, че таймерът е изтрит
-    } // Край на блока if (m_closeTimer)
-
-    // Спира и изтрива таймера за симулация, ако съществува
-    if (m_simulateIsoTimer)                                                    // Проверява дали таймерът за симулация съществува
-    {                                                                          // Начало на блока if (m_simulateIsoTimer)
-        if (m_simulateIsoTimer->IsRunning())                                   // Проверява дали таймерът за симулация работи
-            m_simulateIsoTimer->Stop();                                        // Спира таймера за симулация
-        delete m_simulateIsoTimer;                                             // Изтрива обекта на таймера за симулация
-        m_simulateIsoTimer = nullptr;                                          // Занулява указателя към таймера за симулация
-        wxLogDebug("SecondWindow::~SecondWindow - Simulation timer deleted."); // Записва в лога, че таймерът за симулация е изтрит
-    } // Край на блока if (m_simulateIsoTimer)
-
     // Уверява се, че Python бекенд нишката/процесът е сигнализиран да спре, ако е приложимо
     CleanupThread(); // (Тази функция може да се нуждае от имплементация в зависимост от управлението на Python процеса) // Извиква метод за почистване на нишката
-
-    // Изчаква нишката за почистване, ако работи
-    if (m_cleanupThread)                                                                             // Проверява дали нишката за почистване съществува
-    {                                                                                                // Начало на блока if (m_cleanupThread)
-        wxLogDebug("SecondWindow::~SecondWindow - Waiting for container cleanup thread to finish."); // Записва в лога, че се изчаква нишката за почистване
-        if (m_cleanupThread->IsRunning())                                                            // Проверява дали нишката за почистване работи
-        {                                                                                            // Начало на блока if (m_cleanupThread->IsRunning())
-            m_cleanupThread->Wait();                                                                 // Блокира, докато нишката приключи
-        } // Край на блока if (m_cleanupThread->IsRunning())
-        delete m_cleanupThread;                                                                     // Изтрива обекта на нишката
-        m_cleanupThread = nullptr;                                                                  // Занулява указателя към нишката за почистване
-        wxLogDebug("SecondWindow::~SecondWindow - Container cleanup thread finished and deleted."); // Записва в лога, че нишката е приключила и изтрита
-    } // Край на блока if (m_cleanupThread)
-
-    // По избор: Изрично почистване на контейнера, ако нишката не е стартирала/приключила
-    // Това е резервен вариант, нишката е предпочитаният начин.
-    if (!m_containerId.IsEmpty()) // Проверява дали ID-то на контейнера не е празно
-    {                             // Начало на блока if (!m_containerId.IsEmpty())
-        // ЗАБЕЛЕЖКА: Премахване на синхронното почистване тук, тъй като нишката *трябва* да го обработи.
-        // Ако възникнат проблеми, при които контейнерите не се почистват при затваряне, това може да бъде добавено отново
-        // с внимателни проверки (напр. проверка дали нишката е съществувала и е работила).
-        wxLogDebug("SecondWindow::~SecondWindow - Skipping synchronous container cleanup (handled by thread)."); // Записва в лога, че синхронното почистване се пропуска
-    } // Край на блока if (!m_containerId.IsEmpty())
-    else                                                                                                   // Ако ID-то на контейнера е празно
-    {                                                                                                      // Начало на блока else
-        wxLogDebug("SecondWindow::~SecondWindow - m_containerId is empty, skipping synchronous cleanup."); // Записва в лога, че ID-то е празно и синхронното почистване се пропуска
-    } // Край на блока else
 
 #ifdef __WXMSW__ // Условна компилация за Windows
     // Почиства Windows Terminal Manager
@@ -577,12 +504,9 @@ void SecondWindow::ExecuteDockerCommand(const wxString &containerId)          //
     {                         // Начало на блока if (m_winTerminalManager)
         // Изчиства екрана, изпълнява docker команда, след това влиза в chroot
         // Изпращането на команди, разделени с '\r\n', симулира натискане на Enter след всяка
-        wxString command = wxString::Format(    // Формира командата за изпълнение
-                                                // L"cls\r\n" // Изчистване на екрана - може да изчисти твърде рано // Коментирана команда за изчистване на екрана
-            L"docker exec -it %s /bin/bash\r\n" // Влизане в контейнера // Команда за влизане в Docker контейнер
-            // L"chroot /root/custom_iso/squashfs-root /bin/bash\r\n" // Влизане в chroot *след* влизане в контейнера - Потребителят може да се наложи да напише това // Коментирана команда за chroot
-            ,                                                           // Запетая за форматиращия низ
-            containerId);                                               // ID на контейнера като аргумент
+        // Влиза директно в chroot средата на ISO-то, за да може потребителят да я персонализира (SendCommand натиска Enter)
+        wxString command = wxString::Format(L"docker exec -it %s chroot %s /bin/bash", // Команда за влизане в chroot средата в контейнера
+                                            containerId, ContainerCommand::CHROOT_PATH); // ID на контейнера и път до chroot
         wxLogDebug("Sending command to Windows Terminal: %s", command); // Записва в лога командата, която се изпраща
         m_winTerminalManager->SendCommand(command.ToStdWstring());      // Изпраща командата към Windows Terminal Manager
     } // Край на блока if (m_winTerminalManager)
@@ -754,165 +678,84 @@ void SecondWindow::CreateControls()                         // Метод за �
     SetSize(wxSize(850, 700));    // Малко по-голям размер по подразбиране // Задава размер по подразбиране на прозореца
 } // Край на тялото на метода CreateControls
 
-// Обработва събитието за затваряне на прозореца: стартира асинхронно почистване и таймер
+// Обработва събитието за затваряне на прозореца: скрива прозореца и изтрива Docker контейнера асинхронно
 void SecondWindow::OnClose(wxCloseEvent &event)                                      // Метод, извиква се при опит за затваряне на прозореца
 {                                                                                    // Начало на тялото на метода OnClose
     if (m_isClosing)                                                                 // Проверява дали процесът на затваряне вече е стартиран
     {                                                                                // Начало на блока if (m_isClosing)
         wxLogDebug("SecondWindow::OnClose - Already in closing process, skipping."); // Записва в лога, че затварянето вече е в ход
-        event.Skip();                                                                // Позволява обработка по подразбиране, ако е необходимо, или просто връща // Позволява на събитието да продължи (може да доведе до повторно затваряне)
-        return;                                                                      // Прекратява изпълнението на метода
+        return;                                                                      // Прозорецът ще бъде унищожен от DoDestroy
     } // Край на блока if (m_isClosing)
+
+    if (m_containerId.IsEmpty())                                      // ID-то на контейнера се записва от script.exe в container_id.txt
+        m_containerId = ContainerCommand::ReadContainerId(m_projectDir); // Чете го, ако все още не е известно
+
+    // Контейнерът съдържа всички промени по ISO-то, затова потребителят потвърждава изтриването му
+    if (event.CanVeto() && !m_containerId.IsEmpty())
+    {
+        int answer = wxMessageBox("Closing this window deletes the Docker container together with every change "
+                                  "that is not in a created ISO yet.\n\nClose anyway?",
+                                  "Close Project", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, this);
+        if (answer != wxYES)
+        {
+            event.Veto(); // Потребителят се отказа от затварянето
+            return;
+        }
+    }
+
     wxLogDebug("SecondWindow::OnClose - Starting close process."); // Записва в лога началото на процеса на затваряне
     m_isClosing = true;                                            // Задава флага за процес на затваряне на true
     Hide();                                                        // Скрива прозореца незабавно
-
-    // Стартира асинхронното почистване
-    CleanupContainerAsync(); // Извиква метод за асинхронно почистване на контейнера
-
-    // Стартира таймер за периодична проверка дали нишката за почистване е приключила
-    if (!m_closeTimer)                    // Проверява дали таймерът за затваряне не е създаден
-    {                                     // Начало на блока if (!m_closeTimer)
-        m_closeTimer = new wxTimer(this); // Използва 'this' като собственик // Създава нов таймер за затваряне
-    } // Край на блока if (!m_closeTimer)
-    // Стартира таймер с разумен интервал (напр. 200ms)
-    m_closeTimer->Start(200); // Стартира таймера с интервал 200 милисекунди
-
-    // Все още не унищожава прозореца, нека таймерът го обработи
-    // event.Skip(false); // Предотвратява незабавно унищожаване, ако по подразбиране е да се унищожи // Коментирано предотвратяване на незабавно унищожаване
+    CleanupContainerAsync();                                       // Изтрива контейнера и след това унищожава прозореца
 } // Край на тялото на метода OnClose
 
-// Таймер събитие: проверява дали нишката за почистване е приключила и унищожава прозореца
-void SecondWindow::OnCloseTimer(wxTimerEvent &event)  // Метод, извиква се при събитие от таймера за затваряне
-{                                                     // Начало на тялото на метода OnCloseTimer
-    wxLogDebug("SecondWindow::OnCloseTimer - Check"); // Записва в лога проверка от таймера
-    // Проверява дали нишката за почистване съществува и все още работи
-    if (m_cleanupThread && m_cleanupThread->IsRunning())                                     // Проверява дали нишката за почистване е валидна и работи
-    {                                                                                        // Начало на блока if (нишката работи)
-        wxLogDebug("SecondWindow::OnCloseTimer - Cleanup thread still running, waiting..."); // Записва в лога, че нишката все още работи
-        return;                                                                              // Изчаква следващото събитие на таймера // Прекратява изпълнението, изчаква следващ тик на таймера
-    } // Край на блока if (нишката работи)
-
-    // Ако таймерът работи, спира го
-    if (m_closeTimer && m_closeTimer->IsRunning())                 // Проверява дали таймерът за затваряне е валиден и работи
-    {                                                              // Начало на блока if (таймерът работи)
-        m_closeTimer->Stop();                                      // Спира таймера
-        wxLogDebug("SecondWindow::OnCloseTimer - Timer stopped."); // Записва в лога, че таймерът е спрян
-    } // Край на блока if (таймерът работи)
-
-    wxLogDebug("SecondWindow::OnCloseTimer - Cleanup thread finished or not running, proceeding to destroy window."); // Записва в лога, че нишката е приключила или не работи
-    // Използва CallAfter, за да гарантира, че унищожаването се случва безопасно извън обработчика на събития
-    CallAfter(&SecondWindow::DoDestroy); // Планира извикването на DoDestroy за по-късно, след приключване на текущата обработка на събития
-} // Край на тялото на метода OnCloseTimer
-
-// Действително унищожава прозореца
+// Действително унищожава прозореца и показва отново началния прозорец
 void SecondWindow::DoDestroy()                                  // Метод за действително унищожаване на прозореца
 {                                                               // Начало на тялото на метода DoDestroy
     wxLogDebug("SecondWindow::DoDestroy - Calling Destroy()."); // Записва в лога извикването на Destroy()
-    Destroy();                                                  // Действително унищожава обекта на прозореца // Унищожава прозореца
+    wxWindow *parent = GetParent();                             // MainFrame беше скрит при отваряне на този прозорец
+    if (parent && !parent->IsBeingDeleted())                    // Ако приложението не се затваря изцяло
+        parent->Show();                                         // Показва го отново, за да може да се започне нов проект
+    Destroy();                                                  // Унищожава прозореца
 } // Край на тялото на метода DoDestroy
 
-// Стартира нишката за почистване на контейнера асинхронно
-void SecondWindow::CleanupContainerAsync()                                                             // Метод за асинхронно стартиране на нишката за почистване на контейнера
-{                                                                                                      // Начало на тялото на метода CleanupContainerAsync
-    wxLogDebug("SecondWindow::CleanupContainerAsync - Attempting to start cleanup thread.");           // Записва в лога опит за стартиране на нишката
-    if (m_containerId.IsEmpty())                                                                       // Проверява дали ID-то на контейнера е празно
-    {                                                                                                  // Начало на блока if (m_containerId.IsEmpty())
-        wxLogDebug("SecondWindow::CleanupContainerAsync - No container ID, skipping cleanup thread."); // Записва в лога, че няма ID и нишката се пропуска
-        // Ако се затваря, гарантира, че логиката на таймера за затваряне напредва, АКО таймерът съществува
-        if (m_isClosing && m_closeTimer && !m_closeTimer->IsRunning()) // Проверява дали прозорецът се затваря, таймерът съществува и не работи
-        {                                                              // Начало на блока if (затваряне и таймерът не работи)
-            // Ако таймерът не работи по някаква причина, налага проверка за унищожаване
-            CallAfter(&SecondWindow::DoDestroy); // Планира извикването на DoDestroy
-        } // Край на блока if (затваряне и таймерът не работи)
-        return; // Прекратява изпълнението на метода
-    } // Край на блока if (m_containerId.IsEmpty())
+// Изтрива Docker контейнера с "docker rm -f" без да блокира интерфейса и след това унищожава прозореца
+void SecondWindow::CleanupContainerAsync()                                           // Метод за асинхронно изтриване на контейнера
+{                                                                                    // Начало на тялото на метода CleanupContainerAsync
+    if (m_containerId.IsEmpty())                                                     // Ако няма създаден контейнер
+    {                                                                                // Начало на блока if
+        wxLogDebug("SecondWindow::CleanupContainerAsync - No container ID, nothing to remove."); // Записва в лога, че няма какво да се изтрие
+        CallAfter(&SecondWindow::DoDestroy);                                         // Унищожава прозореца след текущото събитие
+        return;                                                                      // Прекратява изпълнението на метода
+    } // Край на блока if
 
-    // Проверява дали нишката вече съществува и работи
-    if (m_cleanupThread && m_cleanupThread->IsRunning())                                        // Проверява дали нишката за почистване е валидна и работи
-    {                                                                                           // Начало на блока if (нишката вече работи)
-        wxLogDebug("SecondWindow::CleanupContainerAsync - Cleanup thread is already running."); // Записва в лога, че нишката вече работи
-        return;                                                                                 // Не стартира друга // Прекратява изпълнението на метода
-    } // Край на блока if (нишката вече работи)
-
-    // Почиства стария обект на нишката, ако съществува, но не работи
-    if (m_cleanupThread) // Проверява дали указателят към нишката за почистване е валиден
-    {                    // Начало на блока if (m_cleanupThread)
-        // Няма нужда от Wait() тук, тъй като проверихме IsRunning() по-горе
-        delete m_cleanupThread;                                                                                    // Изтрива обекта на старата (неработеща) нишка
-        m_cleanupThread = nullptr;                                                                                 // Занулява указателя
-        wxLogDebug("SecondWindow::CleanupContainerAsync - Deleted previous (non-running) cleanup thread object."); // Записва в лога, че старата нишка е изтрита
-    } // Край на блока if (m_cleanupThread)
-
-    // Създава и стартира новата нишка за почистване
-    m_cleanupThread = new ContainerCleanupThread(m_containerId);                                               // Създава нов обект ContainerCleanupThread
-    if (m_cleanupThread->Run() != wxTHREAD_NO_ERROR)                                                           // Опитва да стартира нишката и проверява за грешка
-    {                                                                                                          // Начало на блока if (грешка при стартиране на нишката)
-        wxLogError("SecondWindow::CleanupContainerAsync - Failed to create or run container cleanup thread."); // Записва грешка в лога
-        delete m_cleanupThread;                                                                                // Почиства, ако Run е неуспешно // Изтрива обекта на нишката
-        m_cleanupThread = nullptr;                                                                             // Занулява указателя
-
-        // Ако сме в последователността на затваряне и не можем да стартираме нишката,
-        // позволява на процеса на затваряне да продължи чрез проверката на таймера.
-        if (m_isClosing && m_closeTimer && !m_closeTimer->IsRunning()) // Проверява дали прозорецът се затваря, таймерът съществува и не работи
-        {                                                              // Начало на блока if (затваряне и таймерът не работи)
-            CallAfter(&SecondWindow::DoDestroy);                       // Налага проверка за унищожаване, ако таймерът не работи // Планира извикването на DoDestroy
-        } // Край на блока if (затваряне и таймерът не работи)
-    } // Край на блока if (грешка при стартиране на нишката)
-    else                                                                                                                          // Ако нишката е стартирана успешно
-    {                                                                                                                             // Начало на блока else (успешно стартиране на нишката)
-        wxLogDebug("SecondWindow::CleanupContainerAsync - Cleanup thread started successfully for container %s.", m_containerId); // Записва в лога успешното стартиране на нишката
-    } // Край на блока else (успешно стартиране на нишката)
+    wxLogDebug("SecondWindow::CleanupContainerAsync - Removing container %s", m_containerId); // Записва в лога ID-то на контейнера
+    wxWeakRef<SecondWindow> self(this);                                                       // Прозорецът може да бъде унищожен от родителя преди края на командата
+    long pid = ContainerCommand::RunAsync("docker rm -f " + m_containerId, [self](int status) // Стартира изтриването асинхронно
+    {
+        wxLogDebug("SecondWindow::CleanupContainerAsync - docker rm finished with status %d", status); // Записва в лога резултата
+        if (self)                       // Ако прозорецът все още съществува
+            self->DoDestroy();          // Унищожава го
+    });
+    if (pid == 0)                        // Ако командата не може да стартира
+        CallAfter(&SecondWindow::DoDestroy); // Все пак затваря прозореца
 } // Край на тялото на метода CleanupContainerAsync
 
-// Обработва бутона 'Create ISO': деактивира бутона, проверява контейнера и стартира симулация
+// Обработва бутона 'Create ISO': стартира /create_iso.sh в контейнера и копира готовия ISO в директорията на проекта
 void SecondWindow::OnNext(wxCommandEvent &event)                                // Метод, извиква се при натискане на бутона "Create ISO"
 {                                                                               // Начало на тялото на метода OnNext
     wxButton *nextButton = wxDynamicCast(FindWindow(ID_NEXT_BUTTON), wxButton); // Намира бутона "Create ISO" по ID и го преобразува към wxButton указател
-    if (nextButton)                                                             // Проверява дали бутонът е намерен успешно
-        nextButton->Disable();                                                  // Деактивира бутона незабавно
 
-    wxString containerId;                                                                  // Декларира низ за ID на контейнера
-    wxString containerIdPath = wxFileName(m_projectDir, "container_id.txt").GetFullPath(); // Формира пълен път до файла container_id.txt
-    wxLogDebug("OnNext: Checking for container ID at: %s", containerIdPath);               // Записва в лога пътя, където се търси ID на контейнера
-
-    if (wxFileExists(containerIdPath))                                // Проверява дали файлът container_id.txt съществува
-    {                                                                 // Начало на блока if (wxFileExists)
-        wxFile file;                                                  // Декларира обект wxFile
-        if (file.Open(containerIdPath))                               // Опитва да отвори файла
-        {                                                             // Начало на блока if (file.Open)
-            file.ReadAll(&containerId);                               // Чете цялото съдържание на файла в containerId
-            containerId.Trim();                                       // Премахва празни символи от ID-то
-            wxLogDebug("OnNext: Read container ID: %s", containerId); // Записва в лога прочетеното ID
-            file.Close();                                             // Затваря файла
-        } // Край на блока if (file.Open)
-        else                                                                                          // Ако отварянето на файла е неуспешно
-        {                                                                                             // Начало на блока else (неуспешно отваряне на файл)
-            wxLogError("OnNext: Container ID file exists but could not be opened!");                  // Записва грешка в лога
-            wxMessageBox("Error: Could not read container information.", "File Error", wxICON_ERROR); // Показва съобщение за грешка
-            if (nextButton)                                                                           // Проверява дали бутонът съществува
-                nextButton->Enable();                                                                 // Активира отново бутона при грешка
-            return;                                                                                   // Прекратява изпълнението на метода
-        } // Край на блока else (неуспешно отваряне на файл)
-    } // Край на блока if (wxFileExists)
-    else                                                                                                                               // Ако файлът container_id.txt не съществува
-    {                                                                                                                                  // Начало на блока else (файлът не съществува)
-        wxLogError("OnNext: Container ID file not found!");                                                                            // Записва грешка в лога
-        wxMessageBox("Error: Container information not found. Has the initial setup completed?", "Configuration Error", wxICON_ERROR); // Показва съобщение за грешка
-        if (nextButton)                                                                                                                // Проверява дали бутонът съществува
-            nextButton->Enable();                                                                                                      // Активира отново бутона
+    wxString containerId = ContainerCommand::ReadContainerId(m_projectDir); // Чете ID-то на контейнера от container_id.txt
+    if (containerId.IsEmpty())                                                                                                         // Ако контейнерът още не е готов
+    {                                                                                                                                  // Начало на блока if
+        wxLogError("OnNext: Container ID file not found or empty!");                                                                   // Записва грешка в лога
+        wxMessageBox("Container information not found. Has the initial setup completed?", "Configuration Error", wxOK | wxICON_ERROR, this); // Показва съобщение за грешка
         return;                                                                                                                        // Прекратява изпълнението на метода
-    } // Край на блока else (файлът не съществува)
+    } // Край на блока if
 
-    // Уверява се, че ID на контейнера не е празно след прочитане
-    if (containerId.IsEmpty())                                                                         // Проверява дали ID-то на контейнера е празно
-    {                                                                                                  // Начало на блока if (containerId.IsEmpty())
-        wxLogError("OnNext: Container ID is empty after reading the file!");                           // Записва грешка в лога
-        wxMessageBox("Error: Container information is invalid.", "Configuration Error", wxICON_ERROR); // Показва съобщение за грешка
-        if (nextButton)                                                                                // Проверява дали бутонът съществува
-            nextButton->Enable();                                                                      // Активира бутона
-        return;                                                                                        // Прекратява изпълнението на метода
-    } // Край на блока if (containerId.IsEmpty())
+    if (nextButton)            // Проверява дали бутонът е намерен успешно
+        nextButton->Disable(); // Деактивира бутона, докато ISO-то се създава
 
     // Показва overlay
     if (m_overlay)            // Проверява дали наслагващият екран вече съществува
@@ -923,27 +766,21 @@ void SecondWindow::OnNext(wxCommandEvent &event)                                
     m_overlay = new OverlayFrame(this);   // Създава нов наслагващ екран
     wxLogDebug("OnNext: Overlay shown."); // Записва в лога, че наслагващият екран е показан
 
-    // --- РЕЖИМ НА СИМУЛАЦИЯ: Стартира таймера за симулиране на създаване на ISO ---
-    if (m_simulateIsoTimer->IsRunning())                                          // Проверява дали таймерът за симулация вече работи
-        m_simulateIsoTimer->Stop();                                               // Спира таймера, ако работи
-    m_simulateIsoTimer->StartOnce(18000000);                                      // Симулира 3 минути работа (180000 ms) // Стартира таймера еднократно за 180 секунди
-    wxLogDebug("OnNext: Simulation timer started for ISO creation (3 minutes)."); // Записва в лога стартирането на таймера за симулация
+    // Стартира create_iso.sh (създаден от script.exe) в контейнера; DockerExecProcess копира ISO-то при успех
+    wxString command = wxString::Format("docker exec %s /bin/bash /create_iso.sh", containerId); // Командата за създаване на ISO
+    DockerExecProcess *process = new DockerExecProcess(this);                                    // Обработва резултата в OnTerminate
+    long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, process);                  // Стартира командата асинхронно
+    if (pid == 0)                                                                                // Ако командата не може да стартира
+    {
+        delete process;   // При неуспех wxExecute не поема обекта
+        CloseOverlay();   // Затваря наслагващия екран
+        if (nextButton)
+            nextButton->Enable();
+        wxMessageBox("Could not start docker. Is Docker Desktop running?", "Execution Error", wxOK | wxICON_ERROR, this);
+        return;
+    }
+    wxLogDebug("OnNext: create_iso.sh started, PID: %ld", pid); // Записва в лога PID на процеса
 } // Край на тялото на метода OnNext
-
-// Таймер събитие: симулира завършване на създаването на ISO, показва съобщение и активира бутона
-void SecondWindow::OnSimulateIsoTimer(wxTimerEvent &event)              // Метод, извиква се при събитие от таймера за симулация на ISO
-{                                                                       // Начало на тялото на метода OnSimulateIsoTimer
-    wxLogDebug("OnSimulateIsoTimer: Simulated ISO creation complete."); // Записва в лога завършването на симулацията
-    if (m_simulateIsoTimer->IsRunning())                                // Проверява дали таймерът все още работи (въпреки че StartOnce трябва да го спре автоматично)
-        m_simulateIsoTimer->Stop();                                     // Спира таймера
-
-    // Симулира съобщение за успех и обновяване на UI
-    wxMessageBox("ISO created and copied to project directory successfully!", "Success", wxOK | wxICON_INFORMATION); // Показва съобщение за успех
-    CloseOverlay();                                                                                                  // Затваря наслагващия екран
-    wxButton *nextButton = wxDynamicCast(FindWindow(ID_NEXT_BUTTON), wxButton);                                      // Намира бутона "Create ISO"
-    if (nextButton)                                                                                                  // Проверява дали бутонът е намерен
-        nextButton->Enable();                                                                                        // Активира бутона
-} // Край на тялото на метода OnSimulateIsoTimer
 
 // Обработва смяната на табове между Terminal и Config, обновява стила на бутоните
 void SecondWindow::OnTabChanged(wxCommandEvent &event)                               // Метод, извиква се при смяна на таб

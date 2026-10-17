@@ -100,11 +100,11 @@ void MyButton::OnPaint(wxPaintEvent &event)                // Метод за о
 
         delete gc; // Изтрива графичния контекст, за да освободи ресурсите
     } // Край на if блока
-    else                                        // Ако графичният контекст не е създаден или изображението не е валидно
-    {                                           // Начало на else блока
-        wxPaintDC dcFallback(this);             // Създава стандартен DC като резервен вариант
-        dcFallback.SetBackground(*wxRED_BRUSH); // Задава червена четка за фон (за индикация на грешка)
-        dcFallback.Clear();                     // Изчиства областта с червения фон
+    else // Ако графичният контекст не е създаден или изображението липсва (напр. няма папка resources/)
+    {
+        delete gc;                                                     // gc може да е създаден дори без изображение
+        dc.SetBackground(wxBrush(GetParent()->GetBackgroundColour())); // Рисува в същия DC - втори wxPaintDC в един OnPaint е грешка
+        dc.Clear();
     } // Край на else блока
 } // Край на тялото на метода OnPaint
 

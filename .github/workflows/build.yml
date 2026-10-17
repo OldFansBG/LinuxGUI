@@ -1,0 +1,72 @@
+name: Build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # needed to attach the zip to a GitHub release when a v* tag is pushed
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSYS2 (UCRT64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          pacboy: >-
+            gcc:p cmake:p ninja:p
+            wxwidgets3.2-msw:p libarchive:p yaml-cpp:p rapidjson:p curl:p
+
+      - name: Build LinuxISOPro.exe
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Collect the executable and its DLLs
+        shell: msys2 {0}
+        run: |
+          mkdir -p package
+          cp build/LinuxISOPro.exe build/config.yaml build/themes.json package/
+          cp -r build/resources package/
+          ldd build/LinuxISOPro.exe | grep -i '/ucrt64/' | awk '{print $3}' | xargs -r -I{} cp {} package/
+          ls -la package
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build script.exe (Docker backend)
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          pyinstaller --onefile --name script --distpath pyi-dist --workpath pyi-build script.py
+          Copy-Item pyi-dist/script.exe package/
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: LinuxISOPro-windows-x64
+          path: package/
+
+      - name: Zip for release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: Compress-Archive -Path package/* -DestinationPath LinuxISOPro-windows-x64.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: LinuxISOPro-windows-x64.zip
+          generate_release_notes: true

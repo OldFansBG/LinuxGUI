@@ -2,13 +2,14 @@
 
 #include <wx/wx.h>     // Включва основния хедър файл на wxWidgets
 #include <wx/thread.h> // Включва хедър файла за работа с нишки в wxWidgets (wxThread)
+#include <atomic>      // std::atomic за флага за спиране на нишката
 
 class WallpaperLoadThread; // Предварителна декларация на класа WallpaperLoadThread
 
 class CustomizeTab : public wxPanel // Декларация на клас CustomizeTab, който наследява публично от wxPanel
 {                                   // Начало на тялото на класа
 public:                             // Начало на публичната секция на класа
-    CustomizeTab(wxWindow *parent); // Декларация на конструктора, който приема указател към родителски прозорец
+    CustomizeTab(wxWindow *parent, const wxString &projectDir = wxEmptyString); // Декларация на конструктора, който приема указател към родителски прозорец
     ~CustomizeTab();                // Декларация на деструктора
     void LoadWallpaper();           // Декларация на метод за зареждане на тапети
 
@@ -26,10 +27,18 @@ private:                  // Начало на частната секция н�
     // Нови методи за адаптивно разположение
     void OnWallpaperPanelSize(wxSizeEvent &event); // Декларация на метод за обработка на събитие при промяна на размера на панела с тапети
     void UpdateWallpaperGrid();                    // Декларация на метод за обновяване на мрежата с тапети
+    void SelectWallpaper(wxPanel *container);      // Маркира избрания тапет (пътят е в името на контейнера)
+    void OnApplyWallpaper(wxCommandEvent &event);  // Задава избрания тапет като фон по подразбиране в ISO образа
+    void StopWallpaperThread();                    // Спира и изчаква нишката за зареждане на тапети
 
     wxScrolledWindow *wallpaperPanel; // Указател към скролируем прозорец, който ще съдържа галерията с тапети
     wxStaticText *m_loadingText;      // Указател към статичен текст, показван по време на зареждане
-    bool m_stopWallpaperLoad;         // Флаг, указващ дали зареждането на тапети трябва да бъде спряно
+    std::atomic<bool> m_stopWallpaperLoad; // Флаг, указващ дали зареждането на тапети трябва да бъде спряно
+    WallpaperLoadThread *m_loadThread;     // Текущата нишка за зареждане (joinable)
+    int m_loadGeneration;                  // Увеличава се при всяко зареждане; старите събития се игнорират
+    wxString m_projectDir;                 // Директорията на проекта (съдържа container_id.txt)
+    wxString m_wallpaperDir;               // Папка с тапетите (%APPDATA%\LinuxISOPro\wallpapers)
+    wxButton *m_applyWallpaperButton;      // Бутон "Apply Wallpaper to ISO"
     bool m_isDestroyed;               // Флаг, указващ дали табът е в процес на унищожаване
 
     DECLARE_EVENT_TABLE() // Макрос за деклариране на таблицата със събития за този клас
@@ -49,8 +58,8 @@ struct WallpaperImageData    // Дефиниция на структура за 
 class WallpaperLoadThread : public wxThread                // Декларация на клас WallpaperLoadThread, който наследява публично от wxThread
 {                                                          // Начало на тялото на класа
 public:                                                    // Начало на публичната секция на класа
-    WallpaperLoadThread(CustomizeTab *tab, bool &stopFlag) // Конструктор, приема указател към CustomizeTab и референция към булев флаг за спиране
-        : wxThread(wxTHREAD_DETACHED), m_tab(tab), m_stopFlag(stopFlag)
+    WallpaperLoadThread(CustomizeTab *tab, std::atomic<bool> &stopFlag, const wxString &dir, int generation) // Конструкторулев флаг за спиране
+        : wxThread(wxTHREAD_JOINABLE), m_tab(tab), m_stopFlag(stopFlag), m_dir(dir), m_generation(generation)
     {
     } // Инициализира базовия клас wxThread като отделена нишка (detached) и член-променливите m_tab и m_stopFlag
 
@@ -58,5 +67,7 @@ public:                                                    // Начало на 
 
 private:                 // Начало на частната секция на класа
     CustomizeTab *m_tab; // Указател към обекта CustomizeTab, с който работи нишката
-    bool &m_stopFlag;    // Референция към флага за спиране, споделен с CustomizeTab
+    std::atomic<bool> &m_stopFlag; // Референция към флага за спиране, споделен с CustomizeTab
+    wxString m_dir;                // Папката с тапетите
+    int m_generation;              // Поколение на зареждането (виж CustomizeTab::m_loadGeneration)
 }; // Край на тялото на класа WallpaperLoadThread

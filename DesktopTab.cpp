@@ -7,73 +7,11 @@
 #include <wx/wfstream.h>  // Включва wxFFileInputStream и wxFFileOutputStream за потоци към файлове
 #include <wx/txtstrm.h>   // Включва wxTextInputStream и wxTextOutputStream за текстови потоци
 #include <wx/process.h>   // Включва wxProcess за управление на външни процеси
-#include <wx/progdlg.h>   // Включва wxProgressDialog за показване на диалогов прозорец за прогрес
+#include <wx/weakref.h>   // wxWeakRef за безопасен достъп до таба от асинхронния callback
+#include "ContainerCommand.h" // Команди в chroot средата на Docker контейнера
 
 // Декларация на персонализирано събитие
 wxDEFINE_EVENT(FILE_COPY_COMPLETE_EVENT, wxCommandEvent); // Дефинира нов тип събитие FILE_COPY_COMPLETE_EVENT, базирано на wxCommandEvent
-
-// Персонализиран подклас на wxProcess за асинхронни Docker команди
-class DesktopInstallProcess : public wxProcess                                          // Декларация на клас DesktopInstallProcess, наследяващ wxProcess
-{                                                                                       // Начало на тялото на класа DesktopInstallProcess
-public:                                                                                 // Начало на публичната секция
-    DesktopInstallProcess(DesktopTab *parent, const wxString &newEnv, wxButton *button) // Конструктор, приема указател към DesktopTab, име на нова среда и указател към бутон
-        : wxProcess(parent), m_parent(parent), m_newEnv(newEnv), m_button(button)
-    {
-    } // Инициализира базовия клас wxProcess и член-променливите
-
-    virtual void OnTerminate(int pid, int status) override // Виртуален метод, извиква се при завършване на процеса
-    {                                                      // Начало на тялото на OnTerminate
-        if (m_parent)                                      // Проверява дали указателят към родителския таб е валиден
-        {                                                  // Начало на if (m_parent)
-            // Създава диалогов прозорец за прогрес
-            wxProgressDialog progress(                                                   // Създава обект wxProgressDialog
-                "Desktop Environment Installation",                                      // Заглавие на диалоговия прозорец
-                wxString::Format("Installing %s...", m_newEnv),                          // Съобщение, показващо коя среда се инсталира
-                100, m_parent,                                                           // Максимална стойност на прогреса (100), родителски прозорец
-                wxPD_APP_MODAL | wxPD_SMOOTH | wxPD_ELAPSED_TIME | wxPD_REMAINING_TIME); // Стилове на диалоговия прозорец (модален, плавен, показва изминало и оставащо време)
-
-            // Симулира прогреса на инсталацията
-            progress.Update(10, "Preparing installation environment...");        // Обновява прогреса на 10% със съобщение
-            wxMilliSleep(800);                                                   // Изчаква 800 милисекунди
-            progress.Update(20, "Downloading desktop environment packages...");  // Обновява прогреса на 20%
-            wxMilliSleep(1000);                                                  // Изчаква 1000 милисекунди
-            progress.Update(40, "Verifying package integrity...");               // Обновява прогреса на 40%
-            wxMilliSleep(600);                                                   // Изчаква 600 милисекунди
-            progress.Update(60, "Installing desktop environment components..."); // Обновява прогреса на 60%
-            wxMilliSleep(1200);                                                  // Изчаква 1200 милисекунди
-            progress.Update(80, "Configuring display manager...");               // Обновява прогреса на 80%
-            wxMilliSleep(800);                                                   // Изчаква 800 милисекунди
-            progress.Update(90, "Finalizing installation...");                   // Обновява прогреса на 90%
-            wxMilliSleep(600);                                                   // Изчаква 600 милисекунди
-            progress.Update(100, "Installation completed successfully!");        // Обновява прогреса на 100% със съобщение за завършване
-
-            // Обновява GUI файла и показва съобщение за успех
-            wxString guiFilePath = m_parent->GetGuiFilePath();                                                 // Взема пътя до файла, съдържащ информация за GUI
-            wxFile guiFile;                                                                                    // Създава обект wxFile
-            if (guiFile.Create(guiFilePath, true) && guiFile.IsOpened())                                       // Опитва да създаде (или презапише) файла и проверява дали е отворен
-            {                                                                                                  // Начало на if (guiFile.Create)
-                guiFile.Write(m_newEnv);                                                                       // Записва името на новата среда във файла
-                guiFile.Close();                                                                               // Затваря файла
-                wxLogDebug("DesktopInstallProcess::OnTerminate - Updated detected_gui.txt with %s", m_newEnv); // Записва в лога, че файлът е обновен
-            } // Край на if (guiFile.Create)
-            m_parent->UpdateGUILabel(m_newEnv);                           // Извиква метод на родителския таб за обновяване на етикета с новата GUI среда
-            wxMessageBox(                                                 // Показва съобщение за успех
-                wxString::Format("%s installed successfully!", m_newEnv), // Текст на съобщението
-                "Success",                                                // Заглавие на съобщението
-                wxOK | wxICON_INFORMATION,                                // Бутони и икона на съобщението
-                m_parent);                                                // Родителски прозорец на съобщението
-
-            if (m_button)           // Проверява дали указателят към бутона е валиден
-                m_button->Enable(); // Активира бутона
-            delete this;            // Почиства обекта на процеса (тъй като е създаден с 'new')
-        } // Край на if (m_parent)
-    } // Край на тялото на OnTerminate
-
-private:                  // Начало на частната секция
-    DesktopTab *m_parent; // Указател към родителския DesktopTab
-    wxString m_newEnv;    // Низ, съдържащ името на новата десктоп среда
-    wxButton *m_button;   // Указател към бутона, който е стартирал инсталацията
-}; // Край на класа DesktopInstallProcess
 
 DesktopTab::DesktopTab(wxWindow *parent)                                   // Конструктор на класа DesktopTab
     : wxPanel(parent), m_gridSizer(nullptr)                                // Инициализира базовия клас wxPanel и член-променливата m_gridSizer на nullptr
@@ -289,8 +227,13 @@ void DesktopTab::CreateDesktopTab()                              // Метод �
 
     const std::array<wxString, 9> packageNames = {                                                                     // Дефинира масив с имената на пакетите за инсталация на всяка среда
                                                   "gnome-session", "plasma-desktop", "xfce4",                          // Пакети за първия ред
-                                                  "cinnamon", "mate-desktop", "lxqt",                                  // Пакети за втория ред
+                                                  "cinnamon", "mate-desktop-environment-core", "lxqt",                 // Пакети за втория ред
                                                   "budgie-desktop", "deepin-desktop-environment", "pantheon-desktop"}; // Пакети за третия ред
+
+    const std::array<wxString, 9> sessionNames = {                                  // Имена на сесиите (/usr/share/xsessions/*.desktop) за LightDM
+                                                  "gnome", "plasma", "xfce",
+                                                  "cinnamon", "mate", "lxqt",
+                                                  "budgie-desktop", "deepin", "pantheon"};
 
     m_gridSizer = new wxFlexGridSizer(3, 20, 20); // Създава wxFlexGridSizer с 3 колони и отстояние 20x20 пиксела
     m_gridSizer->SetFlexibleDirection(wxBOTH);    // Позволява на мрежата да бъде гъвкава и в двете посоки
@@ -347,6 +290,21 @@ void DesktopTab::CreateDesktopTab()                              // Метод �
                                      );
                                  }); // Край на ламбда функцията за рисуване
         } // Край на if (bitmap.IsOk())
+        else // Няма изображение в desktopenvs/ - рисува се плочка с името на средата
+        {
+            wxString envName = environments[i];
+            imageContainer->Bind(wxEVT_PAINT, [imageContainer, envName](wxPaintEvent &)
+                                 {
+                                     wxPaintDC dc(imageContainer);
+                                     wxRect rect(imageContainer->GetClientSize());
+                                     dc.SetBrush(wxBrush(wxColour(48, 52, 64)));
+                                     dc.SetPen(*wxTRANSPARENT_PEN);
+                                     dc.DrawRoundedRectangle(rect, 8);
+                                     dc.SetFont(wxFont(16, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD));
+                                     dc.SetTextForeground(wxColour(200, 200, 200));
+                                     dc.DrawLabel(envName, rect, wxALIGN_CENTER);
+                                 });
+        }
 
         cardSizer->Add(imageContainer, 1, wxEXPAND | wxALL, 10); // Добавя контейнера на изображението към sizer-а на картата, разширяващ се, с отстъп
 
@@ -355,7 +313,7 @@ void DesktopTab::CreateDesktopTab()                              // Метод �
         title->SetFont(wxFont(12, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_BOLD)); // Задава шрифт на текста
         cardSizer->Add(title, 0, wxALIGN_LEFT | wxLEFT | wxRIGHT, 10);                         // Добавя заглавието към sizer-а на картата, с отстъп
 
-        wxStaticText *info = new wxStaticText(card, wxID_ANY, "0/100 Achievements");            // Създава статичен текст за информация (пример)
+        wxStaticText *info = new wxStaticText(card, wxID_ANY, "Package: " + packageNames[i]);  // Показва пакета, който ще бъде инсталиран
         info->SetForegroundColour(wxColour(180, 180, 180));                                     // Задава сив цвят на текста
         info->SetFont(wxFont(10, wxFONTFAMILY_SWISS, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL)); // Задава шрифт на текста
         cardSizer->Add(info, 0, wxALIGN_LEFT | wxLEFT | wxRIGHT | wxTOP, 10);                   // Добавя информацията към sizer-а на картата, с отстъп
@@ -366,10 +324,11 @@ void DesktopTab::CreateDesktopTab()                              // Метод �
         installButton->SetForegroundColour(*wxWHITE);                      // Задава бял цвят на текста на бутона
         cardSizer->Add(installButton, 0, wxALIGN_LEFT | wxALL, 10);        // Добавя бутона към sizer-а на картата, с отстъп
 
-        installButton->Bind(wxEVT_BUTTON, [this, environments, packageNames, i](wxCommandEvent &event)                     // Свързва натискането на бутона с ламбда функция
+        installButton->Bind(wxEVT_BUTTON, [this, environments, packageNames, sessionNames, i](wxCommandEvent &event)                     // Свързва натискането на бутона с ламбда функция
                             {                                                                                              // Начало на ламбда функцията за инсталация
                                 wxString newEnv = environments[i];                                                         // Взема името на новата среда
                                 wxString newPackage = packageNames[i];                                                     // Взема името на пакета за новата среда
+                                wxString newSession = sessionNames[i];                                                     // Име на сесията за LightDM
                                 wxLogDebug("DesktopTab::InstallButton - Installing %s (package: %s)", newEnv, newPackage); // Записва в лога коя среда се инсталира
 
                                 wxWindow *parent = GetParent();       // Взема родителския прозорец
@@ -445,7 +404,7 @@ void DesktopTab::CreateDesktopTab()                              // Метод �
                                 } // Край на for
 
                                 int confirm = wxMessageBox(                                               // Показва диалогов прозорец за потвърждение
-                                    wxString::Format("Uninstall %s and install %s?", currentEnv, newEnv), // Текст на въпроса
+                                    (currentPackage.IsEmpty() ? wxString::Format("Install %s into the ISO?", newEnv) : wxString::Format("Uninstall %s and install %s?", currentEnv, newEnv)), // Текст на въпроса
                                     "Confirm Desktop Environment Change",                                 // Заглавие на диалога
                                     wxYES_NO | wxICON_QUESTION                                            // Бутони YES/NO и икона с въпрос
                                 );                                                                        // Край на wxMessageBox
@@ -460,37 +419,50 @@ void DesktopTab::CreateDesktopTab()                              // Метод �
                                     btn->Disable();                                                               // Деактивира бутона
                                 wxLogDebug("DesktopTab::InstallButton - Disabled install button for %s", newEnv); // Записва в лога
 
-                                // Актуализирана команда с purge и конфигурация на сесията
-                                wxString command; // Низ за командата за инсталация/деинсталация
-                                if (currentEnv != "Not detected" && !currentPackage.IsEmpty())
-                                {                                                                                                                                                                                                                                                                     // Ако има инсталирана среда и е намерен нейният пакет
-                                    command = wxString::Format(                                                                                                                                                                                                                                       // Формира команда за деинсталация на старата и инсталация на новата среда
-                                        "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'apt-get update && apt-get purge -y %s && apt-get autoremove -y && apt-get install -y %s && echo -e \\\"[Seat:*]\\\\nuser-session=xfce\\\" > /etc/lightdm/lightdm.conf'\"", // Командата включва update, purge, autoremove, install и конфигурация на lightdm
-                                        containerId, currentPackage, newPackage                                                                                                                                                                                                                       // Аргументи за командата
-                                    );                                                                                                                                                                                                                                                                // Край на wxString::Format
-                                }
-                                else
-                                {                                                                                                                                                                                                                     // Ако няма инсталирана среда
-                                    command = wxString::Format(                                                                                                                                                                                       // Формира команда само за инсталация на новата среда
-                                        "docker exec %s /bin/bash -c \"chroot /root/custom_iso/squashfs-root /bin/bash -c 'apt-get update && apt-get install -y %s && echo -e \\\"[Seat:*]\\\\nuser-session=xfce\\\" > /etc/lightdm/lightdm.conf'\"", // Командата включва update, install и конфигурация на lightdm
-                                        containerId, newPackage                                                                                                                                                                                       // Аргументи за командата
-                                    );                                                                                                                                                                                                                // Край на wxString::Format
-                                } // Край на else
-                                wxLogDebug("DesktopTab::InstallButton - Executing command: %s", command); // Записва командата в лога
+                                // Скриптът се изпълнява в chroot средата на ISO образа (поддържат се Debian/Ubuntu базирани образи)
+                                wxString script = "if ! command -v apt-get >/dev/null 2>&1; then\n"
+                                                  "    echo 'Only Debian/Ubuntu based images are supported'\n"
+                                                  "    exit 90\n"
+                                                  "fi\n"
+                                                  "apt-get update || exit 1\n";
+                                if (!currentPackage.IsEmpty())                                                                          // Ако текущата среда е известна, тя се премахва
+                                    script += "apt-get purge -y " + ContainerCommand::ShellQuote(currentPackage) + " || true\n";
+                                script += "apt-get install -y " + ContainerCommand::ShellQuote(newPackage) + " || exit 1\n";           // Инсталира новата среда
+                                if (!currentPackage.IsEmpty())
+                                    script += "apt-get autoremove -y || true\n";                                                         // Премахва пакетите на старата среда
+                                script += "mkdir -p /etc/lightdm/lightdm.conf.d\n"                                                       // LightDM стартира новата сесия по подразбиране
+                                          "printf '[Seat:*]\\nuser-session=%s\\n' " + ContainerCommand::ShellQuote(newSession) +
+                                          " > /etc/lightdm/lightdm.conf.d/90-linuxisopro.conf\n";
 
-                                DesktopInstallProcess *proc = new DesktopInstallProcess(this, newEnv, btn); // Създава нов обект DesktopInstallProcess
-                                long pid = wxExecute(command, wxEXEC_ASYNC | wxEXEC_HIDE_CONSOLE, proc);    // Изпълнява командата асинхронно, скрива конзолата и свързва процеса
+                                wxWeakRef<DesktopTab> self(this);    // Табът може да бъде затворен, докато инсталацията върви
+                                wxWeakRef<wxButton> buttonRef(btn);  // Бутонът се активира отново след края
+                                long pid = ContainerCommand::RunInChrootAsync(containerId, script, [self, buttonRef, newEnv](int status)
+                                {
+                                    if (buttonRef)
+                                        buttonRef->Enable();
+                                    if (!self)
+                                        return;
+
+                                    if (status != 0) // apt-get е върнал грешка (напр. пакетът не съществува за тази дистрибуция)
+                                    {
+                                        wxString reason = (status == 90) ? wxString("Only Debian/Ubuntu based images are supported.")
+                                                                         : wxString::Format("apt-get failed with exit code %d. The package may not be available for this distribution.", status);
+                                        wxMessageBox("Installing " + newEnv + " failed.\n\n" + reason, "Installation Failed", wxOK | wxICON_ERROR, self);
+                                        return;
+                                    }
+
+                                    wxFile guiFile; // Записва новата среда, за да се показва след презареждане
+                                    if (guiFile.Create(self->GetGuiFilePath(), true) && guiFile.IsOpened())
+                                        guiFile.Write(newEnv);
+                                    self->UpdateGUILabel(newEnv);
+                                    wxMessageBox(newEnv + " was installed into the ISO.", "Success", wxOK | wxICON_INFORMATION, self);
+                                });
                                 if (pid == 0)
-                                {                                                                                       // Ако стартирането на процеса е неуспешно (PID е 0)
+                                {                                                                                       // Ако стартирането на процеса е неуспешно
                                     wxLogDebug("DesktopTab::InstallButton - Failed to execute command for %s", newEnv); // Записва грешка в лога
-                                    wxMessageBox("Failed to start installation process!", "Error", wxICON_ERROR);       // Показва съобщение за грешка
-                                    delete proc;                                                                        // Изтрива обекта на процеса
+                                    wxMessageBox("Failed to start the installation. Is Docker Desktop running?", "Error", wxOK | wxICON_ERROR, this);
                                     if (btn)
                                         btn->Enable(); // Активира отново бутона
-                                }
-                                else
-                                {                                                                                                         // Ако процесът е стартиран успешно
-                                    wxLogDebug("DesktopTab::InstallButton - Started installation process for %s, PID: %ld", newEnv, pid); // Записва в лога PID на процеса
                                 }
                             }); // Край на ламбда функцията за инсталация
 

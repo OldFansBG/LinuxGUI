@@ -3,7 +3,8 @@
 #include "DesktopTab.h"   // Включва заглавния файл DesktopTab.h
 #include "CustomizeTab.h" // Включва заглавния файл CustomizeTab.h // Add new header
 #include "SecondWindow.h" // Включва заглавния файл SecondWindow.h // Added to provide full definition of SecondWindow
-#include "SystemTab.h"    // Включва заглавния файл SystemTab.h // Add this include at the top with other includes
+#include "SystemTab.h"    // Включва заглавния файл SystemTab.h
+#include <wx/weakref.h>   // wxWeakRef за безопасен достъп в CallAfter
 
 wxBEGIN_EVENT_TABLE(SQLTab, wxPanel)                            // Начало на таблицата със събития за SQLTab, наследяващ wxPanel
     EVT_BUTTON(ID_CONFIG_DESKTOP, SQLTab::OnConfigTabChanged)   // Декларира събитие за бутон ID_CONFIG_DESKTOP, извиква SQLTab::OnConfigTabChanged
@@ -139,11 +140,15 @@ void SQLTab::CreateDesktopTab()                               // Дефиниц�
     m_configContent->Layout(); // Преизчислява и прилага оформлението на m_configContent
 
     // Използва CallAfter, за да гарантира правилно оразмеряване след прилагане на оформлението
-    CallAfter([this, desktopTab]()                                                      // Планира изпълнението на следната ламбда функция след приключване на текущата обработка на събития
-              {                                                                         // Начало на тялото на ламбда функцията
-                  desktopTab->RecalculateLayout(m_configContent->GetSize().GetWidth()); // Извиква метода RecalculateLayout на desktopTab, предавайки текущата ширина на m_configContent
+    wxWeakRef<DesktopTab> desktopRef(desktopTab); // Табът може да бъде унищожен, преди CallAfter да се изпълни
+    CallAfter([this, desktopRef]()                // Планира изпълнението на следната ламбда функция след прилагане на оформлението
+              {
+                  if (!desktopRef)
+                      return;
+                  desktopRef->RecalculateLayout(m_configContent->GetSize().GetWidth()); // Преизчислява колоните според ширината
+                  desktopRef->UpdateTextFromFile();                                     // Показва откритата GUI среда (detected_gui.txt)
                   m_configContent->Layout();
-              }); // Отново преизчислява оформлението на m_configContent, за да отрази евентуални промени от RecalculateLayout
+              });
 } // Край на тялото на метода CreateDesktopTab
 
 void SQLTab::CreateAppsTab() // Дефиниция на метода CreateAppsTab за създаване на съдържанието на "Applications" таба
@@ -173,7 +178,7 @@ void SQLTab::SetContainerId(const wxString &containerId) // Дефиниция �
 
 void SQLTab::CreateSystemTab()                             // Дефиниция на метода CreateSystemTab за създаване на съдържанието на "System" таба
 {                                                          // Начало на тялото на метода CreateSystemTab
-    SystemTab *systemTab = new SystemTab(m_configContent); // Създава нов обект SystemTab, като родител е m_configContent
+    SystemTab *systemTab = new SystemTab(m_configContent, m_workDir); // Създава нов обект SystemTab за директорията на проекта
     wxBoxSizer *sizer = new wxBoxSizer(wxVERTICAL);        // Създава нов вертикален wxBoxSizer
     sizer->Add(systemTab, 1, wxEXPAND);                    // Добавя systemTab към sizer-а, позволявайки му да се разширява и запълва вертикалното пространство
     m_configContent->SetSizer(sizer);                      // Задава новосъздадения sizer като мениджър на оформлението за m_configContent
@@ -182,10 +187,9 @@ void SQLTab::CreateSystemTab()                             // Дефиниция
 
 void SQLTab::CreateCustomizeTab()                                   // Дефиниция на метода CreateCustomizeTab за създаване на съдържанието на "Customize" таба
 {                                                                   // Начало на тялото на метода CreateCustomizeTab
-    CustomizeTab *customizeTab = new CustomizeTab(m_configContent); // Създава нов обект CustomizeTab, като родител е m_configContent
+    CustomizeTab *customizeTab = new CustomizeTab(m_configContent, m_workDir); // Създава нов обект CustomizeTab за директорията на проекта
     wxBoxSizer *sizer = new wxBoxSizer(wxVERTICAL);                 // Създава нов вертикален wxBoxSizer
     sizer->Add(customizeTab, 1, wxEXPAND);                          // Добавя customizeTab към sizer-а, позволявайки му да се разширява и запълва вертикалното пространство
     m_configContent->SetSizer(sizer);                               // Задава новосъздадения sizer като мениджър на оформлението за m_configContent
     m_configContent->Layout();                                      // Преизчислява и прилага оформлението на m_configContent
-    customizeTab->LoadWallpaper();                                  // Зарежда тапета след създаване на таба // Извиква метода LoadWallpaper на customizeTab, за да зареди тапета
 } // Край на тялото на метода CreateCustomizeTab

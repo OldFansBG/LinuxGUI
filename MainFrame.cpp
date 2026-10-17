@@ -108,6 +108,7 @@ MainFrame::MainFrame(const wxString &title)                                     
     // Create DesktopTab instance
     // Създаване на инстанция на DesktopTab
     m_desktopTab = new DesktopTab(this); // Създава нов обект DesktopTab, асоцииран с текущия MainFrame.
+    m_desktopTab->Hide();                // Не е част от оформлението - иначе се рисува върху горния ляв ъгъл на прозореца
 
     // Bind custom event to handler
     // Свързване на персонализирано събитие с обработчик
@@ -324,8 +325,29 @@ void MainFrame::OnBrowseWorkDir(wxCommandEvent &event)               // Обра
 
 void MainFrame::OnNextButton(wxCommandEvent &event) // Обработва събитието при натискане на бутона "Next".
 {                                                   // Начало на тялото на метода.
-    // First save settings
-    // Първо запазва настройките
+    // Validate the inputs before anything is written
+    // Първо проверява въведените данни, преди да се запише нещо
+    if (m_workDirCtrl->IsEmpty() || m_isoPathCtrl->IsEmpty())              // Проверява дали текстовите полета за работен каталог или ISO път са празни.
+    {                                                                      // Начало на if блока.
+        wxMessageBox("Please select both ISO file and working directory.", // Показва съобщение за грешка.
+                     "Error", wxOK | wxICON_ERROR);                        // Заглавие, бутон OK, икона за грешка.
+        return;                                                            // Излиза от метода.
+    } // Край на if блока.
+
+    if (m_projectNameCtrl->GetValue().Trim().IsEmpty())                             // Проверява дали полето за име на проекта е празно.
+    {                                                                               // Начало на if блока.
+        wxMessageBox("Please enter a project name.", "Error", wxOK | wxICON_ERROR); // Показва съобщение за грешка.
+        return;                                                                     // Излиза от метода.
+    } // Край на if блока.
+
+    if (!wxDirExists(m_workDirCtrl->GetValue()))                                                        // Работната директория трябва да съществува
+    {
+        wxMessageBox("The working directory does not exist.", "Error", wxOK | wxICON_ERROR, this);
+        return;
+    }
+
+    // Then save the settings
+    // След това запазва настройките
     AppSettings settings;                         // Създава обект за настройките на приложението.
     settings.isoPath = m_isoPathCtrl->GetValue(); // Взема пътя до ISO файла от контролата и го запазва.
     settings.workDir = m_workDirCtrl->GetValue(); // Взема работния каталог от контролата и го запазва.
@@ -345,21 +367,6 @@ void MainFrame::OnNextButton(wxCommandEvent &event) // Обработва съб
     {                                                                           // Начало на if блока.
         wxMessageBox("Failed to save settings!", "Error", wxOK | wxICON_ERROR); // Показва съобщение за грешка.
         return;                                                                 // Спира изпълнението, ако запазването е неуспешно.
-    } // Край на if блока.
-
-    // Then perform original extraction logic
-    // След това изпълнява оригиналната логика за извличане
-    if (m_workDirCtrl->IsEmpty() || m_isoPathCtrl->IsEmpty())              // Проверява дали текстовите полета за работен каталог или ISO път са празни.
-    {                                                                      // Начало на if блока.
-        wxMessageBox("Please select both ISO file and working directory.", // Показва съобщение за грешка.
-                     "Error", wxOK | wxICON_ERROR);                        // Заглавие, бутон OK, икона за грешка.
-        return;                                                            // Излиза от метода.
-    } // Край на if блока.
-
-    if (m_projectNameCtrl->IsEmpty())                                               // Проверява дали полето за име на проекта е празно.
-    {                                                                               // Начало на if блока.
-        wxMessageBox("Please enter a project name.", "Error", wxOK | wxICON_ERROR); // Показва съобщение за грешка.
-        return;                                                                     // Излиза от метода.
     } // Край на if блока.
 
     // Search for SquashFS files in the ISO
